@@ -17,8 +17,13 @@ LABEL com.github.containers.toolbox="true" \
 COPY sudoers-toolbox /etc/sudoers.d/toolbox
 RUN chmod 0440 /etc/sudoers.d/toolbox
 
-# toolbox inside a toolbox (and ./build) reach the host with flatpak-spawn,
-# as in Fedora's toolbox image.
-RUN dnf -y install flatpak-spawn && dnf clean all
+# From Fedora's toolbox image: flatpak-spawn, with which toolbox inside a
+# toolbox (and ./build) reach the host; the host's trust store and smart
+# cards (p11-kit-client), X11 programs' access to the host's display
+# (xorg-x11-xauth); an editor (nano as EDITOR) and bash completion.
+RUN dnf -y install flatpak-spawn p11-kit-client xorg-x11-xauth \
+                   nano-default-editor bash-completion \
+                   git rsync wget tree lsof psmisc man-db && \
+    dnf clean all
 
 CMD /pos/bin/bash

@@ -833,9 +833,12 @@ do not use it. It adds what toolbox needs and nothing installs:
 toolbox puts its user in `wheel` with an empty password and runs sudo, so
 the image adds a `wheel` rule in `/etc/sudoers.d` to POS's `/etc/sudoers`
 (from the factory tree), which has none. sudo's PAM configuration is
-POS's (see "System integration"). Fedora's `flatpak-spawn` is installed
-with dnf, as in Fedora's toolbox image: toolbox run inside a toolbox, and
-`./build`, reach the host with it.
+POS's (see "System integration"). From Fedora's toolbox image it installs
+with dnf: `flatpak-spawn` (toolbox run inside a toolbox, and `./build`,
+reach the host with it), `p11-kit-client` (the host's trust store and smart
+cards), `xorg-x11-xauth` (X11 programs on the host's display), nano as the
+default editor and bash completion. Other tools are installed with dnf as
+needed.
 
 A toolbox stays on the image it was made from: moving to a later build is
 making the toolbox again, from the image of that build.

@@ -32,8 +32,9 @@ libcap libcap
 # libcap: no pam_cap.so.
 pcre2 pcre2 pcre2-utf16 pcre2-utf32 pcre2-tools
 ncurses ncurses ncurses-base
-# Not ncurses-libs: POS ncurses is wide-character only, without libform,
-# libmenu and libpanel; Fedora's comes in for programs that need those.
+# Not ncurses-libs: POS ncurses is wide-character only, without libncurses,
+# libform, libmenu, libpanel and libtic; Fedora's comes in for programs
+# that need those. libncursesw and libtinfo are POS's.
 readline readline
 sqlite sqlite sqlite-libs
 libunistring libunistring
