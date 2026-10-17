@@ -1,0 +1,7 @@
+# Container image: a root filesystem around /pos, for podman import or
+# docker import. BUILD.md "Images".
+requires core-libs system sdk
+host-requires tar zstd
+# Its name in podman, with POS's programs first in PATH.
+tag pos
+path-priority pos

@@ -1,15 +1,7 @@
-#!/usr/bin/env bash
+pkg() {
+  pkg_sync_src
 
-set -euo pipefail
-
-source "$POS_BASE/buildsys/pkg.sh"
-require_container
-pkg_setup
-pkg_sync_src
-
-cd "$build_dir" || exit 1
-make prefix="$prefix" -j"$nproc"
-make prefix="$prefix" DESTDIR="$dest_dir" install
-rm -f "${dest_dir}${prefix}/lib/libzstd.a"
-
-pkg_finish
+  pkg_compile prefix="$prefix"
+  pkg_install prefix="$prefix"
+  rm -f "${dest_dir}${prefix}/lib/libzstd.a"
+}

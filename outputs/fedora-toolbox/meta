@@ -1,0 +1,5 @@
+# POS as a toolbox image: container-fs-dnf with what toolbox needs.
+# BUILD.md "Images made with podman".
+requires container-fs-dnf
+tag pos-fedora-toolbox
+path-priority host

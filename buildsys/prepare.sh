@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Helpers sourced by packages/*/prepare.sh.
+# Source preparation runner and helpers for packages/*/prepare.sh.
 #
 # Prepare turns a committed source tree into what a release tarball holds:
 # translations and other files upstream's release process fetches, generated
@@ -7,26 +7,36 @@
 # container of the build's tools image, with network access, once per source
 # and inputs; builds then use the prepared tree and need no network. The
 # container has the recipes, the committed source, src/gnulib and the tree
-# to prepare; not the rest of the checkout. The environment:
+# to prepare; not the rest of the checkout. Each packages/<source>/prepare.sh
+# defines a prep() phase function called between _prep_setup and _prep_finish.
+# The environment:
 #
 #   POS_BASE        the POS checkout
 #   POS_SOURCE      the source name (src/<source>)
 #   POS_PREP_DIR    the tree to prepare, a copy of the committed src/<source>
 #   POS_UPSTREAM    the committed src/<source>.upstream (ref, commit, date, url)
 #   POS_WITH_SRC_DIRS  the package's further source trees (meta
-#                   "with-sources"), as <source>=<dir> words; prep_setup
+#                   "with-sources"), as <source>=<dir> words; _prep_setup
 #                   copies each into the tree, as a directory named after it
+set -euo pipefail
 
 source=${POS_SOURCE:?run prepare recipes through buildsys/build.sh}
 
-require_container() {
+# Verify that prepare runs inside a build container (not on host or toolbox).
+_require_container() {
   if [[ ! -f /run/.containerenv || -f /run/.toolboxenv ]]; then
     echo "prepare scripts must run in a build container (./build)" >&2
     exit 1
   fi
 }
 
-prep_setup() {
+# Initialize the source preparation directory before prep() runs.
+# Inputs (environment):
+#   POS_BASE, POS_PREP_DIR, POS_WITH_SRC_DIRS
+# Outputs (shell variables set for prep()):
+#   base, prep_dir, GNULIB_SRCDIR (exported if src/gnulib/gnulib-tool exists)
+_prep_setup() {
+  _require_container
   base=${POS_BASE:?}
   prep_dir=${POS_PREP_DIR:?}
   cd "$prep_dir" || exit 1
@@ -40,6 +50,10 @@ prep_setup() {
   fi
 }
 
+# Read a metadata field from the source's committed .upstream file.
+# Inputs:
+#   $1              field name (ref, commit, date, url)
+#   POS_UPSTREAM    path to the .upstream file
 prep_upstream() {
   awk -v k="$1" '$1 == k {print $2}' "${POS_UPSTREAM:?}"
 }
@@ -48,6 +62,10 @@ prep_upstream() {
 # before asking git: <ref>-<upstream commit date>-<commit>, for example
 # master-20260927-4b3b66d3328e. It names the upstream state and does not
 # claim to be a release.
+# Inputs:
+#   source, POS_UPSTREAM
+# Outputs:
+#   version (shell variable) and .tarball-version file in $prep_dir
 prep_version() {
   local ref commit date
   ref=$(prep_upstream ref)
@@ -64,7 +82,9 @@ prep_version() {
 # What upstream's bootstrap fetches before generating: translations,
 # submodules and package hooks. gnulib comes from src/gnulib. The copy is
 # not a git repository; an empty one stands in for hooks that run git
-# submodule (tar's), and prep_finish removes it.
+# submodule (tar's), and _prep_finish removes it.
+# Inputs:
+#   GNULIB_SRCDIR (optional, exported by _prep_setup)
 prep_pull() {
   git init -q
   if [[ -x ./autopull.sh ]]; then
@@ -75,7 +95,9 @@ prep_pull() {
 }
 
 # Generate configure and the other build system files. Files taken from
-# gnulib are copied, not linked to src/gnulib (see prep_finish).
+# gnulib are copied, not linked to src/gnulib (see _prep_finish).
+# Inputs:
+#   GNULIB_SRCDIR (optional, exported by _prep_setup)
 prep_gen() {
   if [[ -x ./autogen.sh ]]; then
     ./autogen.sh
@@ -92,8 +114,11 @@ prep_gen() {
 # are replaced by copies of their targets. gnulib-tool keeps a file it
 # replaces as <file>~ (the m4 files autopoint copied before it); backups
 # not in src/<source> are removed.
-prep_finish() {
+# Inputs:
+#   base, source, prep_dir
+_prep_finish() {
   local link target backup
+  cd "$prep_dir" || exit 1
   rm -rf .git autom4te.cache
   while IFS= read -r -d '' backup; do
     [[ -e $base/src/$source/$backup ]] || rm -f "$backup"
@@ -107,3 +132,11 @@ prep_finish() {
     cp --remove-destination -p "$target" "$link"
   done < <(find . -type l -lname '/*' -print0)
 }
+
+_prep_setup
+# shellcheck source=/dev/null
+source "$base/packages/$source/prepare.sh"
+declare -F prep >/dev/null || { echo "${source}: prepare.sh must define prep()" >&2; exit 1; }
+cd "$prep_dir"
+prep
+_prep_finish

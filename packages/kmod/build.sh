@@ -1,37 +1,23 @@
-#!/usr/bin/env bash
-
-set -euo pipefail
-
-source "$POS_BASE/buildsys/pkg.sh"
-require_container
-pkg_setup
-
-# kmod searches /usr/lib/{modprobe,depmod}.d by default; distconfdir points
-# that at the prefix. Modules stay in /usr/lib/modules: POS boots kernels
-# other projects build, and their packages install modules there (as
-# systemd's kernel-install expects).
-meson setup "$build_dir" "$src_dir" \
-      --prefix="$prefix" \
-      --libdir=lib \
-      --sysconfdir="$sysconfdir" \
-      --buildtype=plain \
-      -Ddistconfdir="${prefix}/lib" \
-      -Dmoduledir=/usr/lib/modules \
-      -Dopenssl=enabled \
-      -Dmbedtls=disabled \
-      -Dzlib=enabled \
-      -Dxz=enabled \
-      -Dzstd=enabled \
-      -Dmanpages=false \
-      -Ddocs=false \
-      -Dbuild-tests=false
-meson compile -C "$build_dir" -j "$nproc"
-DESTDIR="$dest_dir" meson install -C "$build_dir"
-# The kernel loads modules on demand (a file system's, mounting the ESP) by
-# running the modprobe its build names, /sbin/modprobe or /usr/bin/modprobe;
-# the kernels POS boots are built by others, so the path is set at boot.
-install -d "${dest_dir}${prefix}/lib/sysctl.d"
-printf 'kernel.modprobe = %s\n' "${prefix}/sbin/modprobe" \
-  >"${dest_dir}${prefix}/lib/sysctl.d/50-kmod.conf"
-
-pkg_finish
+pkg() {
+  # kmod searches /usr/lib/{modprobe,depmod}.d by default; distconfdir points
+  # that at the prefix. Modules stay in /usr/lib/modules: POS boots kernels
+  # other projects build, and their packages install modules there (as
+  # systemd's kernel-install expects).
+  pkg_meson \
+        -Ddistconfdir="${prefix}/lib" \
+        -Dmoduledir=/usr/lib/modules \
+        -Dopenssl=enabled \
+        -Dmbedtls=disabled \
+        -Dzlib=enabled \
+        -Dxz=enabled \
+        -Dzstd=enabled \
+        -Dmanpages=false \
+        -Ddocs=false \
+        -Dbuild-tests=false
+  # The kernel loads modules on demand (a file system's, mounting the ESP) by
+  # running the modprobe its build names, /sbin/modprobe or /usr/bin/modprobe;
+  # the kernels POS boots are built by others, so the path is set at boot.
+  install -d "${dest_dir}${prefix}/lib/sysctl.d"
+  printf 'kernel.modprobe = %s\n' "${prefix}/sbin/modprobe" \
+    >"${dest_dir}${prefix}/lib/sysctl.d/50-kmod.conf"
+}

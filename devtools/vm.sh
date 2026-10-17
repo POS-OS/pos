@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Boots the disk of an image of a build in a VM, on the serial console of
-# this terminal (Ctrl-a x quits), or runs a script in it.
+# Boots the disk of an output of a build (vm-disk, vm-disk-dnf) in a VM, on
+# the serial console of this terminal (Ctrl-a x quits), or runs a script in it.
 #
-#   vm.sh [-i <image>] [-c <script>] [<id>]
-#                                (default: vm-dnf, the current build)
+#   vm.sh [-o <output>] [-c <script>] [<id>]
+#                                (default: vm-disk-dnf, the current build)
 #
 # qemu runs with KVM and UEFI firmware (OVMF) in a container of
 # localhost/pos-vm, which is made from Fedora when missing. The disk is not
@@ -18,7 +18,7 @@
 # With -c, the script runs as root once the VM has booted, and the VM powers
 # off after it. It is passed as a credential, with the unit that runs it
 # (systemd.extra-unit). Its output goes to a second serial port, which
-# vm.sh prints; the console goes to work/builds/<id>/logs/vm-<image>.log.
+# vm.sh prints; the console goes to work/builds/<id>/logs/vm-<output>.log.
 # vm.sh exits with the script's status, or fails when the VM does not
 # finish within POS_VM_TIMEOUT seconds (default 900; podman stops it). devtools/smoke.sh holds the
 # checks of a booted image.
@@ -33,17 +33,17 @@ base=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
 source "$base/buildsys/buildinfo.sh"
 builds=${base}/work/builds
 
-image=vm-dnf
+output=vm-disk-dnf
 script=
 while (($#)); do
   case $1 in
-    -i) image=${2:?}; shift 2 ;;
+    -o) output=${2:?}; shift 2 ;;
     -c) script=${2:?}; shift 2 ;;
     *) break ;;
   esac
 done
 id=${1:-$(basename "$(readlink "${builds}/current")")}
-disk=${builds}/${id}/pos-disk-${image}-$(build_stem "${builds}/${id}").qcow2
+disk=${builds}/${id}/pos-${output}-$(build_stem "${builds}/${id}").qcow2
 [[ -f $disk ]] || { echo "no disk $disk" >&2; exit 1; }
 [[ -z $script || -f $script ]] || { echo "no script $script" >&2; exit 1; }
 
@@ -134,8 +134,8 @@ ExecStopPost=/pos/bin/bash -c 'echo "vm.sh: exit $$EXIT_STATUS" >/dev/ttyS1; /po
 EOF
 )
 code=$(cred pos.vm-script <"$script")
-out=${builds}/${id}/vm
-log=${builds}/${id}/logs/vm-${image}.log
+out=${builds}/${id}/vm/${output}
+log=${builds}/${id}/logs/vm-${output}.log
 mkdir -p "$out"
 rm -f "$out/script.out"
 status=0

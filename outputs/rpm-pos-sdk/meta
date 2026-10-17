@@ -1,0 +1,3 @@
+# The pos-sdk RPM package and its debug info. BUILD.md "RPM packages".
+requires sdk
+host-requires rpm-build

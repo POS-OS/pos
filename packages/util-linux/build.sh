@@ -1,56 +1,40 @@
-#!/usr/bin/env bash
+pkg() {
+  # util-linux provides login, su, nologin, sulogin, chfn, chsh, runuser and
+  # kill (BUILD.md "System stage"). shadow keeps the account tools, so vipw and
+  # newgrp are left to it.
+  # more does without libmagic: util-linux does not require file.
+  # The install runs unprivileged: no chown/setuid at make install time, the
+  # set-uid programs are marked with pkg_setuid below.
+  pkg_autotools \
+    --runstatedir=/run \
+    --disable-static \
+    --disable-pylibmount \
+    --without-python \
+    --disable-makeinstall-chown \
+    --disable-makeinstall-setuid \
+    --disable-makeinstall-tty-setgid \
+    --disable-vipw \
+    --disable-newgrp \
+    --disable-setpriv \
+    --enable-fs-paths-default="${prefix}/sbin" \
+    --without-selinux \
+    --without-audit \
+    --without-smack \
+    --without-utempter \
+    --without-econf \
+    --without-libmagic \
+    --with-systemdsystemunitdir="${prefix}/lib/systemd/system" \
+    --with-tmpfilesdir="${prefix}/lib/tmpfiles.d" \
+    --with-sysusersdir="${prefix}/lib/sysusers.d" \
+    --with-bashcompletiondir="${prefix}/share/bash-completion/completions" \
+    --with-systemd
+  # The unit names mv by its /usr path (not a configure substitution).
+  unit=${dest_dir}${prefix}/lib/systemd/system/lastlog2-import.service
+  if [[ -f $unit ]]; then
+    sed -i "s|/usr/bin/mv |${prefix}/bin/mv |" "$unit"
+    ! grep -q '/usr/' "$unit" || { echo "util-linux: $unit still names /usr" >&2; exit 1; }
+  fi
 
-set -euo pipefail
-
-source "$POS_BASE/buildsys/pkg.sh"
-require_container
-pkg_setup
-pkg_sync_src
-
-cd "$build_dir" || exit 1
-# util-linux provides login, su, nologin, sulogin, chfn, chsh, runuser and
-# kill (BUILD.md "System stage"). shadow keeps the account tools, so vipw and
-# newgrp are left to it.
-# more does without libmagic: util-linux does not require file.
-# The install runs unprivileged: no chown/setuid at make install time, the
-# set-uid programs are marked with pkg_setuid below.
-./configure --prefix="$prefix" \
-            --libdir="${prefix}/lib" \
-            --sysconfdir="$sysconfdir" \
-            --localstatedir="$localstatedir" \
-            --runstatedir=/run \
-            --disable-static \
-            --disable-pylibmount \
-            --without-python \
-            --disable-makeinstall-chown \
-            --disable-makeinstall-setuid \
-            --disable-makeinstall-tty-setgid \
-            --disable-vipw \
-            --disable-newgrp \
-            --disable-setpriv \
-            --enable-fs-paths-default="${prefix}/sbin" \
-            --without-selinux \
-            --without-audit \
-            --without-smack \
-            --without-utempter \
-            --without-econf \
-            --without-libmagic \
-            --with-systemdsystemunitdir="${prefix}/lib/systemd/system" \
-            --with-tmpfilesdir="${prefix}/lib/tmpfiles.d" \
-            --with-sysusersdir="${prefix}/lib/sysusers.d" \
-            --with-bashcompletiondir="${prefix}/share/bash-completion/completions" \
-            --with-systemd \
-            "${configure_extra[@]}"
-make -j"$nproc"
-make DESTDIR="$dest_dir" install
-# The unit names mv by its /usr path (not a configure substitution).
-unit=${dest_dir}${prefix}/lib/systemd/system/lastlog2-import.service
-if [[ -f $unit ]]; then
-  sed -i "s|/usr/bin/mv |${prefix}/bin/mv |" "$unit"
-  ! grep -q '/usr/' "$unit" || { echo "util-linux: $unit still names /usr" >&2; exit 1; }
-fi
-
-pkg_setuid "${prefix}/bin/su" "${prefix}/bin/mount" "${prefix}/bin/umount" \
-           "${prefix}/bin/chfn" "${prefix}/bin/chsh"
-
-pkg_finish
+  pkg_setuid "${prefix}/bin/su" "${prefix}/bin/mount" "${prefix}/bin/umount" \
+             "${prefix}/bin/chfn" "${prefix}/bin/chsh"
+}

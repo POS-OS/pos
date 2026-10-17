@@ -1,0 +1,4 @@
+# A bootable system with POS as the base of an RPM system, as a disk.
+# BUILD.md "Images made with dnf" and "Disks".
+requires rpm-pos rpm-pos-sdk rpm-pos-fedora
+host-requires tar zstd systemd-standalone-repart dosfstools mtools e2fsprogs qemu-img

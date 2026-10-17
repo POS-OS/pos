@@ -1,4 +1,4 @@
-# Sourced by pkg_setup for builds that require pos-link.
+# Sourced by _pkg_setup for builds that require pos-link.
 #
 # The sdk compiler already searches /pos/include and /pos/lib. /pos/include
 # must not be named again: that moves it in front of the libstdc++

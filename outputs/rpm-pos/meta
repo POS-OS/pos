@@ -1,0 +1,3 @@
+# The pos RPM package and its debug info. BUILD.md "RPM packages".
+requires core-libs system
+host-requires rpm-build

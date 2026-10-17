@@ -1,0 +1,3 @@
+# A bootable POS system without an RPM layer, as a disk. BUILD.md "Disks".
+requires core-libs system
+host-requires tar zstd rsync systemd-standalone-repart dosfstools mtools e2fsprogs qemu-img

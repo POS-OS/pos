@@ -72,6 +72,12 @@ die() {
   exit 1
 }
 
+# Load all packages/*/meta files into the resolver tables.
+# Inputs:
+#   base    path to the POS checkout
+# Outputs (arrays/maps populated):
+#   PKGS, KIND, REQ, BREQ, HREQ, PREQ, PROV, OBS, SRC, WSRC, OUTS,
+#   PARENT, PIPE, PROVIDERS, BOOTCAP
 meta_load() {
   local dir p key vals line
   for dir in "$base"/packages/*/; do
@@ -119,12 +125,16 @@ meta_load() {
   done
 }
 
+# Validate all loaded package metadata for missing recipes, broken output-of
+# links, missing capability providers, and incomplete obsoletes coverage.
+# Inputs:
+#   base, PKGS, KIND, PARENT, OUTS, REQ, BREQ, PROVIDERS, PIPE, WSRC, OBS, PROV
 meta_validate() {
   local p cap q err=0
   local -A required=()
   for p in "${PKGS[@]}"; do
     case ${KIND[$p]} in
-      package) [[ -x $base/packages/$p/build.sh ]] || { echo "packages/$p: missing executable build.sh" >&2; err=1; } ;;
+      package) [[ -f $base/packages/$p/build.sh ]] || { echo "packages/$p: missing build.sh" >&2; err=1; } ;;
       output)
         q=${PARENT[$p]}
         if [[ ${KIND[$q]:-} != package || " ${OUTS[$q]} " != *" $p "* ]]; then
@@ -183,6 +193,8 @@ meta_validate() {
 
 # Built packages, and host and profile packages that no reference package
 # obsoletes.
+# Inputs:
+#   $1    package name
 available() {
   case ${KIND[$1]} in
     host|profile) ! obsoleted_by_any "$1" "${!REF[@]}" ;;
@@ -191,11 +203,16 @@ available() {
 }
 
 # Whether the build's pipeline builds a package.
+# Inputs:
+#   $1          package name
+#   PIPELINE    active pipeline name
 in_pipeline() {
   [[ ${PIPE[$1]} == "$PIPELINE" ]]
 }
 
 # The package whose build produces p.
+# Inputs:
+#   $1    package or output name
 build_of() {
   if [[ ${KIND[$1]} == output ]]; then
     echo "${PARENT[$1]}"
@@ -205,6 +222,8 @@ build_of() {
 }
 
 # Capabilities a build provides: the package's and its outputs'.
+# Inputs:
+#   $1    package name
 self_provides() {
   local p=$1 o
   echo "${PROV[$p]}"
@@ -214,6 +233,9 @@ self_provides() {
 }
 
 # True when one of the packages q (or, for builds, their outputs) obsoletes p.
+# Inputs:
+#   $1       package name p to test
+#   ${@:2}   candidate package names q
 obsoleted_by_any() {
   local p=$1 q o
   shift
@@ -229,6 +251,11 @@ obsoleted_by_any() {
 # Set PROVIDER to the available provider of a capability. Returns 1 when
 # none is available. Dies when the choice is ambiguous. With ref, the
 # capability is a requirement of a reference package (see the top).
+# Inputs:
+#   $1      capability name
+#   [$2]    non-empty when resolving a requirement of a reference package
+# Outputs:
+#   PROVIDER (shell variable)
 provider() {
   local cap=$1 ref=${2:-} p
   local -a cands=() chosen=()
@@ -246,6 +273,11 @@ provider() {
 }
 
 # The reference's copy of a provider, as PROVIDER=<name>@ref (see the top).
+# Inputs:
+#   $1    capability name
+#   $2    non-empty when resolving a requirement of a reference package
+# Outputs:
+#   PROVIDER (shell variable, set to <name>@ref when found)
 provider_ref() {
   local cap=$1 ref=$2 p
   [[ -n $ref || -n ${BOOTCAP[$cap]:-} ]] ||
@@ -259,6 +291,9 @@ provider_ref() {
   return 1
 }
 
+# Return 0 if an environment entry is satisfied from the reference build (<pkg>@ref).
+# Inputs:
+#   $1    environment entry
 is_ref() {
   [[ $1 == *@ref ]]
 }
@@ -272,6 +307,10 @@ is_ref() {
 # copy is used, as in a new build, where the package is not built yet. Sets
 # ENV (sorted package names) and MISSING (capabilities with no available
 # provider). Returns 1 when anything is missing.
+# Inputs:
+#   $1    package name
+# Outputs:
+#   ENV (array of resolved package names), MISSING (array of unresolved capabilities)
 env_of() {
   local p=$1 cap entry ref q
   local -a queue=()
@@ -310,6 +349,10 @@ env_of() {
   ((${#MISSING[@]} == 0))
 }
 
+# Check whether any package in the resolved ENV[] provides a capability.
+# Inputs:
+#   $1     capability name
+#   ENV    resolved environment array from env_of
 env_provides() {
   local cap=$1 p
   for p in "${ENV[@]}"; do
@@ -319,6 +362,8 @@ env_provides() {
 }
 
 # Packages in the environment that set up the build (buildsys/pkg.sh).
+# Inputs:
+#   ENV    resolved environment array from env_of
 env_scripts() {
   local p
   for p in "${ENV[@]}"; do
@@ -332,6 +377,10 @@ env_scripts() {
 # and TPROV, the capabilities their builds provide. A pos build leaves out
 # the toolchain packages of a stage, which its reference has; a toolchain
 # build has toolchain packages only.
+# Inputs:
+#   $@    stage names and/or package names
+# Outputs:
+#   TARGETS (sorted array of package names), TPROV (map of capabilities provided by TARGETS)
 targets_expand() {
   local t p
   local -A set=()
@@ -365,6 +414,7 @@ targets_expand() {
   done
 }
 
+# Print the names of all defined stages under stages/.
 all_stages() {
   local d
   for d in "$base"/stages/*/; do
@@ -375,6 +425,8 @@ all_stages() {
 
 # What a build of the pipeline builds by default: every stage, or every
 # toolchain package.
+# Inputs:
+#   PIPELINE    active pipeline name
 pipeline_targets() {
   local p
   if [[ $PIPELINE == pos ]]; then
@@ -390,6 +442,8 @@ pipeline_targets() {
 # Warn about run-time requirements that nothing in the target set, or the
 # toolchain a pos build takes from its reference, provides: the released
 # archives would not be complete.
+# Inputs:
+#   $@    target package names
 targets_check() {
   local p cap q found
   for p in "$@"; do
@@ -410,6 +464,10 @@ targets_check() {
 # Packages that must be built for the targets: the targets themselves and
 # every provider of a capability that has no available provider yet.
 # Sets WANTED (sorted).
+# Inputs:
+#   $@    target package names
+# Outputs:
+#   WANTED (sorted array of unbuilt packages required for $@)
 wanted() {
   local -A want=()
   local p cap q o b self changed=1
@@ -455,6 +513,10 @@ wanted() {
 # resolves. A candidate obsoleted by another buildable candidate waits, so
 # the replacement is built instead of the bootstrap package. Returns 1 when
 # nothing can be built.
+# Inputs:
+#   $@    target package names
+# Outputs:
+#   NEXT (package name ready to build), WANTED (array of remaining unbuilt packages)
 next_package() {
   local p
   local -a ready=()

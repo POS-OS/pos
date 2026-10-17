@@ -4,6 +4,9 @@
 # BUILD.md "Build numbers".
 
 # The value of a key in the info of the build in directory $1.
+# Inputs:
+#   $1    build directory ($bdir)
+#   $2    info field key
 info_get() {
   awk -v k="$2" '$1 == k {print $2}' "$1/info"
 }
@@ -11,6 +14,8 @@ info_get() {
 # The part of artifact names that names the build: <version>-<id>, where
 # the version is BUILD, or <BUILD>u<UPDATE> on a release line. The ID
 # alone for a build made without VERSION.
+# Inputs:
+#   $1    build directory ($bdir)
 build_stem() {
   local v
   v=$(info_get "$1" version)
@@ -20,6 +25,8 @@ build_stem() {
 # The version-release of the build's RPM packages: BUILD as the version,
 # <UPDATE>.<id> as the release, UPDATE 0 on main, so an update sorts after
 # the snapshot it was cut from. <id>-1 for a build made without VERSION.
+# Inputs:
+#   $1    build directory ($bdir)
 rpm_evr() {
   local n u
   n=$(info_get "$1" build-number)

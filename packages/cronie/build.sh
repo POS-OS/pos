@@ -1,31 +1,17 @@
-#!/usr/bin/env bash
+pkg() {
+  # cron.d, anacrontab and the spool directory layout install to /etc and /var
+  # and are moved to the factory tree. cronie ships no systemd units; those
+  # come with the POS integration files (BUILD.md "System stage").
+  pkg_autotools \
+    --with-pam \
+    --with-inotify \
+    --enable-anacron \
+    --enable-pie \
+    --enable-relro \
+    --without-selinux \
+    --without-audit
+  # The PAM configuration is POS's (pos-integration).
+  rm -r "${dest_dir}/etc/pam.d"
 
-set -euo pipefail
-
-source "$POS_BASE/buildsys/pkg.sh"
-require_container
-pkg_setup
-pkg_sync_src
-
-cd "$build_dir" || exit 1
-# cron.d, anacrontab and the spool directory layout install to /etc and /var
-# and are moved to the factory tree. cronie ships no systemd units; those
-# come with the POS integration files (BUILD.md "System stage").
-./configure --prefix="$prefix" \
-            --sysconfdir="$sysconfdir" \
-            --localstatedir="$localstatedir" \
-            --with-pam \
-            --with-inotify \
-            --enable-anacron \
-            --enable-pie \
-            --enable-relro \
-            --without-selinux \
-            --without-audit
-make -j"$nproc"
-make DESTDIR="$dest_dir" install
-# The PAM configuration is POS's (pos-integration).
-rm -r "${dest_dir}/etc/pam.d"
-
-pkg_setuid "${prefix}/bin/crontab"
-
-pkg_finish
+  pkg_setuid "${prefix}/bin/crontab"
+}

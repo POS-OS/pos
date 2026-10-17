@@ -10,8 +10,8 @@
 # The packages' separate debug info (pkg_strip in buildsys/pkg.sh) is
 # archived the same way as <build dir>/pos-debug-<stage>-<stem>.tar.zst,
 # merged at <build dir>/assemble-debug/<stage>/pos; it extracts on top of
-# the stage, into /pos/lib/debug. The stage with os-release
-# (pos-integration) gets the build's version in it.
+# the stage, into /pos/lib/debug. The stage with /pos/lib/os-release
+# gets the build's version in it.
 
 set -euo pipefail
 

@@ -1,4 +1,4 @@
-# Sourced by pkg_setup for builds where gcc-host stands in for gcc.
+# Sourced by _pkg_setup for builds where gcc-host stands in for gcc.
 #
 # The Fedora compiler searches /usr. Put /pos ahead of it, as the POS
 # compiler searches /pos. -isystem, not -I: glibc headers must stay system

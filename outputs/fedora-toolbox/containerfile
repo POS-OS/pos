@@ -1,0 +1,24 @@
+# POS as a toolbox image, for working in: the container-fs-dnf image (BASE,
+# the build's pos-dnf) with what toolbox needs; anything else is installed
+# with dnf. BUILD.md "Images made with podman".
+ARG BASE
+FROM $BASE
+
+ENV NAME=pos-fedora-toolbox VERSION=latest
+LABEL com.github.containers.toolbox="true" \
+      name="$NAME" \
+      version="$VERSION" \
+      usage="This image is meant to be used with the toolbox command" \
+      summary="Base image for creating toolbox containers"
+
+# toolbox runs sudo for its user, whom it puts in wheel. POS's
+# /etc/sudoers (from the factory tree) has no wheel rule; this adds one.
+# sudo's PAM configuration is POS's (pos-integration).
+COPY sudoers-toolbox /etc/sudoers.d/toolbox
+RUN chmod 0440 /etc/sudoers.d/toolbox
+
+# toolbox inside a toolbox (and ./build) reach the host with flatpak-spawn,
+# as in Fedora's toolbox image.
+RUN dnf -y install flatpak-spawn && dnf clean all
+
+CMD /pos/bin/bash

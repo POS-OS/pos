@@ -1,0 +1,7 @@
+# Container image with POS as the base of an RPM system. BUILD.md "Images
+# made with dnf".
+requires rpm-pos rpm-pos-sdk rpm-pos-fedora
+host-requires tar zstd
+# Its name in podman; a Fedora layout, with /usr/bin first in PATH.
+tag pos-dnf
+path-priority host

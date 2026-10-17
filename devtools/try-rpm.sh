@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Try out the RPM packages of a build (BUILD.md "RPM packages"), made by
-# ./build rpm. Runs on the host or in a toolbox; dnf runs in a throwaway
-# toolbox pos-<id>-try, which ./build clean also removes.
+# the rpm-pos outputs (./build output). Runs on the host or in a toolbox;
+# dnf runs in a throwaway toolbox pos-<id>-try, which ./build clean also
+# removes.
 #
 #   try-rpm.sh [-b <id>] pos              install pos and pos-sdk into the
 #                                         toolbox: /pos next to Fedora, which
@@ -18,7 +19,7 @@
 # The default build is the current one. The root is work/builds/<id>/rpm-root.
 #
 # Examples:
-#   ./build rpm
+#   ./build output rpm-pos rpm-pos-sdk rpm-pos-fedora
 #   devtools/try-rpm.sh root vim-minimal procps-ng curl
 #   devtools/try-rpm.sh dnf repoquery --installed      what got installed
 #   devtools/try-rpm.sh run                            a shell in the root
@@ -92,7 +93,7 @@ tb_run() {
 }
 
 # dnf, with the build's RPM packages named as files: pos, pos-sdk,
-# pos-fedora and pos-debuginfo are taken from the build, other names from
+# pos-fedora and their debuginfo are taken from the build, other names from
 # Fedora.
 dnf_pos() {
   local -a args=()
@@ -108,7 +109,7 @@ dnf_pos() {
 
 need_repo() {
   [[ -f $repo/pos-$evr.x86_64.rpm ]] || {
-    echo "no RPM packages in $bdir; run ./build rpm" >&2
+    echo "no RPM packages in $bdir; run ./build output rpm-pos rpm-pos-sdk rpm-pos-fedora" >&2
     exit 1
   }
 }

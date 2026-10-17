@@ -19,6 +19,12 @@ config_keys=(
 
 declare -A CONFIG=()
 
+# Load key/value settings from $build_config into CONFIG[].
+# Inputs:
+#   build_config        path to configuration file
+#   POS_BUILD_CONFIG    optional explicit config path override
+# Outputs:
+#   CONFIG              associative array of configured settings
 config_load() {
   local key value line known k
   if [[ ! -f $build_config ]]; then
@@ -43,12 +49,22 @@ config_load() {
 }
 
 # The value of a setting; empty for one without a default.
+# Inputs:
+#   $1    setting key (fedora-release, tools-image, reference-dir, reference)
 config() {
   local line k var def
   for line in "${config_keys[@]}"; do
     read -r k var def <<<"$line"
     [[ $k == "$1" ]] || continue
     [[ $def != - ]] || def=
+    if [[ $k == reference-dir && -z ${!var:-} && -n ${POS_SDK_DIR:-} ]]; then
+      echo "$POS_SDK_DIR"
+      return 0
+    fi
+    if [[ $k == reference && -z ${!var:-} && -n ${POS_SDK:-} ]]; then
+      echo "$POS_SDK"
+      return 0
+    fi
     if [[ -n ${!var:-} ]]; then
       echo "${!var}"
     else

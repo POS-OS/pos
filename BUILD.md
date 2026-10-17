@@ -1,6 +1,7 @@
 # Building
 `./build` (`buildsys/build.sh`) builds the release: every stage in
-`stages/`, each assembled into one archive, and the images in `images/`. It
+`stages/`, each assembled into one archive, and the outputs in `outputs/`
+(images, disks, RPM packages; see "Build outputs"). It
 runs on the host or in any toolbox and needs the host's podman, which it
 reaches through `flatpak-spawn --host` from inside a toolbox, as the
 `toolbox` CLI does. Every step of a build runs in a container of its own
@@ -14,12 +15,12 @@ reaches through `flatpak-spawn --host` from inside a toolbox, as the
     $ ./build run zlib             # one package (and what it needs)
     $ ./build prepare              # prepare sources ahead of a run
     $ ./build status
-    $ ./build rpm                  # pos, pos-sdk and pos-fedora RPM packages
+    $ ./build output               # make the outputs of the current build again
+    $ ./build output rpm-pos       # one output: the pos RPM package
     $ devtools/install.sh          # install the archives as /pos
     $ devtools/try-rpm.sh          # try out the RPM packages
-    $ ./build image container-dnf  # make an image of the current build again
-    $ ./build image fedora-toolbox # POS as a toolbox image
-    $ devtools/vm.sh               # boot the vm-dnf disk in a VM
+    $ ./build output fedora-toolbox  # POS as a toolbox image
+    $ devtools/vm.sh               # boot the vm-disk-dnf disk in a VM
     $ devtools/vm.sh -c devtools/smoke.sh  # check it: boot, run the checks, power off
     $ devtools/compare-builds.sh <id> <id>  # what differs between two builds
 
@@ -28,9 +29,9 @@ A build has an ID (a timestamp) and keeps everything under
 `work/builds/<id>`: `dest/<package>` staging trees, `debug/<package>` debug
 info (see "Debug info"), `logs/<package>.log`, the stage archives
 `pos-<stage>-<stem>.tar.zst` with their `pos-debug-<stage>-<stem>.tar.zst`,
-the RPM packages in `rpm/`, the image archives
-`pos-image-<image>-<stem>.tar.zst` and disks `pos-disk-<image>-<stem>.qcow2`,
-where `<stem>` is `<version>-<id>` (see "Build numbers"). `work/builds/current`
+and what the outputs make: the RPM packages in `rpm/`, image archives
+`pos-<output>-<stem>.tar.zst` and disks `pos-<output>-<stem>.qcow2`, with
+their logs `logs/output-<output>.log`, where `<stem>` is `<version>-<id>` (see "Build numbers"). `work/builds/current`
 points at the build that `run` continues. `run --new` starts another, a
 pos build, or a toolchain build with `--toolchain` (`info`: `pipeline`;
 see "Toolchain"). A
@@ -41,8 +42,8 @@ stands in for is rebuilt with what replaced the bootstrap package:
 `rebuild systemd util-linux`, since util-linux, built against systemd,
 otherwise takes util-linux-bootstrap's place in systemd's environment
 ("systemd: needs systemd"). Builds from before build containers
-(their `info` has no `tools-image`) cannot be continued; `status`, `rpm`,
-`image` and `reference` still work on them.
+(their `info` has no `tools-image`) cannot be continued; `status` and
+`reference` still work on them.
 
 ## Build numbers
 A build is identified by its ID, the timestamp it was created with. An OS
@@ -52,7 +53,7 @@ with `./build tag`:
 
 1. `./build validate` checks the current build from what its producers
    recorded. Every producer records what it made in `made/<name>`
-   (`package-<package>`, `stage-<stage>`, `rpm`, `image-<image>`): the
+   (`package-<package>`, `stage-<stage>`, `output-<output>`): the
    commit it was made from and whether the tree had uncommitted changes.
    It drops its record and `complete` before it starts, so a failed one
    leaves neither. A default `run` that finishes records `complete`;
@@ -66,11 +67,12 @@ with `./build tag`:
 3. `./build bump` commits `VERSION` with the next BUILD, as pos-bot. Run
    it alone when `tag` failed after tagging.
 
-Checks belong to their producer. An image with `images/<image>/check`
-names a script that `devtools/vm.sh` runs in its booted disk (vm-dnf:
-`devtools/smoke.sh`); the image is recorded only when it passes. `run
---no-checks` and `image --no-checks` skip checks and record the image
-`unchecked`, which `validate --unchecked` and `tag --unchecked` accept.
+Checks belong to their producer. An output with a disk checks it with
+`disk_check`, a script that `devtools/vm.sh` runs in the booted disk
+(vm-disk and vm-disk-dnf: `devtools/smoke.sh`); the output is recorded
+only when it passes. `run --no-checks` and `output --no-checks` skip
+checks and record the output `unchecked`, which `validate --unchecked`
+and `tag --unchecked` accept.
 
 Every build carries the numbers of `VERSION` at the commit it was created
 at (`info`: `build-number`, `update`, `version`), tagged or not: a tag
@@ -173,7 +175,7 @@ tree's hash.
 assembling the stages, archives every source its packages were built from,
 as recorded in their metadata: `pos-src-<source>-<key>.tar.zst`, the
 prepared tree or the committed tree. It also archives the build recipes as
-they are at `HEAD` (`buildsys`, `packages`, `stages`, `images`, `rpm`, the docs) as
+they are at `HEAD` (`buildsys`, `packages`, `stages`, `outputs`, the docs) as
 `pos-recipes-<stem>.tar.zst`, with a warning if they changed since the build
 started. Together they are the source of the build's archives. Whether a
 build writes them is chosen when it is created.
@@ -277,15 +279,17 @@ which the main recipe appends to its configure arguments, where the later
 flag wins (`--without-systemd`).
 
 ## Build containers
-Every step of a build (preparing a source, building a package, making the
-RPM packages and the images made with dnf) runs in a podman container of
-its own. A package build sees two things:
+Every step of a build (preparing a source, building a package, making an
+output) runs in a podman container of its own, except what an output
+does with the host's podman (see "Build outputs"). A package build sees
+two things:
 
 * `/usr`: the build's tools image, `localhost/pos-tools:<id>`, made when the
   build is created (`buildsys/tools.containerfile`). It is the `tools-image`
   setting, Fedora's container image by default, pulled then and pinned by
   digest (`info`: `tools-base`), with the `host-requires` and
-  `prepare-requires` of every package and `rpm-build` installed by dnf.
+  `prepare-requires` of every package and the `host-requires` of every
+  output installed by dnf.
   Nothing installs while a build runs, so every step of a run sees the
   same tools whatever order they run in. When a package declares more
   later in the build, the image is made again on the same base
@@ -304,10 +308,11 @@ fails instead of picking it up from whatever else is installed. Of the
 checkout, a step sees only what it uses, at the host's paths: a package
 build the recipes (`buildsys`, `packages`) and its source tree read-only,
 and the build's `build`, `dest` and `debug` directories. A step runs as the
-caller, with `HOME=/tmp`, `LC_ALL=C` and no network. Preparing and making
-the RPM packages have network (for `pos-fedora`'s Fedora provides), and
-images made with dnf run as the container's root (the caller outside it)
-with network.
+caller, with `HOME=/tmp`, `LC_ALL=C` and no network. Preparing has
+network, and an output runs as the container's root (the caller outside
+it) with network: for dnf and Fedora's kernel, and `pos-fedora`'s Fedora
+provides. It sees the recipes (`buildsys`, `outputs`, `stages`) and the
+build directory.
 
 A built package's staging tree carries its metadata in
 `/pos/lib/pos/packages/<name>/`: `meta` (the package's meta, the build
@@ -419,8 +424,8 @@ kept.
 
 The debug trees are not part of build roots. Each stage's is
 archived next to it as `pos-debug-<stage>-<stem>.tar.zst`, which extracts
-on top of the stage into `/pos/lib/debug`, and `./build rpm` makes it the
-`pos-debuginfo` package. gdb looks in `/usr/lib/debug` unless told
+on top of the stage into `/pos/lib/debug`, and the RPM outputs make it the
+`pos-debuginfo` and `pos-sdk-debuginfo` packages. gdb looks in `/usr/lib/debug` unless told
 otherwise, and reads the directory before it loads the program:
 
     $ gdb -iex 'set debug-file-directory /usr/lib/debug:/pos/lib/debug' /pos/bin/bash
@@ -449,7 +454,7 @@ flags have to be passed explicitly. Files a package installs into `etc/` or
 `/pos/share/factory`, and write a tmpfiles.d file of the package,
 `/pos/lib/tmpfiles.d/factory-<package>.conf`, with a `C` line for each:
 `systemd-tmpfiles` copies a file into place where it is missing, at every
-boot and when an image is made (`buildsys/image-factory.sh`). glibc's nss_db helper is one of them: it
+boot and when an image is made (`fs_factory`). glibc's nss_db helper is one of them: it
 is installed as `/var/db/Makefile` and generates the `.db` files there from
 `/etc`. Packages that have a separate vendor directory (pam's `vendordir`)
 ship their defaults there instead. `DESTDIR` is only the staging directory
@@ -644,75 +649,115 @@ and the `zic`/`zdump` utilities.
 `work/builds/<id>/pos-<stage>-<stem>.tar.zst`, with a top-level `pos/`
 directory. The merged tree is left at `work/builds/<id>/assemble/<stage>/pos`.
 
-# Images
-An image is a root filesystem with POS installed, archived as
-`work/builds/<id>/pos-image-<image>-<stem>.tar.zst` by `buildsys/image.sh`.
-`images/<image>/layout` names the stages it holds and the root layout
-around `/pos`: directories with their modes, and the symlinks into `/pos`
-for the paths in "Prefix". Files in `images/<image>/root` are copied in
-after it. `run` makes an image when it assembles every
-stage the image holds, so a plain `run` makes them all. The tree is left at
-`work/builds/<id>/image/<image>`.
+# Build outputs
+An output is what a build makes of its assembled stages: an image, a disk,
+RPM packages. `outputs/<output>/` holds `meta`, which declares what it is
+made from, and `output.sh`, its recipe (format in `buildsys/outputs.sh`):
 
-The image extracts its stage archives into `/pos`, then fills what a first
-boot would: the factory tree's `C` lines are applied to `/etc` and
-`/var` by the image's own `systemd-tmpfiles` (`buildsys/image-factory.sh`), and `/etc/passwd`, `group`, `shadow` and `gshadow` are created by
-POS `systemd-sysusers --root` from `/pos/lib/sysusers.d`. That runs
-through the image's own loader, `pos/lib/ld-linux-x86-64.so.2
---library-path ...`, so `/pos` need not be installed where `run` runs.
+    requires core-libs system
+    host-requires rpm-build
+
+`requires` names stages and other outputs: an output is made from the
+stages of the build once they are assembled, and from what the outputs it
+requires made (container-fs-dnf from the RPM packages of rpm-pos,
+rpm-pos-sdk and rpm-pos-fedora; fedora-toolbox from container-fs-dnf).
+`host-requires` are Fedora packages its steps need in the tools image.
+
+| output | requires | makes |
+| --- | --- | --- |
+| `container-fs` | core-libs, system, sdk | `pos-container-fs-<stem>.tar.zst` |
+| `vm-disk` | core-libs, system | `pos-vm-disk-<stem>.qcow2` |
+| `rpm-pos` | core-libs, system | `rpm/pos`, `rpm/pos-debuginfo` |
+| `rpm-pos-sdk` | sdk | `rpm/pos-sdk`, `rpm/pos-sdk-debuginfo` |
+| `rpm-pos-fedora` | core-libs, system, sdk | `rpm/pos-fedora` |
+| `container-fs-dnf` | the rpm-pos outputs | `pos-container-fs-dnf-<stem>.tar.zst` |
+| `vm-disk-dnf` | the rpm-pos outputs | `pos-vm-disk-dnf-<stem>.qcow2` |
+| `fedora-toolbox` | container-fs-dnf | `localhost/pos-fedora-toolbox` in podman |
+
+`run` makes every output whose stages it assembled, directly or through
+the outputs it requires, so a plain `run` makes them all. Each starts as
+soon as what it requires is made, at the same time as the others that are
+ready, and logs to `logs/output-<output>.log`; after a failure no more
+start. `./build output [<output>...]` makes outputs of the current build
+again (default: every output its assembled stages can make), from what
+the build already has.
+
+A recipe defines `output()`, which runs in a container of the build's
+tools image as the container's root, with network (see "Build
+containers"), and `output_host()`, which runs on the host after it, for
+what needs the host's podman. Both call the functions of
+`buildsys/output-plugins.d`: `fs.sh` makes a root tree and archives it,
+`disk.sh` makes a disk of it and checks the disk, `rpm.sh` makes RPM
+packages and `podman.sh` builds and imports podman images. A recipe may
+use another output's files: vm-disk-dnf takes vm-disk's `root/` and
+`repart.d`.
+
+## Images
+An image is a root filesystem with POS installed, made by `fs.sh` in the
+output's scratch directory, `output/<output>/root` of the build, and
+archived as `pos-<output>-<stem>.tar.zst` (`fs_archive`) or made into a
+disk (see "Disks"). `fs_stages` extracts the stage archives the output
+requires into `/pos`, in order; `fs_layout` makes the root layout around
+`/pos` from `outputs/<output>/layout`: directories with their modes, and
+the symlinks into `/pos` for the paths in "Prefix". `fs_copy` copies the
+files of a directory in, such as `outputs/vm-disk/root` (`/etc/kernel`,
+the network).
+
+`fs_factory` and `fs_sysusers` fill what a first boot would: the factory
+tree's `C` lines are applied to `/etc` and `/var` by the image's own
+`systemd-tmpfiles`, and `/etc/passwd`, `group`, `shadow` and `gshadow` are
+created by POS `systemd-sysusers --root` from `/pos/lib/sysusers.d`. That
+runs through the image's own loader, `pos/lib/ld-linux-x86-64.so.2
+--library-path ...`, so `/pos` need not be installed where it runs.
 Everything is owned by root in the archive. Group write, which build trees
 pick up from the build directory, is removed except on sticky directories.
 
-`images/container` is core-libs, system and the sdk, for
-`podman import` or `docker import`. It has no `/etc/pos/ld.so.cache`; the
-loader searches `/pos/lib`. Programs are in `/pos/bin` and `/pos/sbin`,
-which are not in a container engine's default `PATH`, so the import sets
-it:
+`container-fs` is core-libs, system and the sdk, for `podman import` or
+`docker import`. It has no `/etc/pos/ld.so.cache`; the loader searches
+`/pos/lib`. Programs are in `/pos/bin` and `/pos/sbin`, which are not in a
+container engine's default `PATH`, so the import sets it:
 
     $ podman import \
         --change 'ENV PATH=/pos/bin:/pos/sbin:/usr/local/bin:/usr/bin' \
         --change 'CMD ["/bin/bash"]' \
-        work/builds/<id>/pos-image-container-<stem>.tar.zst pos:<id>
+        work/builds/<id>/pos-container-fs-<stem>.tar.zst pos:<id>
 
-`devtools/import-image.sh [-i <image>] [<id>]` does that, and tags the
+`devtools/import-image.sh [-o <output>] [<id>]` does that, and tags the
 image with the build's version too (`pos:2`), the tag to make containers
-from: it moves to whichever build of that version was imported last. For
-an image made with podman (see "Images made with podman"), which is in
-podman already, it only sets the version tag.
+from: it moves to whichever build of that version was imported last. An
+output's name in podman (`tag`) and whether POS's programs come first in
+`PATH` (`path-priority pos`) are in its `meta`. For an image made with
+podman (see "Images made with podman"), which is in podman already, it
+only sets the version tag.
 
-`images/vm` is a bootable POS system without an RPM layer: core-libs and
-system, Fedora's kernel and a disk (see "Disks"). A layout image with
-`images/<image>/kernel` gets the kernel packages it names:
-`buildsys/image-kernel.sh`, as root in a container of the tools image
-with network, downloads them from Fedora's repositories, unpacks them
-into the image's tree (the image has no rpm) and runs POS's
-kernel-install there, as Fedora's scriptlet does in vm-dnf: its plugins
-run depmod, POS's dracut, which makes the initramfs, and write the boot
-loader entry (`root/etc/kernel`). The modules are in `/usr/lib/modules`,
-with `/lib/modules` a link to it, the path kernel packages and dracut use.
+`vm-disk` is a bootable POS system without an RPM layer: core-libs and
+system, Fedora's kernel and a disk (see "Disks"). `fs_kernel` installs
+Fedora kernel packages into a tree without rpm: it downloads them from
+Fedora's repositories, unpacks them into the tree and runs POS's
+kernel-install there, as Fedora's scriptlet does in vm-disk-dnf: its
+plugins run depmod, POS's dracut, which makes the initramfs, and write the
+boot loader entry (`root/etc/kernel`). The modules are in
+`/usr/lib/modules`, with `/lib/modules` a link to it, the path kernel
+packages and dracut use.
 
 ## Images made with dnf
-An image with `images/<image>/packages` instead of a layout is made by
-`buildsys/image-dnf.sh` with `dnf --installroot`: POS as the base of an RPM
-system (see "RPM packages"). Its packages are the build's own RPM files
-for `pos`, `pos-sdk`, `pos-fedora` and `pos-debuginfo`, and Fedora
-packages from Fedora's repositories, so making it needs the network. `run` makes such
-images when it assembles all stages, after making the RPM packages;
-`./build image [<image>...]` makes images of the
-current build again. Next to the archive, `pos-image-<image>-<stem>.packages`
-lists the packages installed. The tree is removed after archiving: its
-files belong to users the packages create, which only the container's
-root can remove.
+`fs_dnf` makes the tree with `dnf --installroot`: POS as the base of an
+RPM system (see "RPM packages"). A package named `pos` or `pos-*` is the
+build's own RPM file (`pos`, `pos-sdk`, `pos-fedora` and their debuginfo),
+anything else comes from Fedora's repositories. Next to the output's
+artifact, `pos-<output>-<stem>.packages` lists the packages installed. The
+tree's files belong to users the packages create, which only the
+container's root can remove: the scratch directory is removed in the
+container when the output is made.
 
 The root layout comes from Fedora's `filesystem` and `setup` packages and
 pos-fedora's links; users and groups are created by rpm from the packages'
 sysusers definitions. No package creates `/tmp` (on Fedora,
-systemd-tmpfiles and the image builders do), so image-dnf.sh makes it.
-It applies the factory tree's `C` lines too (`buildsys/image-factory.sh`),
-as a boot would: dnf installs none of POS's files outside `/pos`.
-`/etc/os-release` is POS's (pos-fedora's links). Files in `images/<image>/root` are copied
-into the root before dnf runs, for configuration the packages' scriptlets
-read.
+systemd-tmpfiles and the image builders do), so fs_dnf makes it. The
+recipes apply the factory tree's `C` lines too (`fs_factory`), as a boot
+would: dnf installs none of POS's files outside `/pos`. `/etc/os-release`
+is POS's (pos-fedora's links). Files copied in before (`fs_copy`) are
+there for the packages' scriptlets to read.
 
 The scriptlets run in the root as on a running system: dnf runs with
 `/proc`, `/sys` and `/dev` mounted in the root, and a file system of its
@@ -721,39 +766,37 @@ mount namespace of the step's container (which runs as the container's
 root, allowed to mount there) and are gone when dnf is done; what was
 written to `/boot` is kept in the tree.
 
-`images/container-dnf` is `pos`, `pos-sdk`, `pos-fedora` and `dnf`: a
+`container-fs-dnf` is `pos`, `pos-sdk`, `pos-fedora` and `dnf`: a
 container with POS as its base in which `dnf install` adds Fedora
 packages, which use POS for what it replaces:
 
-    $ devtools/import-image.sh -i container-dnf
+    $ devtools/import-image.sh -o container-fs-dnf
     $ podman run --rm -it pos-dnf
     # dnf install htop
 
-`images/vm-dnf` is container-dnf's packages and Fedora's kernel
+`vm-disk-dnf` is container-fs-dnf's packages and Fedora's kernel
 (`kernel-core`, `kernel-modules`): a bootable system. POS boots kernels
 other projects build; Fedora's kernel package installs as on Fedora. Its
-scriptlet runs POS's kernel-install (`root/etc/kernel`: Type #1 boot
-loader entries, the kernel command line), whose plugins are POS's (depmod,
-the loader entry, and dracut's, which makes the initramfs from POS's
-systemd, udev and libraries). The kernel, initramfs and entry are in
+scriptlet runs POS's kernel-install (vm-disk's `root/etc/kernel`: Type #1
+boot loader entries, the kernel command line), whose plugins are POS's
+(depmod, the loader entry, and dracut's, which makes the initramfs from
+POS's systemd, udev and libraries). The kernel, initramfs and entry are in
 `/boot`.
 
 ## Disks
-An image with `images/<image>/repart.d` (layout or dnf) also gets a disk,
-`pos-disk-<image>-<stem>.qcow2`, made by `buildsys/image-disk.sh` from the
-image's archive in a container of the tools image: the image's own
-systemd-boot is installed into `/boot` (POS `bootctl install`), then
-`systemd-repart` makes the partitions of `repart.d` and fills them from
-the tree, without loop devices or privileges. The partitions have the
-discoverable partition types, so systemd finds them by type: no fstab and
-no `root=` on the kernel command line. vm-dnf's disk is a 1G ESP (vfat)
-with `/boot`'s contents, mounted at `/boot`, and an 8G root (ext4) with
-the rest. The disk is a compressed qcow2 image (systemd-repart's raw disk
-converted with `qemu-img`), which qemu and libvirt boot as it is; how to
-run it is up to whoever uses it. `qemu-img convert -O raw` gives a raw
-disk.
+`disk_make` makes the tree a disk, `pos-<output>-<stem>.qcow2`: the
+image's own systemd-boot is installed into `/boot` (POS `bootctl
+install`), then `systemd-repart` makes the partitions of a `repart.d` and
+fills them from the tree, without loop devices or privileges. The
+partitions have the discoverable partition types, so systemd finds them
+by type: no fstab and no `root=` on the kernel command line. vm-disk's
+`repart.d`, which vm-disk-dnf uses too, is a 1G ESP (vfat) with `/boot`'s
+contents, mounted at `/boot`, and an 8G root (ext4) with the rest. The
+disk is a compressed qcow2 image (systemd-repart's raw disk converted with
+`qemu-img`), which qemu and libvirt boot as it is; how to run it is up to
+whoever uses it. `qemu-img convert -O raw` gives a raw disk.
 
-`devtools/vm.sh [-i <image>] [<id>]` boots a disk in qemu with KVM and
+`devtools/vm.sh [-o <output>] [<id>]` boots a disk in qemu with KVM and
 UEFI firmware, in a container of `localhost/pos-vm` (Fedora with qemu
 and OVMF, made when missing), on the serial console of the terminal
 (Ctrl-a x quits). The disk is not changed: the VM writes to an overlay
@@ -766,26 +809,25 @@ the script and a unit that runs it go in as credentials (the unit as
 `systemd.extra-unit`, pulled in by `systemd.wants` on the command line),
 it runs as root once the boot transaction is done, writes to a second
 serial port that vm.sh prints, and the VM powers off. vm.sh exits with the
-script's status; the console goes to `logs/vm-<image>.log` of the build.
+script's status; the console goes to `logs/vm-<output>.log` of the build.
 `devtools/smoke.sh` is the check of a booted image: system state, failed
 units, module loading in the initrd and after, unit file modes, network
 and dnf, the PAM services and sudo. Its status is the number of failed
-checks.
+checks. `disk_check` runs it in `output_host()` (see "Build numbers").
 
 ## Images made with podman
-An image with `images/<image>/containerfile` is made by podman from
-another image of the build, named in `images/<image>/from`, which `run`
-has just made or `./build image` finds in the build. The build imports
-that image's archive into podman as `localhost/pos-<x>:<id>` (images
-`container-<x>` and `<x>`; `container` is `pos`) and builds on it, as
-`BASE`. The result exists only in podman's local store, tagged with the
-build ID and with the build's version (`localhost/pos-fedora-toolbox:2`),
-which moves to the build that made the image last. Builds made by other
-users are in their own podman stores. `devtools/import-image.sh` imports
-the other images of a build into podman the same way, or moves the version
-tag back to an earlier build.
+`podman_build` makes an image with podman from the output's
+`containerfile`, on top of the image of another output, which it requires.
+It imports that output's archive into podman under its `tag`
+(container-fs-dnf: `localhost/pos-dnf:<id>`) and builds on it, as `BASE`.
+The result exists only in podman's local store, tagged with the build ID
+and with the build's version (`localhost/pos-fedora-toolbox:2`), which
+moves to the build that made the image last. Builds made by other users
+are in their own podman stores. `devtools/import-image.sh` imports the
+other images of a build into podman the same way, or moves the version tag
+back to an earlier build.
 
-`images/fedora-toolbox` is container-dnf as a toolbox image,
+`fedora-toolbox` is container-fs-dnf as a toolbox image,
 `localhost/pos-fedora-toolbox`, for working in a POS-based toolbox; builds
 do not use it. It adds what toolbox needs and nothing installs:
 toolbox puts its user in `wheel` with an empty password and runs sudo, so
@@ -799,15 +841,18 @@ A toolbox stays on the image it was made from: moving to a later build is
 making the toolbox again, from the image of that build.
 
     $ toolbox create -i localhost/pos-fedora-toolbox:<version> <name>
-    $ devtools/import-image.sh -i fedora-toolbox <id>   # back to build <id>
+    $ devtools/import-image.sh -o fedora-toolbox <id>   # back to build <id>
 
 # RPM packages (experimental)
-`./build rpm [<stage>...]` makes the RPM packages of the current build's
-assembled stages (default: all), in a build container
-(`buildsys/rpm.sh`). They are versioned with the build ID and written to
-`work/builds/<id>/rpm`. `run` makes them too
-when it makes an image with dnf (see "Images made with dnf"). dnf
-installs them as files, next to packages from Fedora's repositories:
+The outputs rpm-pos, rpm-pos-sdk and rpm-pos-fedora make the RPM packages
+of the build's assembled stages, when `run` assembles their stages or with
+`./build output rpm-pos rpm-pos-sdk rpm-pos-fedora`. Each recipe says what
+its packages are; `buildsys/output-plugins.d/rpm.sh` has what they share:
+`rpm_stages` packages the merged trees of the output's stages (`pos`,
+`pos-sdk` and their debug info), `rpm_spec_head` and `rpm_build` make a
+package of a spec, which rpm-pos-fedora writes itself. They are versioned with the build ID and written to
+`work/builds/<id>/rpm`. dnf installs them as files, next to packages from
+Fedora's repositories:
 
     $ sudo dnf --installroot=<root> --releasever=44 --use-host-config \
         install work/builds/<id>/rpm/pos{,-sdk,-fedora}-<BUILD>-0.<id>.x86_64.rpm dnf
@@ -818,8 +863,8 @@ installs them as files, next to packages from Fedora's repositories:
   it, and is removed again with dnf.
 * `pos-sdk` is the `/pos` tree of the sdk stage, and requires `pos` of the
   same build.
-* `pos-debuginfo` is the debug info of both in `/pos/lib/debug` (see
-  "Debug info"); made when the build has any.
+* `pos-debuginfo` and `pos-sdk-debuginfo` are the debug info of each in
+  `/pos/lib/debug` (see "Debug info"); made when the build has any.
 * `pos-fedora` makes a Fedora hybrid: it requires `pos` and `pos-sdk`
   (the systems it is for build with POS) and stands in for the Fedora
   packages POS replaces. On a system built with it, dnf resolves Fedora
@@ -833,8 +878,9 @@ with podman:
     $ devtools/try-rpm.sh run ldd /usr/bin/curl
     $ devtools/try-rpm.sh clean
 
-`rpm/fedora` lists the Fedora packages POS replaces, by POS package; a
-line counts when its POS package is in the stages. For those, pos-fedora:
+`outputs/rpm-pos-fedora/fedora` lists the Fedora packages POS replaces,
+by POS package; a line counts when its POS package is in the stages. For
+those, pos-fedora:
 
 * provides what they provide, as Fedora's repositories list it, at
   Fedora's versions: names, `name(x86-64)`, `config()`, `rtld(GNU_HASH)`,
@@ -854,9 +900,9 @@ line counts when its POS package is in the stages. For those, pos-fedora:
   have is not linked, so those install next to it.
 
 A claim stands only if POS has every versioned soname and symbol version
-the Fedora package provides; otherwise `rpm` drops it with a warning
+the Fedora package provides; otherwise rpm-pos-fedora drops it with a warning
 (listed in `rpm/pos-fedora.unmet`). Packages whose ABI differs from Fedora's
-are left out of `rpm/fedora` with the reason, and Fedora's copy is
+are left out of that list with the reason, and Fedora's copy is
 installed next to POS where something needs it (OpenSSL 3 beside POS
 OpenSSL 4).
 
@@ -875,7 +921,7 @@ and the library directories, so an initramfs is made from POS's systemd.
 The same dracut makes the initramfs when an image is made and on a running
 system, through kernel-install.
 
-rpmbuild's defaults are for Fedora's `/usr`, and both specs turn them off:
+rpmbuild's defaults are for Fedora's `/usr`, and every spec turns them off:
 automatic dependencies (they would make `pos` provide `libc.so.6()(64bit)`
 and replace Fedora without pos-fedora), and the post-install steps
 (stripping, debug info, `/usr/lib/.build-id` links, man page compression,
@@ -1031,7 +1077,7 @@ see "Prefix"), and POS's systemd presets, `80-pos.preset`: networkd,
 networkd-wait-online and resolved are enabled, ahead of systemd's
 `90-systemd.preset` and of any preset a system adds. A system with POS as
 its base is POS: pos-fedora stands in for Fedora's `fedora-release`
-packages (`rpm/fedora`), with their provides (dnf's
+packages (`outputs/rpm-pos-fedora/fedora`), with their provides (dnf's
 `system-release(releasever)`), so Fedora's identity and presets are not
 installed.
 
