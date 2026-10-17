@@ -256,6 +256,7 @@ cmd_output() {
   bdir=$builds/$id
   [[ -n $(build_info tools-image) ]] ||
     die "build $id builds in toolboxes, which this buildsys no longer does; start another with run --new"
+  build_versioned "$bdir"
   if ((${#args[@]} == 0)); then
     for s in $(all_stages); do
       [[ ! -f $bdir/made/stage-$s ]] || stages+=("$s")

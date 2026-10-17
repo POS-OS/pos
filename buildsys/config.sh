@@ -15,6 +15,7 @@ config_keys=(
   "tools-image POS_TOOLS_IMAGE -"
   "reference-dir POS_REFERENCE_DIR -"
   "reference POS_REFERENCE -"
+  "release-dir POS_RELEASE_DIR -"
 )
 
 declare -A CONFIG=()
@@ -50,7 +51,8 @@ config_load() {
 
 # The value of a setting; empty for one without a default.
 # Inputs:
-#   $1    setting key (fedora-release, tools-image, reference-dir, reference)
+#   $1    setting key (fedora-release, tools-image, reference-dir, reference,
+#         release-dir)
 config() {
   local line k var def
   for line in "${config_keys[@]}"; do

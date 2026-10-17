@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Makes an image a build made available in podman, tagged with the build ID
-# and with its version (BUILD, or <BUILD>u<UPDATE>), the tag to make
-# containers and toolboxes from. The version tag moves to whichever build
-# of that version was made available last. A build tags the images it
-# makes with podman itself; this imports the others, or moves the version
-# tag back to an earlier build:
+# and with its product version (1.0), the tag to make containers and
+# toolboxes from. The version tag moves to whichever build of that version
+# was made available last. A build tags the images it makes with podman
+# itself; this imports the others, or moves the version tag back to an
+# earlier build:
 #
 #   import-image.sh [-o <output>] [<id>]   (default: container-fs, the current build)
-#   toolbox create -i localhost/pos-fedora-toolbox:<version>
+#   toolbox create -i localhost/pos-fedora-toolbox:<product version>
 #
 # An output's name in podman is the tag in outputs/<output>/meta
 # (container-fs: pos, container-fs-dnf: pos-dnf). One with an archive
@@ -44,8 +44,8 @@ id=${1:-$(basename "$(readlink "${builds}/current")")}
 bdir=${builds}/${id}
 [[ -f $bdir/info ]] || { echo "no build $id" >&2; exit 1; }
 [[ -f $base/outputs/$output/meta ]] || { echo "not an output: $output" >&2; exit 1; }
-version=$(info_get "$bdir" version)
-[[ -n $version ]] || { echo "build $id has no version (made without VERSION)" >&2; exit 1; }
+version=$(info_get "$bdir" product-version)
+[[ -n $version ]] || { echo "build $id has no product version (made before VERSION had one)" >&2; exit 1; }
 name=$(meta tag)
 [[ -n $name ]] || { echo "$output has no name in podman (meta: tag)" >&2; exit 1; }
 
@@ -67,7 +67,7 @@ else
   archive=$(realpath "$archive")
   podman import --change "ENV PATH=$path" \
     --change 'CMD ["/usr/bin/bash"]' \
-    --change "LABEL pos.build=$id" --change "LABEL pos.version=$version" \
+    --change "LABEL pos.build=$id" --change "LABEL pos.version=$(build_identifier "$bdir")" \
     "${archive#/run/host}" "localhost/${name}:${id}"
 fi
 podman tag "localhost/${name}:${id}" "localhost/${name}:${version}"

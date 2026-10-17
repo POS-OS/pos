@@ -20,3 +20,8 @@
 # build ID in reference-dir, or none for a toolchain build with Fedora's
 # compiler. Default: the one ./build reference marked last.
 #reference none
+
+# Release library (POS_RELEASE_DIR): ./build publish copies a numbered
+# build's artifacts into <release-dir>/<release>; publish reads it, builds
+# do not record it. No default: publish needs it.
+#release-dir /path/to/pos-releases

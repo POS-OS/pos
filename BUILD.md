@@ -31,7 +31,8 @@ info (see "Debug info"), `logs/<package>.log`, the stage archives
 `pos-<stage>-<stem>.tar.zst` with their `pos-debug-<stage>-<stem>.tar.zst`,
 and what the outputs make: the RPM packages in `rpm/`, image archives
 `pos-<output>-<stem>.tar.zst` and disks `pos-<output>-<stem>.qcow2`, with
-their logs `logs/output-<output>.log`, where `<stem>` is `<version>-<id>` (see "Build numbers"). `work/builds/current`
+their logs `logs/output-<output>.log`, where `<stem>` is
+`<major>.<minor>-<build>.<release>` (see "Build numbers"). `work/builds/current`
 points at the build that `run` continues. `run --new` starts another, a
 pos build, or a toolchain build with `--toolchain` (`info`: `pipeline`;
 see "Toolchain"). A
@@ -49,7 +50,8 @@ otherwise takes util-linux-bootstrap's place in systemd's environment
 A build is identified by its ID, the timestamp it was created with. An OS
 build, one that ships, also gets a BUILD number: `VERSION` holds the
 number main's next numbered build gets. The project owners number a build
-with `./build tag`:
+with `./build tag`, or `./build publish`, which also publishes it (see
+"Releases"):
 
 1. `./build validate` checks the current build from what its producers
    recorded. Every producer records what it made in `made/<name>`
@@ -63,38 +65,85 @@ with `./build tag`:
    record names its commit with a clean tree, and its BUILD (`VERSION` at
    its commit) is above every `main-*` tag.
 2. The build's commit is tagged `main-<BUILD>`, an annotated tag with the
-   build ID, the reference and whether checks were skipped.
+   build ID, its identifier, the reference and whether checks were
+   skipped.
 3. `./build bump` commits `VERSION` with the next BUILD, as pos-bot. Run
-   it alone when `tag` failed after tagging.
+   it alone when `tag` or `publish` failed after tagging.
 
 Checks belong to their producer. An output with a disk checks it with
 `disk_check`, a script that `devtools/vm.sh` runs in the booted disk
 (vm-disk and vm-disk-dnf: `devtools/smoke.sh`); the output is recorded
 only when it passes. `run --no-checks` and `output --no-checks` skip
-checks and record the output `unchecked`, which `validate --unchecked`
-and `tag --unchecked` accept.
+checks and record the output `unchecked`, which `validate --unchecked`,
+`tag --unchecked` and `publish --unchecked` accept.
 
-Every build carries the numbers of `VERSION` at the commit it was created
-at (`info`: `build-number`, `update`, `version`), tagged or not: a tag
-changes no artifact. A release is not a renamed snapshot but a new build
-on its release line, whose `VERSION` also has `UPDATE`. The version is
-`<BUILD>` on main and `<BUILD>u<UPDATE>` on a release line, and names the
-artifacts with the build ID (`buildsys/buildinfo.sh`):
+Every build carries the version of `VERSION` at the commit it was created
+at, tagged or not: a tag changes no artifact. `VERSION` holds the
+product version (`PRODUCT_VERSION=1.0`, `<major>.<minor>`), the product
+release (`PRODUCT_RELEASE`: a static string, or empty for
+`<branch>.<timestamp>`), the service release revision (`REVISION`, 0
+for now), the RPM release number (`RPM_RELEASE`) and `BUILD`. A new build
+records them in its `info` (`product-version`, `product-release`,
+`release-type`, `revision`, `rpm-release`, `build-number`), with the
+default product release made of the branch (what rpm does not allow in a
+release becomes `_`) and the build ID as `20261017-1524`. `run --new`
+refuses a commit whose `VERSION` lacks a field or has a malformed one.
+Builds made before `VERSION` had a product version have no names for
+their artifacts: `run` does not continue them and `output` does not make
+their outputs; `status`, `validate` and `reference` still work on them.
 
-* archives and disks: `pos-system-12-<id>.tar.zst`, `pos-system-12u3-<id>.tar.zst`;
-* RPM packages: version BUILD, release `<UPDATE>.<id>`, UPDATE 0 on main,
-  so an update sorts after the snapshot it was cut from (`pos-12-0.<id>`,
-  `pos-12-3.<id>`);
-* os-release (assembled into the stage that has it): `VERSION="12"` or
-  `"12 Update 3"`, `VERSION_ID=12`, `POS_BUILD`, `POS_UPDATE`,
-  `BUILD_ID=<id>`, and `PRETTY_NAME` with the version;
-* podman images: tagged `:<id>` as before, labelled `pos.version`.
+The version names the build (`buildsys/buildinfo.sh`), for product
+version 1.0, BUILD 3, revision 0 and release `main.20261017-1524`:
 
-A build without `VERSION` at its commit is named by its ID alone.
+* the identifier: `1.0.3.0.main.20261017-1524`
+  (`<product version>.<build>.<revision>.<release>`), in the tag and
+  os-release;
+* artifacts: `<artifact>-<major>.<minor>-<build>.<release>`, in the build
+  directory and the release library alike:
+  `pos-system-1.0-3.main.20261017-1524.tar.zst`;
+* RPM packages: version `<major>.<minor>.0`, release
+  `<rpm release>.<release>` without the timestamp's `-`, which rpm does not
+  allow: `pos-1.0.0-1.main.202610171524.x86_64.rpm`. Updates of a product
+  version sort by the RPM release number first, then the release: raise
+  `RPM_RELEASE` for a branch from main on the same product version, and
+  for each new static product release. A static product release has only
+  what rpm allows (letters, digits and `. _ + ~ ^`);
+* os-release (assembled into the stage that has it; os-release(5)):
+  `PRETTY_NAME="POS 1.0"`, `VERSION="main.20261017-1524"`,
+  `VERSION_ID=1.0`, `BUILD_ID=1.0.3.0.main.20261017-1524`,
+  `POS_BUILD=3.0` (the OS build, `<build>.<revision>`, which has no
+  field of its own) and `RELEASE_TYPE`, `development` for a
+  `<branch>.<timestamp>` release and `stable` for a static one. `NAME`
+  stays `POS`, without a version;
+* podman images: tagged `:<id>` and with the product version (`:1.0`),
+  which moves to the build that made the image last, labelled
+  `pos.version` with the identifier.
 
 `tag` runs on main, with `VERSION` at HEAD still the build's BUILD. Every
 commit between two bumps carries the same BUILD; only the tagged one is
 that build. Neither command pushes.
+
+## Releases
+`./build publish [--unchecked]` numbers the current build as `tag` does
+and copies its artifacts into the release library, the `release-dir`
+setting (a local directory for now), as `<release-dir>/<release>`, the
+release named as the artifacts are (`1.0-3.main.20261017-1524`): the
+build's `info`, everything named after it (stage and debug archives,
+image archives with their package lists, disks, the recipes archive), its
+source archives, its RPM packages in `rpm/`, and `SHA256SUMS`. It refuses
+a release that is there already, and one whose RPM packages would not
+update those of a release of the same product version there (the same
+version-release, or a lower RPM release number). The release is filled
+under a temporary name and appears once the tag is made; then `VERSION`
+is bumped.
+
+The toolbox image is not published: `devtools/release-toolbox.sh
+<release>` makes it in podman from the release's container-fs-dnf, with
+this checkout's `outputs/fedora-toolbox`, tagged with the release and the
+product version:
+
+    $ devtools/release-toolbox.sh 1.0-3.main.20261017-1524
+    $ toolbox create -i localhost/pos-fedora-toolbox:1.0 <name>
 
 ## Settings
 Settings of `./build` are lines of `<key> <value>` in
@@ -111,6 +160,7 @@ an unknown key is an error.
 | `tools-image` | `POS_TOOLS_IMAGE` | `registry.fedoraproject.org/fedora:<release>` |
 | `reference-dir` | `POS_REFERENCE_DIR` | none: no reference store |
 | `reference` | `POS_REFERENCE` | the store's default (see "Reference builds"); `none`: a toolchain build with Fedora's compiler |
+| `release-dir` | `POS_RELEASE_DIR` | none: `publish` needs it; read by `publish`, not recorded by builds |
 
 ## Sources
 POS builds from upstream source, not from upstream releases, so it does
@@ -723,8 +773,8 @@ container engine's default `PATH`, so the import sets it:
         work/builds/<id>/pos-container-fs-<stem>.tar.zst pos:<id>
 
 `devtools/import-image.sh [-o <output>] [<id>]` does that, and tags the
-image with the build's version too (`pos:2`), the tag to make containers
-from: it moves to whichever build of that version was imported last. An
+image with the build's product version too (`pos:1.0`), the tag to make
+containers from: it moves to whichever build of that version was imported last. An
 output's name in podman (`tag`) and whether POS's programs come first in
 `PATH` (`path-priority pos`) are in its `meta`. For an image made with
 podman (see "Images made with podman"), which is in podman already, it
@@ -821,8 +871,8 @@ checks. `disk_check` runs it in `output_host()` (see "Build numbers").
 It imports that output's archive into podman under its `tag`
 (container-fs-dnf: `localhost/pos-dnf:<id>`) and builds on it, as `BASE`.
 The result exists only in podman's local store, tagged with the build ID
-and with the build's version (`localhost/pos-fedora-toolbox:2`), which
-moves to the build that made the image last. Builds made by other users
+and with the build's product version (`localhost/pos-fedora-toolbox:1.0`),
+which moves to the build that made the image last. Builds made by other users
 are in their own podman stores. `devtools/import-image.sh` imports the
 other images of a build into podman the same way, or moves the version tag
 back to an earlier build.
@@ -843,7 +893,7 @@ needed.
 A toolbox stays on the image it was made from: moving to a later build is
 making the toolbox again, from the image of that build.
 
-    $ toolbox create -i localhost/pos-fedora-toolbox:<version> <name>
+    $ toolbox create -i localhost/pos-fedora-toolbox:<product version> <name>
     $ devtools/import-image.sh -o fedora-toolbox <id>   # back to build <id>
 
 # RPM packages (experimental)
@@ -858,7 +908,7 @@ package of a spec, which rpm-pos-fedora writes itself. They are versioned with t
 Fedora's repositories:
 
     $ sudo dnf --installroot=<root> --releasever=44 --use-host-config \
-        install work/builds/<id>/rpm/pos{,-sdk,-fedora}-<BUILD>-0.<id>.x86_64.rpm dnf
+        install work/builds/<id>/rpm/pos{,-sdk,-fedora}-1.0.0-1.main.202610171524.x86_64.rpm dnf
 
 * `pos` is the `/pos` tree of the stages other than sdk: the OS, as one
   package. It installs nothing outside `/pos` and provides nothing Fedora

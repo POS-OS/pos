@@ -1,3 +1,21 @@
-# The BUILD number of main's next numbered build (BUILD.md "Build numbers").
-# ./build tag numbers a build with it and commits the next; not edited by hand.
+# The version of the builds made from this commit (BUILD.md "Build
+# numbers"). Read as data, never sourced.
+
+# The product version, <major>.<minor>.
+PRODUCT_VERSION=1.0
+
+# The product release: a static string (letters, digits and . _ + ~ ^),
+# or empty for <branch>.<timestamp of the build>.
+PRODUCT_RELEASE=
+
+# The service release revision. Static for now.
+REVISION=0
+
+# The release number of the RPM packages, which comes first in their
+# release: set it higher for a branch from main on the same product
+# version, and for each new static product release.
+RPM_RELEASE=1
+
+# The BUILD number of main's next numbered build. ./build tag numbers a
+# build with it and commits the next; not edited by hand.
 BUILD=3

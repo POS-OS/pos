@@ -60,24 +60,24 @@ while read -r package; do
   fi
 done < "$list"
 
-# os-release names the build: VERSION and PRETTY_NAME say "12" or
-# "12 Update 3", VERSION_ID is BUILD, POS_BUILD and POS_UPDATE are the
-# separate numbers and BUILD_ID the build's ID. A copy, not the package's
-# staging tree.
+# os-release names the build (os-release(5); BUILD.md "Build numbers"):
+# PRETTY_NAME and VERSION_ID the product version, VERSION the product
+# release, BUILD_ID the build's identifier and POS_BUILD the OS build,
+# <build>.<revision>, which has no field of its own. RELEASE_TYPE is
+# development for a <branch>.<timestamp> release, stable for a static
+# one. NAME stays the package's, without a version. A copy, not the
+# package's staging tree.
 osrel=$root/pos/lib/os-release
 if [[ -f $osrel ]]; then
-  n=$(info_get "$bdir" build-number)
-  u=$(info_get "$bdir" update)
-  v=$n${u:+ Update $u}
   name=$(sed -n 's/^NAME="\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' "$osrel")
-  sed -i -E '/^(PRETTY_NAME|VERSION|VERSION_ID|POS_BUILD|POS_UPDATE|BUILD_ID)=/d' "$osrel"
+  sed -i -E '/^(PRETTY_NAME|VERSION|VERSION_ID|BUILD_ID|POS_BUILD|RELEASE_TYPE)=/d' "$osrel"
   {
-    echo "PRETTY_NAME=\"$name${v:+ $v}\""
-    [[ -z $n ]] || echo "VERSION=\"$v\""
-    [[ -z $n ]] || echo "VERSION_ID=$n"
-    [[ -z $n ]] || echo "POS_BUILD=$n"
-    [[ -z $u ]] || echo "POS_UPDATE=$u"
-    echo "BUILD_ID=$(basename "$bdir")"
+    echo "PRETTY_NAME=\"$name $(info_get "$bdir" product-version)\""
+    echo "VERSION=\"$(info_get "$bdir" product-release)\""
+    echo "VERSION_ID=$(info_get "$bdir" product-version)"
+    echo "BUILD_ID=$(build_identifier "$bdir")"
+    echo "POS_BUILD=$(os_build "$bdir")"
+    echo "RELEASE_TYPE=$(info_get "$bdir" release-type)"
   } >>"$osrel"
 fi
 

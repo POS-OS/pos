@@ -78,6 +78,8 @@ usage: ./build plan [--new [--toolchain]] [<target>...]
        ./build validate [--unchecked] [<id>]   check that a build is an OS build
        ./build tag [--unchecked]               number the current build: validate it,
                                                tag its commit main-<BUILD>, then bump
+       ./build publish [--unchecked]           number the current build as tag does and
+                                               copy its artifacts into the release library
        ./build bump                            commit VERSION with the next BUILD
 
 A target is a stage (stages/<stage>/packages) or a package. The default is
@@ -101,6 +103,7 @@ $build_config; an environment variable overrides one:
                                       (default $fedora_image:<release>)
   reference-dir   POS_REFERENCE_DIR   the reference store
   reference       POS_REFERENCE       the reference build, or none
+  release-dir     POS_RELEASE_DIR     the release library publish copies into
 EOF
   exit 1
 }
@@ -157,9 +160,11 @@ is_toolchain_pipeline() {
 #   $1          whether to produce source archives ("yes" or "no")
 #   PIPELINE    active pipeline name ("pos" or "toolchain")
 build_new() {
-  local archives=$1 ref from
+  local archives=$1 ref from branch version
   id=$(date +%Y%m%d%H%M)
   [[ ! -e $builds/$id ]] || die "build $id already exists; wait a minute"
+  branch=$(git -C "$base" rev-parse --abbrev-ref HEAD)
+  version=$(version_info HEAD "$branch" "$id") || exit 1
   ref=$(reference_choose)
   is_toolchain_pipeline || [[ $ref != none ]] ||
     die "a pos build takes the toolchain from an SDK reference; make one with: POS_REFERENCE=none ./build run --new --toolchain"
@@ -175,9 +180,9 @@ build_new() {
     echo "tools-base $from"
     echo "tools-image localhost/pos-tools:$id"
     echo "reference $ref"
-    echo "branch $(git -C "$base" rev-parse --abbrev-ref HEAD)"
+    echo "branch $branch"
     tree_state | awk '{print "commit", $1; print "tree", $2}'
-    version_info HEAD
+    echo "$version"
     echo "started $(date -u +%FT%TZ)"
     echo "source-archives $archives"
   } >"$builds/$id/info"
@@ -686,6 +691,7 @@ cmd_run() {
   bdir=$builds/$id
   [[ -n $(build_info tools-image) ]] ||
     die "build $id builds in toolboxes, which this buildsys no longer does; start another with run --new"
+  build_versioned "$bdir"
   build_load
   echo "build $id ($PIPELINE), reference $(build_reference) (${#REF[@]} packages)"
   if ((${#args[@]} == 0)); then
@@ -806,6 +812,7 @@ case $cmd in
   clean) cmd_clean "$@" ;;
   validate) cmd_validate "$@" ;;
   tag) cmd_tag "$@" ;;
+  publish) cmd_publish "$@" ;;
   bump) cmd_bump "$@" ;;
   *) usage ;;
 esac
