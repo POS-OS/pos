@@ -35,6 +35,22 @@ check "boot entry is POS's" bash -c 'ls /boot/loader/entries | grep "^pos-" || {
 check "no failed units" bash -c 'out=$(systemctl --failed --no-legend --plain); [[ -z $out ]] || { echo "$out"; false; }'
 check "initrd loads modules (kmod context)" journal_lacks 'Failed to initialize kmod context'
 check "unit files not executable" journal_lacks 'is marked executable'
+# The display's console (tty1) as a screen dump: agetty waiting there for a
+# login name, not for a login program it cannot find.
+check "login prompt on tty1" bash -c 'for i in {1..10}; do
+  grep -aq "login: " /dev/vcs1 && exit 0; sleep 1; done; tr -s " " </dev/vcs1; false'
+# A login shell's PATH comes from login.defs (ENV_SUPATH, ENV_PATH).
+check "login PATH (root)" runuser -l root -c 'command -v systemctl'
+check "login PATH (user)" runuser -l nobody -s /pos/bin/sh -c 'command -v ls'
+# vm.sh's disk is bigger than the image: the root partition grows into it
+# (systemd-repart, /etc/repart.d), its file system with it (systemd-growfs).
+check "root fills its disk" bash -c 'part=$(findmnt -no SOURCE /)
+  disk=/dev/$(lsblk -no PKNAME "$part")
+  free=$(sfdisk -F "$disk" | sed -n "s/^Unpartitioned space .* \([0-9]*\) bytes,.*/\1/p")
+  psize=$(blockdev --getsize64 "$part")
+  fsize=$(df -B1 --output=size / | tail -n 1)
+  echo "$disk: $free bytes unpartitioned; $part: $psize bytes, file system $fsize"
+  ((free < 16 << 20 && fsize * 10 > psize * 9))'
 check "modprobe" bash -c 'modprobe vfat && grep -q "^vfat " /proc/modules'
 check "network link routable" bash -c 'networkctl list --no-legend | grep -q routable || { networkctl list; false; }'
 # On an RPM system (vm-dnf): Fedora packages install on top of POS.

@@ -1,1 +1,1 @@
-rw console=tty0 console=ttyS0
+rw console=ttyS0 console=tty0

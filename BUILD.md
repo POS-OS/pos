@@ -846,11 +846,42 @@ disk is a compressed qcow2 image (systemd-repart's raw disk converted with
 `qemu-img`), which qemu and libvirt boot as it is; how to run it is up to
 whoever uses it. `qemu-img convert -O raw` gives a raw disk.
 
+The root grows to the disk it is on. vm-disk's `root/etc/repart.d` has a
+definition of the root partition without a maximum size, so
+systemd-repart, at every boot, grows it into the free space after it, and
+systemd-growfs-root grows its file system (GPT flag 59, which repart sets
+on the root by default). A copy made bigger before its first boot
+(`qemu-img resize <copy> 40G`), or later, is used whole after the next
+boot. vm.sh's overlay is 4G bigger than the disk, and smoke.sh checks that
+the root fills it.
+
+The disk boots with UEFI firmware only: it has no BIOS boot code, so a
+BIOS (SeaBIOS, libvirt's default) stops at "Booting from Hard Disk". In
+libvirt, choose UEFI without Secure Boot (virt-manager: customize before
+install, Firmware `OVMF_CODE.fd`, not a `secboot` one; virt-install:
+`--boot uefi,firmware.feature0.name=secure-boot,firmware.feature0.enabled=no`),
+since systemd-boot and the kernels are not signed. Libvirt writes to the
+disk it is given; give it a copy.
+
+The kernel command line (vm-disk's `root/etc/kernel/cmdline`) is
+`console=ttyS0 console=tty0`. Kernel messages show on both; the last one,
+the display, is `/dev/console`, where systemd shows its status and the
+first boot's questions. Each has a login prompt: getty@tty1 on the display,
+and a serial getty that systemd's getty generator starts for the serial
+console. On the first boot systemd-firstboot asks for the timezone (UTC is
+filled in) and the root password, which is how root gets one; locale and
+keymap are not asked, as systemd-firstboot asks only where there is a
+choice. Systemd credentials answer the questions instead
+(`passwd.hashed-password.root`, `firstboot.timezone`, see
+systemd-firstboot(1)); libvirt passes them as SMBIOS type 11 strings, as
+vm.sh does.
+
 `devtools/vm.sh [-o <output>] [<id>]` boots a disk in qemu with KVM and
 UEFI firmware, in a container of `localhost/pos-vm` (Fedora with qemu
 and OVMF, made when missing), on the serial console of the terminal
-(Ctrl-a x quits). The disk is not changed: the VM writes to an overlay
-that is gone when it stops. Root is logged in on the console by a getty
+(Ctrl-a x quits), which it makes `/dev/console` by appending
+`console=ttyS0` and `systemd.firstboot=no` to the command line. The disk
+is not changed: the VM writes to an overlay that is gone when it stops. Root is logged in on the console by a getty
 drop-in passed as a systemd credential, so no password is set. The VM
 has qemu's user mode network: dnf works inside.
 
@@ -861,8 +892,8 @@ it runs as root once the boot transaction is done, writes to a second
 serial port that vm.sh prints, and the VM powers off. vm.sh exits with the
 script's status; the console goes to `logs/vm-<output>.log` of the build.
 `devtools/smoke.sh` is the check of a booted image: system state, failed
-units, module loading in the initrd and after, unit file modes, network
-and dnf, the PAM services and sudo. Its status is the number of failed
+units, module loading in the initrd and after, unit file modes, the login
+prompt on tty1, network and dnf, the PAM services and sudo. Its status is the number of failed
 checks. `disk_check` runs it in `output_host()` (see "Build numbers").
 
 ## Images made with podman

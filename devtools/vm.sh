@@ -7,9 +7,12 @@
 #
 # qemu runs with KVM and UEFI firmware (OVMF) in a container of
 # localhost/pos-vm, which is made from Fedora when missing. The disk is not
-# changed: the VM writes to an overlay that is gone when it stops. First
-# boot asks nothing (systemd.firstboot=no, added to the kernel command line
-# by systemd-boot from SMBIOS). The network is qemu's user mode network: the
+# changed: the VM writes to an overlay that is gone when it stops, 4G
+# bigger than the disk, so the root partition grows into it. The
+# serial port is the console and first boot asks nothing (console=ttyS0,
+# which the disk's command line has before the display, tty0, and
+# systemd.firstboot=no, added to the kernel command line by systemd-boot
+# from SMBIOS). The network is qemu's user mode network: the
 # VM reaches out (dnf works), nothing reaches in.
 #
 # Without -c, root is logged in on the console by a getty drop-in passed as
@@ -84,7 +87,8 @@ qemu='
 set -e
 cp /usr/share/edk2/ovmf/OVMF_VARS.fd /tmp/vars.fd
 qemu-img create -q -f qcow2 -b /disk.qcow2 -F qcow2 /tmp/overlay.qcow2
-cmdline=systemd.firstboot=no
+qemu-img resize -q /tmp/overlay.qcow2 +4G
+cmdline="systemd.firstboot=no console=ttyS0"
 args=(-smbios "type=11,value=$1")
 if [[ -n $2 ]]; then
   cmdline+=" systemd.wants=pos-vm-script.service"
@@ -109,7 +113,7 @@ ExecStart=
 ExecStart=-/pos/sbin/agetty --autologin root --noreset --noclear --keep-baud 115200,57600,38400,9600 - ${TERM}
 EOF
   )
-  exec host_podman run --rm -it --device /dev/kvm --security-opt label=disable \
+  exec host_podman run --rm -it --log-driver=none --device /dev/kvm --security-opt label=disable \
     -v "$(host_path "$disk"):/disk.qcow2:ro" localhost/pos-vm bash -c "$qemu" vm "$autologin" ""
 fi
 
@@ -139,7 +143,7 @@ log=${builds}/${id}/logs/vm-${output}.log
 mkdir -p "$out"
 rm -f "$out/script.out"
 status=0
-host_podman run --rm --timeout "${POS_VM_TIMEOUT:-900}" --device /dev/kvm --security-opt label=disable \
+host_podman run --rm --log-driver=none --timeout "${POS_VM_TIMEOUT:-900}" --device /dev/kvm --security-opt label=disable \
   -v "$(host_path "$disk"):/disk.qcow2:ro" -v "$(host_path "$out"):/out" \
   localhost/pos-vm bash -c "$qemu" vm "$unit" "$code" \
   </dev/null >"$log" 2>&1 || status=$?

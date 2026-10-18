@@ -105,6 +105,8 @@ tools_ensure() {
 # unless given net (network) or root: the container's root, which is the
 # caller outside it, allowed to mount in the container's own namespaces
 # (SYS_ADMIN of rootless podman covers its user namespace only).
+# Its output goes to the caller only, not to podman's log (journald by
+# default on Fedora).
 # Inputs:
 #   $1              container name suffix (pos-$id-$name)
 #   <mount|opt>...  zero or more of: net, root, ro:<path>, rw:<path>, pos:<path>
@@ -128,7 +130,7 @@ step_run() {
     esac
   done
   shift
-  host_podman run --rm --replace --name "pos-$id-$name" ${net:+"$net"} ${user:+"$user"} \
+  host_podman run --rm --replace --log-driver=none --name "pos-$id-$name" ${net:+"$net"} ${user:+"$user"} \
     --security-opt label=disable --pids-limit=-1 --ulimit=host \
     "${mounts[@]}" -w /tmp -e HOME=/tmp -e LC_ALL=C \
     "$(build_info tools-image)" "$@"

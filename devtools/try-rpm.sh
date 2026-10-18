@@ -148,7 +148,7 @@ case $cmd in
     # podman maps the same way. :O mounts the root as an overlay.
     tty=()
     [[ -t 0 && -t 1 ]] && tty=(-it)
-    host podman run --rm "${tty[@]}" --network=host \
+    host podman run --rm --log-driver=none "${tty[@]}" --network=host \
       --env PATH=/usr/local/bin:/usr/bin:/pos/bin:/pos/sbin \
       --rootfs "$(host_path "$root"):O" "$@"
     ;;
