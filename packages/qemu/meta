@@ -1,0 +1,4 @@
+# QEMU's source, synced without its firmware (submodules, blobs). Only the
+# guest agent is built from it (packages/qemu-guest-agent).
+kind source
+prepare-requires meson git-core

@@ -76,6 +76,8 @@ logrotate logrotate
 file file file-libs
 which which
 procps procps-ng
+glib glib2
+qemu-guest-agent qemu-guest-agent
 cpio cpio
 dracut dracut
 # dracut: Fedora's subpackages (dracut-network, dracut-squash, ...) are not

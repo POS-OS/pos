@@ -1,0 +1,4 @@
+# GLib, GObject and GIO; the QEMU guest agent needs GLib.
+build-requires gcc pos-link
+requires glibc pcre2 libffi zlib util-linux
+host-requires meson ninja-build python3

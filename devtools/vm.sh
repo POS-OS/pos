@@ -13,7 +13,8 @@
 # which the disk's command line has before the display, tty0, and
 # systemd.firstboot=no, added to the kernel command line by systemd-boot
 # from SMBIOS). The network is qemu's user mode network: the
-# VM reaches out (dnf works), nothing reaches in.
+# VM reaches out (dnf works), nothing reaches in. It has the port of the
+# QEMU guest agent, as libvirt gives a VM (org.qemu.guest_agent.0).
 #
 # Without -c, root is logged in on the console by a getty drop-in passed as
 # a systemd credential (SMBIOS), so no password is set or stored.
@@ -102,6 +103,8 @@ exec qemu-system-x86_64 -machine q35,accel=kvm -cpu host -m 4G -smp 4 \
   -drive if=pflash,format=raw,file=/tmp/vars.fd \
   -drive if=virtio,format=qcow2,file=/tmp/overlay.qcow2 \
   -nic user,model=virtio-net-pci \
+  -device virtio-serial-pci -chardev socket,id=qga,path=/tmp/qga.sock,server=on,wait=off \
+  -device virtserialport,chardev=qga,name=org.qemu.guest_agent.0 \
   -smbios "type=11,value=io.systemd.boot.kernel-cmdline-extra=$cmdline" \
   "${args[@]}"
 '

@@ -14,3 +14,8 @@ os-release  The system's identity (ID=pos), installed as /pos/lib/os-release.
 
 presets/  POS's systemd presets (80-pos.preset), read before systemd's
         90-systemd.preset and other presets of the system.
+
+udev/  udev rules that start POS's services for devices:
+        99-qemu-guest-agent.rules starts qemu-guest-agent.service when
+        the VM has the guest agent's port. Installed into
+        /pos/lib/udev/rules.d.

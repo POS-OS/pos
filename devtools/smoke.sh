@@ -51,6 +51,11 @@ check "root fills its disk" bash -c 'part=$(findmnt -no SOURCE /)
   fsize=$(df -B1 --output=size / | tail -n 1)
   echo "$disk: $free bytes unpartitioned; $part: $psize bytes, file system $fsize"
   ((free < 16 << 20 && fsize * 10 > psize * 9))'
+# vm.sh gives the VM the guest agent's port: udev starts the agent, which
+# keeps running on it (its unit restarts it when it exits).
+check "QEMU guest agent" bash -c 'systemctl is-active qemu-guest-agent &&
+  [[ $(systemctl show -P NRestarts qemu-guest-agent) == 0 ]] ||
+  { systemctl status --no-pager qemu-guest-agent; false; }'
 check "modprobe" bash -c 'modprobe vfat && grep -q "^vfat " /proc/modules'
 check "network link routable" bash -c 'networkctl list --no-legend | grep -q routable || { networkctl list; false; }'
 # On an RPM system (vm-dnf): Fedora packages install on top of POS.

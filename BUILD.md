@@ -558,6 +558,9 @@ outside `/pos` (`buildsys/build.sh` warns on it).
 * shadow: `--enable-vendordir=/pos/share/factory/etc`, so login.defs is found
   before `/etc/login.defs` has been created. pam's vendordir
   (`/pos/share/pam`) could move to the same tree for consistency.
+* qemu-ga: poweroff, halt, reboot, shutdown and hwclock are run by their
+  `/sbin` paths, string constants with no configure option;
+  `packages/qemu/prepare.sh` points them at `/pos/sbin`.
 * logrotate: `--with-compress-command=/pos/bin/gzip`. Tool paths found by
   configure are the general case: a build container finds `/usr/bin`
   tools and records those unless told otherwise (man-db's recipe shows the
@@ -893,8 +896,8 @@ serial port that vm.sh prints, and the VM powers off. vm.sh exits with the
 script's status; the console goes to `logs/vm-<output>.log` of the build.
 `devtools/smoke.sh` is the check of a booted image: system state, failed
 units, module loading in the initrd and after, unit file modes, the login
-prompt on tty1, network and dnf, the PAM services and sudo. Its status is the number of failed
-checks. `disk_check` runs it in `output_host()` (see "Build numbers").
+prompt on tty1, the QEMU guest agent, network and dnf, the PAM services
+and sudo. Its status is the number of failed checks. `disk_check` runs it in `output_host()` (see "Build numbers").
 
 ## Images made with podman
 `podman_build` makes an image with podman from the output's
@@ -1099,6 +1102,21 @@ and the shell userland. It builds on core-libs.
   tload, uptime, vmstat, w and watch, and libproc2. `w` reads sessions from
   logind. Its translated man pages are made by po4a (a host requirement),
   which leaves out those less than 80% translated.
+* The QEMU guest agent (qemu-ga, packages/qemu-guest-agent) answers the
+  host's libvirt in a VM: guest IP addresses, `virsh guestinfo`, shutdown
+  and reboot through the agent, file system freeze for quiesced snapshots,
+  setting the clock and passwords. Its unit is qemu's, started by a udev
+  rule of pos-integration when the VM has the agent's port
+  (`org.qemu.guest_agent.0`, which virt-manager and vm.sh add), so it does
+  nothing elsewhere. QEMU is synced as a subset of its tree, without the
+  firmware submodules and prebuilt firmware, and only the agent is built:
+  configure runs offline (`--disable-download`) with keycodemapdb, the one
+  subproject it checks for, fetched by `packages/qemu/prepare.sh`, and
+  configure's Python packages from the build host. glib, its library, is
+  built from git with gvdb as a submodule; its Python code generators
+  (gdbus-codegen, glib-mkenums, glib-genmarshal, gtester-report) are not
+  shipped, POS has no Python. SPICE's vdagent is left out: clipboard and display resizing
+  need a graphical session.
 
 ## Overlapping binaries
 Several programs are shipped by more than one project. Fedora and LFS pick
@@ -1126,9 +1144,9 @@ differently; POS follows Fedora except where noted.
 | passwd.5, getspnam.3, crypt.3 | man-pages, shadow, libxcrypt | man-pages (sdk) for the first two, shadow's deleted; libxcrypt for crypt, man-pages' deleted |
 
 ## Deferred
-* polkit: needs glib and duktape. glib is fine to add, but duktape's git tree
-  generates its sources with a Python 2 `dist.py`; only release tarballs are
-  buildable. systemd only dlopens polkit at run time, so nothing else in the
+* polkit: needs glib (built, for the guest agent) and duktape. duktape's
+  git tree generates its sources with a Python 2 `dist.py`; only release
+  tarballs are buildable. systemd only dlopens polkit at run time, so nothing else in the
   stage waits on it.
 * gettext tools: the base ships gettext-runtime only (gettext, ngettext,
   envsubst; libintl is glibc's). msgfmt, xgettext and autopoint are build
