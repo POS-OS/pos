@@ -1,3 +1,0 @@
-0
-gawk: mdim9.awk:3: fatal: attempt to use scalar `a["1"]' as an array
-EXIT CODE: 2

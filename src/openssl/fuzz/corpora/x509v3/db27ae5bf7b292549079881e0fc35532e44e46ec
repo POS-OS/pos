@@ -1,2 +1,0 @@
-[default]
-nsCertType = client,server,email,objsign,sslCA,emailCA,objCA

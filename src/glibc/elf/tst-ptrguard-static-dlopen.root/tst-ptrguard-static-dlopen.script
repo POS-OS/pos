@@ -1,1 +1,0 @@
-cp $B/elf/tst-ptrguard-static-dlopen-mod.so $L/tst-ptrguard-static-dlopen-mod.so

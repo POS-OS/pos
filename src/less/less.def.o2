@@ -1,5 +1,0 @@
-; WINDOWCOMPAT
-; Text-mode app that can run in a VIO window (not fullscreen)
-NAME LESS WINDOWCOMPAT
-
-DESCRIPTION 'less - file pager'

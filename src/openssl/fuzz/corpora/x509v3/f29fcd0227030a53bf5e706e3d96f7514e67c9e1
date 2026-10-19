@@ -1,2 +1,0 @@
-[default]
-authorityInfoAccess = OCSP;URI:h,caIssuers;URI:htt;URI:net/,caIssuers;URI:hder,caRepository;URI:h:/t-,caIssuers;URI:hder,caRepository;URI:://xki.exaer,caReposit

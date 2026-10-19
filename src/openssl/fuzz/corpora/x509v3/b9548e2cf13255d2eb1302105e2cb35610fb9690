@@ -1,3 +1,0 @@
-[default]
-keyUsage = criticd
-keyUsage = critical,digitalSignature,dataEncipherment,keyAgreement,encipherOnly,nonRepudiation,keyEncipherment,keyAgreement,encipherOnly,nonRepudiation,keyEncipherment,dataEncipherment,keyAgreement,encipherOnly,nonRepudiation,keyEncipherment,keyAgreement,encipherOnly,nonRepudiation,keyEnciphrOnly

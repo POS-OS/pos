@@ -1,5 +1,0 @@
-[default]mes
-certificatePolicies = @proxy_ext
-
-[ proxy_ext ]
-langua=

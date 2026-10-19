@@ -1,6 +1,0 @@
-[default]
-subjectAltName = @alternative_names
-
-[alternative_names]
-otherName.1 = 1X9;FORMAT:UTF8,UTF8String:.ne﻿tU
-

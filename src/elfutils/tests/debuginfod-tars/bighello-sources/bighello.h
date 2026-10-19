@@ -1,1 +1,0 @@
-char *HELLO = "hello";

@@ -1,1 +1,0 @@
-(bits d = 17r0; skip) { dg-error "invalid radix" }

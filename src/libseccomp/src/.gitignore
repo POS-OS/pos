@@ -1,4 +1,0 @@
-libseccomp.a
-arch-syscall-dump
-syscalls.perf
-syscalls.perf.c

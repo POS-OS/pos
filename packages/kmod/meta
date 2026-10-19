@@ -1,3 +1,0 @@
-build-requires gcc pos-link
-requires glibc openssl zlib xz zstd
-host-requires meson ninja-build

@@ -1,0 +1,6 @@
+# The QEMU guest agent (qemu-ga): runs in a VM and answers the host's
+# libvirt on a virtio serial port. BUILD.md "System stage".
+source qemu
+build-requires gcc pos-link
+requires glibc glib
+host-requires meson ninja-build python3 python3-qemu-qmp python3-setuptools python3-wheel python3-pip

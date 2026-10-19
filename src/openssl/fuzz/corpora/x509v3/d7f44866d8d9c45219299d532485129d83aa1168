@@ -1,4 +1,0 @@
-
-authorityKeyIdentifier =issuer
-[default]te_names
-2.840 = ASN1:FORMAT:BITLIST,BITSTR:9999999999999999999

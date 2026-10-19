@@ -1,7 +1,0 @@
-create
-
-&DIR&/test.log {
-	monthly 31
-	dateext
-	rotate 4
-}

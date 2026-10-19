@@ -1,4 +1,0 @@
-
-authorityKeyIdentifier =issuer
-
-nameConstraints = permitted;IP:0500:::8d/fet

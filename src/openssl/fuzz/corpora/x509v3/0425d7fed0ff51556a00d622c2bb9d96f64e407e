@@ -1,4 +1,0 @@
-
-authorityKeyIdentifier =issuer
-[default]
-2.2.8.778 = ASN1:EXP:0,EXP:16U,EXP:7U8,T61

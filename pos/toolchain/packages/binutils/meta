@@ -1,0 +1,3 @@
+pipeline toolchain
+build-requires pos-link
+requires glibc

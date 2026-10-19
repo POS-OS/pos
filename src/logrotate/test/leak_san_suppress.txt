@@ -1,2 +1,0 @@
-# Ignore popt leaks
-leak:libpopt.so

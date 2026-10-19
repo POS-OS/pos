@@ -1,3 +1,0 @@
-gawk: indirectbuiltin9.awk:1: error: unbalanced [: /[/
-gawk: indirectbuiltin9.awk:1: fatal: match: invalid regexp passed via indirect call
-EXIT CODE: 2

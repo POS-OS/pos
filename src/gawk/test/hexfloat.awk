@@ -1,3 +1,0 @@
-BEGIN {
-	print 0xDEADBEEF, 0xDeadBeef.feebp0, -0x1.25p0, -0x1.25p+2, 0x1.25p-1
-}

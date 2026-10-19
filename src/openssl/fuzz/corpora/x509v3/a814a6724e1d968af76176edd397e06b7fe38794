@@ -1,7 +1,0 @@
-#ys
-proxyCertInfo=critical,@proxy_ext
-
-
-
-[ proxy_ext ]
-language=idea-ecb

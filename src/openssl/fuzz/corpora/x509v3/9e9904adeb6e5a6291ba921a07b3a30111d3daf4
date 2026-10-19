@@ -1,7 +1,0 @@
-[default]cys
-proxyCertInfo=critical,@proxy_ext
-
-[ proxy_ext ]
-language=id-ppl-independent
-pathlen=0
-policy=text:BCtrgretÿÿÿÿÿÿÿme

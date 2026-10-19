@@ -1,9 +1,0 @@
-
-authorityKeyIdentifier =issuer
-
-proxyCertInfo=critical,@proxy_ext
-N =)))))y_ext
-
-[ proxy_ext ]
-language=id-ppl-independent
-paonstrainks = crit

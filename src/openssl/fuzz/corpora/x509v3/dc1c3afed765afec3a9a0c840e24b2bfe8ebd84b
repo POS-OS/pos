@@ -1,5 +1,0 @@
-#]n.
-
-subjectKeyIdentifier=hash
-authorityKeyIdentifier=keyid:always
-basicConstraints = critical,CA:true
