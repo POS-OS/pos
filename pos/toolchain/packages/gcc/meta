@@ -7,6 +7,6 @@
 pipeline toolchain
 build-requires gcc pos-link
 requires glibc gcc-runtime binutils linux-headers
-with-sources gmp mpfr mpc
+with-sources core-libs/gmp core-libs/mpfr mpc
 obsoletes gcc-host
 outputs gcc-runtime

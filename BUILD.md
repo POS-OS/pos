@@ -1,6 +1,6 @@
 # Building
-`./build` (`buildsys/build.sh`) builds the release: every stage in
-`stages/`, each assembled into one archive, and the outputs in `outputs/`
+`./build` (`buildsys/build.sh`) builds the release: every stage (see
+"Trees"), each assembled into one archive, and the outputs in `outputs/`
 (images, disks, RPM packages; see "Build outputs"). It
 runs on the host or in any toolbox and needs the host's podman, which it
 reaches through `flatpak-spawn --host` from inside a toolbox, as the
@@ -162,29 +162,58 @@ an unknown key is an error.
 | `reference` | `POS_REFERENCE` | the store's default (see "Reference builds"); `none`: a toolchain build with Fedora's compiler |
 | `release-dir` | `POS_RELEASE_DIR` | none: `publish` needs it; read by `publish`, not recorded by builds |
 
+## Trees
+What POS builds is in `pos/`, divided into trees: `pos/<tree>/` has any
+of `packages/<name>/` (recipes, see "Packages"), `src/<source>` with
+`src/<source>.upstream` (sources, see "Sources") and `stage`, the member
+list of the stage named after the tree.
+
+| Tree | What it holds |
+| --- | --- |
+| `core-libs`, `system`, `sdk` | the stages: their member lists, and the packages and sources of their members |
+| `toolchain` | the toolchain pipeline (see "Toolchain"): linux-headers, binutils, gcc with gcc-runtime, and mpc, which gcc builds in its tree |
+| `common` | sources of packages of several trees: gnulib |
+| `build-env` | the host and profile packages builds require (host-base, host-toolchain, gcc-host, pos-link) |
+
+A package lives in the tree of the stage that ships it, and one no stage
+ships by its role. The toolchain is the exception: the sdk stage (and
+core-libs, gcc-runtime) lists toolchain packages, which a pos build takes
+from its reference, while their recipes and sources are the `toolchain`
+tree, so that tree is exactly what toolchain builds build. A stage's
+`stage` file lists packages of any tree.
+
+Package names are unique across trees, and so are source names; meta and
+stage files name packages without their tree, so a package moves between
+stages without edits elsewhere. A package's sources (`source`,
+`with-sources`) are its own tree's or `common`'s. A source of another
+tree is named with it, `<tree>/<source>`, which shows what crosses trees:
+gcc builds core-libs' gmp and mpfr in its tree (`with-sources
+core-libs/gmp core-libs/mpfr mpc`).
+
 ## Sources
 POS builds from upstream source, not from upstream releases, so it does
 the release preparation itself. A source goes through three steps:
 
-1. Sync: `src/<source>` holds exactly the files upstream's git tracks, and
-   `src/<source>.upstream` records the branch (`ref`), `commit`, commit
-   `date` and `url` it came from. Both are committed. Upstream's
-   submodules are part of the tree, except those that are sources of their
-   own (gnulib, paxutils), which packages take from `src/<name>`.
+1. Sync: `pos/<tree>/src/<source>` holds exactly the files upstream's git
+   tracks, and `src/<source>.upstream` next to it records the branch
+   (`ref`), `commit`, commit `date` and `url` it came from. Both are
+   committed. Upstream's submodules are part of the tree, except those
+   that are sources of their own (gnulib, paxutils), which packages take
+   from their `src/<name>`.
 2. Prepare: what upstream's release process adds to a release tarball.
-   `packages/<source>/prepare.sh` works on a copy of the committed
-   `src/<source>`, with helpers from `buildsys/prepare.sh`: `prep_pull` runs
-   gnulib bootstrap's pull phase or `autopull.sh` (translations, submodule
-   hooks), `prep_gen` generates the build system, `prep_version` writes
-   `.tarball-version`. Files gnulib-tool links to `src/gnulib` are copied,
-   so the prepared tree stands alone. Prepare runs in a build container
-   with network access, which has the recipes, the committed source,
-   `src/gnulib` and the tree to prepare, into which the package's
+   `prepare.sh` of the package named after the source works on a copy of
+   the committed source, with helpers from `buildsys/prepare.sh`:
+   `prep_pull` runs gnulib bootstrap's pull phase or `autopull.sh`
+   (translations, submodule hooks), `prep_gen` generates the build system,
+   `prep_version` writes `.tarball-version`. Files gnulib-tool links to
+   gnulib (`pos/common/src/gnulib`) are copied, so the prepared tree stands
+   alone. Prepare runs in a build container with network access, which has
+   the recipes, the committed source, gnulib and the tree to prepare, into which the package's
    `with-sources` are copied first (tar's and cpio's bootstrap imports
    files from `paxutils`); `prepare-requires` in the meta lists its Fedora
    packages.
 3. Build: from the prepared tree when the source has a prepare recipe, from
-   `src/<source>` otherwise. A build needs no network.
+   the committed source otherwise. A build needs no network.
 
 Everything that changes or generates source files belongs to prepare:
 autogen.sh, bootstrap and autoreconf, generators such as less's
@@ -192,18 +221,19 @@ autogen.sh, bootstrap and autoreconf, generators such as less's
 check, shadow's `chsh.c`). A build recipe configures, compiles and installs
 a tree it does not change. Sources that need none of that (glibc, gcc,
 zlib, the meson and cmake packages, and bash, sqlite and sudo, which commit
-their `configure`) have no prepare recipe and are built from `src/`.
+their `configure`) have no prepare recipe and are built from their
+committed source.
 
 Prepared trees are kept in `work/sources/<source>/<key>`. The key is a hash
 of the committed source tree, its `.upstream`, the prepare recipe, the
-helpers, the `prepare-requires`, the committed `src/gnulib` for
+helpers, the `prepare-requires`, the committed gnulib for
 packages that use gnulib, and the committed `with-sources`. A tree is prepared once for each key and shared by
 every package built from that source (util-linux, util-linux-bootstrap),
 every build that copies it into its own tree (gcc builds gmp, mpfr and mpc
-in its tree: `with-sources gmp mpfr mpc`), and later builds. `run` prepares a source when it
+in its tree), and later builds. `run` prepares a source when it
 first needs it; `./build prepare` does it ahead of time. Builds and
 prepare use the committed state of a source, so uncommitted changes under
-`src/<source>` stop them.
+its `src/<source>` stop them.
 
 The version prepare gives packages that take theirs from gnulib's
 git-version-gen (coreutils, findutils, grep, gzip, sed, diffutils, patch)
@@ -225,13 +255,14 @@ tree's hash.
 assembling the stages, archives every source its packages were built from,
 as recorded in their metadata: `pos-src-<source>-<key>.tar.zst`, the
 prepared tree or the committed tree. It also archives the build recipes as
-they are at `HEAD` (`buildsys`, `packages`, `stages`, `outputs`, the docs) as
+they are at `HEAD` (`buildsys`, the trees' `packages` and `stage`, `outputs`,
+the docs) as
 `pos-recipes-<stem>.tar.zst`, with a warning if they changed since the build
 started. Together they are the source of the build's archives. Whether a
 build writes them is chosen when it is created.
 
 ## Packages
-`packages/<name>/` holds `build.sh`, the recipe, and `meta`, which declares
+A tree's `packages/<name>/` holds `build.sh`, the recipe, and `meta`, which declares
 what the package needs and what it gives (format in `buildsys/resolve.sh`):
 
     build-requires gcc pos-link
@@ -245,7 +276,8 @@ wherever it is installed. `build-requires` are needed only to build it.
 Every package provides its own name. When two available packages provide
 what is required, the one the other obsoletes is not used. `host-requires`
 are Fedora packages, in the build's tools image (see "Build containers");
-`packages/host-base` lists the tools every build gets.
+`host-base` (`pos/build-env/packages/host-base`) lists the tools every
+build gets.
 
 `pipeline toolchain` marks a package of the toolchain (see "Toolchain").
 `kind source` is a directory with only a prepare recipe, for a source
@@ -261,7 +293,7 @@ requirements of those.
 ## Outputs
 One build can produce several packages, as an rpm spec has sub-packages.
 The main package lists them (`outputs gcc-runtime`); each has its own
-`packages/<name>/meta` with `kind output` and `output-of`, and no
+package directory, with a `meta` of `kind output` and `output-of`, and no
 `build.sh`. After the build, an output is a package like any other: its
 own `dest/<name>`, requirements, provides, obsoletes and metadata, and a
 stage lists it on its own. Wanting an output builds its main package;
@@ -356,12 +388,12 @@ two things:
 A requirement the package does not declare is not there, so the build
 fails instead of picking it up from whatever else is installed. Of the
 checkout, a step sees only what it uses, at the host's paths: a package
-build the recipes (`buildsys`, `packages`) and its source tree read-only,
+build the recipes (`buildsys`, the trees' `packages`) and its source tree read-only,
 and the build's `build`, `dest` and `debug` directories. A step runs as the
 caller, with `HOME=/tmp`, `LC_ALL=C` and no network. Preparing has
 network, and an output runs as the container's root (the caller outside
 it) with network: for dnf and Fedora's kernel, and `pos-fedora`'s Fedora
-provides. It sees the recipes (`buildsys`, `outputs`, `stages`) and the
+provides. It sees the recipes (`buildsys`, `outputs`, the stage lists) and the
 build directory.
 
 A built package's staging tree carries its metadata in
@@ -560,7 +592,7 @@ outside `/pos` (`buildsys/build.sh` warns on it).
   (`/pos/share/pam`) could move to the same tree for consistency.
 * qemu-ga: poweroff, halt, reboot, shutdown and hwclock are run by their
   `/sbin` paths, string constants with no configure option;
-  `packages/qemu/prepare.sh` points them at `/pos/sbin`.
+  `pos/system/packages/qemu/prepare.sh` points them at `/pos/sbin`.
 * logrotate: `--with-compress-command=/pos/bin/gzip`. Tool paths found by
   configure are the general case: a build container finds `/usr/bin`
   tools and records those unless told otherwise (man-db's recipe shows the
@@ -1003,7 +1035,7 @@ there (dracut's) see the POS loader's.
 
 dracut is POS's (in the system stage, with GNU cpio): pos-fedora stands in
 for Fedora's. Its configuration (`/pos/lib/dracut/dracut.conf.d/01-dist.conf`,
-from `packages/dracut`) names POS's directories of systemd, udev and dbus,
+from `pos/system/packages/dracut`) names POS's directories of systemd, udev and dbus,
 and the library directories, so an initramfs is made from POS's systemd.
 The same dracut makes the initramfs when an image is made and on a running
 system, through kernel-install.
@@ -1025,7 +1057,7 @@ where Fedora packages install them (see "Prefix"); generators only from
 replaced.
 
 # SDK
-`stages/sdk` is the compiler, the assembler and linker, and the kernel UAPI
+The sdk stage (`pos/sdk/stage`) is the compiler, the assembler and linker, and the kernel UAPI
 headers (linux-headers, binutils, gcc), plus developer tools moved out
 of the system stage (diffutils, patch, man-pages). The first three are
 the toolchain, built by toolchain builds (see "Toolchain"); a pos build
@@ -1035,7 +1067,7 @@ image does not include it; the builds of other packages require it.
 The headers are needed only while compiling: glibc's `errno.h` includes
 `<linux/errno.h>`, and nothing loads them at run time.
 
-linux-headers is built from `src/linux`, mainline's `master`, synced as the
+linux-headers is built from `pos/toolchain/src/linux`, mainline's `master`, synced as the
 subset of the kernel tree that `make headers_install` needs: the top-level
 `Makefile`, `scripts/`, `include/uapi/`, x86's `Makefile`, `include/uapi/`
 and system call tables, and the licenses. The subset was checked by
@@ -1064,7 +1096,7 @@ new xgcc with the patched defaults.
 The run-time libraries are the gcc-runtime output of the gcc build:
 libgcc_s, libstdc++, libatomic (the compiler links it by default and
 libstdc++ depends on it) and libgomp. C and C++ programs need them at run
-time, so gcc-runtime is in `stages/core-libs` and a base system has them
+time, so gcc-runtime is in the core-libs stage and a base system has them
 without the compiler. The split follows Fedora's libgcc, libstdc++,
 libatomic and libgomp packages: gcc-runtime holds the `lib*.so.N` files
 programs load, and the libstdc++ gdb pretty-printers. Everything used only
@@ -1087,22 +1119,22 @@ copy is built for gcc's own host triplet, generic x86-64.
 
 
 # System stage
-`stages/system` is init, the service manager, the login and account tools,
+The system stage (`pos/system/stage`) is init, the service manager, the login and account tools,
 and the shell userland. It builds on core-libs.
 
 * Left out for now: man-db with its groff, gdbm and libpipeline
   dependencies (a page viewer that costs four packages; each package still
   installs its man pages under `/pos/share/man`). Their recipes remain in
-  `packages/` for reuse.
+  `pos/system/packages/` for reuse.
 * file and which are user utilities in the base. GNU which is the GNU
   project's git tree on Savannah, with its build system in the cwm4
-  submodule; `packages/which/prepare.sh` notes what its bootstrap needs.
+  submodule; `pos/system/packages/which/prepare.sh` notes what its bootstrap needs.
 * procps has the programs of Fedora's procps-ng: ps, top, free, pgrep,
   hugetop, pkill, pidof, pidwait, pmap, pwdx, skill, snice, slabtop, sysctl,
   tload, uptime, vmstat, w and watch, and libproc2. `w` reads sessions from
   logind. Its translated man pages are made by po4a (a host requirement),
   which leaves out those less than 80% translated.
-* The QEMU guest agent (qemu-ga, packages/qemu-guest-agent) answers the
+* The QEMU guest agent (qemu-ga, pos/system/packages/qemu-guest-agent) answers the
   host's libvirt in a VM: guest IP addresses, `virsh guestinfo`, shutdown
   and reboot through the agent, file system freeze for quiesced snapshots,
   setting the clock and passwords. Its unit is qemu's, started by a udev
@@ -1111,7 +1143,7 @@ and the shell userland. It builds on core-libs.
   nothing elsewhere. QEMU is synced as a subset of its tree, without the
   firmware submodules and prebuilt firmware, and only the agent is built:
   configure runs offline (`--disable-download`) with keycodemapdb, the one
-  subproject it checks for, fetched by `packages/qemu/prepare.sh`, and
+  subproject it checks for, fetched by `pos/system/packages/qemu/prepare.sh`, and
   configure's Python packages from the build host. glib, its library, is
   built from git with gvdb as a submodule; its Python code generators
   (gdbus-codegen, glib-mkenums, glib-genmarshal, gtester-report) are not
@@ -1162,7 +1194,7 @@ logind and sd_notify integration is on.
 ## System integration
 `pos-integration` is POS's own package for the files that make the
 packages one system and that no upstream ships. Its source is
-`src/pos-integration`, a POS-owned tree (no upstream, so `get-latest.sh`
+`pos/system/src/pos-integration`, a POS-owned tree (no upstream, so `get-latest.sh`
 skips it); like any source, it is built from the committed tree. So far it
 holds POS's PAM configuration: `system-auth`, the stack services include
 (local accounts with `pam_unix`, a logind session with `pam_systemd`), a

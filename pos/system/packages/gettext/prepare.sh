@@ -1,4 +1,4 @@
-# autopull.sh takes gnulib from src/gnulib and clones the tree-sitter
+# autopull.sh takes gnulib from pos/common/src/gnulib and clones the tree-sitter
 # grammars gettext-tools uses; autogen.sh generates the build system for
 # gettext-runtime and gettext-tools.
 

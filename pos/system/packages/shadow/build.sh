@@ -39,7 +39,7 @@ pkg() {
 
   # login (util-linux) sets PATH from login.defs: ENV_SUPATH for root,
   # ENV_PATH for the rest. They are the default ones with POS's bin
-  # directories after them, as systemd's search path (packages/systemd)
+  # directories after them, as systemd's search path (pos/system/packages/systemd)
   # and sudo's secure_path.
   defs=${dest_dir}${sysconfdir}/login.defs
   sed -i -e "s|^ENV_SUPATH\t.*|ENV_SUPATH\tPATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${prefix}/sbin:${prefix}/bin|" \

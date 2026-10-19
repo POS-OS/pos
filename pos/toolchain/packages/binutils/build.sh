@@ -33,7 +33,7 @@ pkg() {
   # tooldir is where binutils puts the tools for a compiler of the target
   # (<prefix>/<target>/bin, hard links of /pos/bin's) and ld's reference
   # linker scripts. The POS compiler is given /pos/bin/as and ld
-  # (packages/gcc/build.sh), and ld has its default scripts built in: with
+  # (pos/toolchain/packages/gcc/build.sh), and ld has its default scripts built in: with
   # tooldir the prefix itself, there is no /pos/x86_64-pc-linux-gnu, and the
   # scripts are in /pos/lib/ldscripts.
   pkg_compile tooldir="$prefix"

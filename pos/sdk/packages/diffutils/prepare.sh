@@ -1,5 +1,5 @@
 # gnulib bootstrap: translations are fetched, then the build system is
-# generated against src/gnulib.
+# generated against pos/common/src/gnulib.
 
 prep() {
   prep_version

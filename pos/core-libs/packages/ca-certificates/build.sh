@@ -16,7 +16,7 @@ pkg() {
     exit 1
   fi
 
-  python3 "$base/packages/$package/parse-certdata.py" "$certdata" "$build_dir/out"
+  python3 "$recipe_dir/parse-certdata.py" "$certdata" "$build_dir/out"
 
   # Install individual certificates
   mkdir -p "${dest_dir}${prefix}/share/ca-certificates/mozilla"

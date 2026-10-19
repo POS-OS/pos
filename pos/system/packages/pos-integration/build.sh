@@ -1,5 +1,5 @@
 # The default PAM configuration goes to pam's vendor directory
-# (packages/pam: VENDORDIR=/pos/share/pam), not to /etc: it applies
+# (pos/core-libs/packages/pam: VENDORDIR=/pos/share/pam), not to /etc: it applies
 # without being copied, and /etc/pam.d overrides it per service. os-release
 # is the system's identity: /usr/lib/os-release links to it (image layout,
 # pos-fedora). The presets are POS's, ahead of systemd's. The udev rules

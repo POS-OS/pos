@@ -1,20 +1,22 @@
 #!/usr/bin/env bash
-# Source preparation runner and helpers for packages/*/prepare.sh.
+# Source preparation runner and helpers for prepare.sh recipes.
 #
 # Prepare turns a committed source tree into what a release tarball holds:
 # translations and other files upstream's release process fetches, generated
 # build system files, and a version. buildsys/build.sh runs it in a
 # container of the build's tools image, with network access, once per source
 # and inputs; builds then use the prepared tree and need no network. The
-# container has the recipes, the committed source, src/gnulib and the tree
-# to prepare; not the rest of the checkout. Each packages/<source>/prepare.sh
-# defines a prep() phase function called between _prep_setup and _prep_finish.
-# The environment:
+# container has the recipes, the committed source, gnulib and the tree to
+# prepare; not the rest of the checkout. The prepare.sh of the package
+# named after the source defines a prep() phase function called between
+# _prep_setup and _prep_finish. The environment:
 #
-#   POS_BASE        the POS checkout
-#   POS_SOURCE      the source name (src/<source>)
-#   POS_PREP_DIR    the tree to prepare, a copy of the committed src/<source>
-#   POS_UPSTREAM    the committed src/<source>.upstream (ref, commit, date, url)
+#   POS_SOURCE      the source name
+#   POS_RECIPE_DIR  the directory of its prepare.sh
+#   POS_SRC_DIR     the committed source (pos/<tree>/src/<source>)
+#   POS_GNULIB_DIR  gnulib's committed source, if the checkout has it
+#   POS_PREP_DIR    the tree to prepare, a copy of the committed source
+#   POS_UPSTREAM    the source's committed .upstream (ref, commit, date, url)
 #   POS_WITH_SRC_DIRS  the package's further source trees (meta
 #                   "with-sources"), as <source>=<dir> words; _prep_setup
 #                   copies each into the tree, as a directory named after it
@@ -32,20 +34,19 @@ _require_container() {
 
 # Initialize the source preparation directory before prep() runs.
 # Inputs (environment):
-#   POS_BASE, POS_PREP_DIR, POS_WITH_SRC_DIRS
+#   POS_PREP_DIR, POS_WITH_SRC_DIRS, POS_GNULIB_DIR
 # Outputs (shell variables set for prep()):
-#   base, prep_dir, GNULIB_SRCDIR (exported if src/gnulib/gnulib-tool exists)
+#   prep_dir, GNULIB_SRCDIR (exported if gnulib's gnulib-tool exists)
 _prep_setup() {
   _require_container
-  base=${POS_BASE:?}
   prep_dir=${POS_PREP_DIR:?}
   cd "$prep_dir" || exit 1
   local w
   for w in ${POS_WITH_SRC_DIRS:-}; do
     rsync -a --delete "${w#*=}/" "$prep_dir/${w%%=*}/"
   done
-  if [[ -x $base/src/gnulib/gnulib-tool ]]; then
-    GNULIB_SRCDIR=$base/src/gnulib
+  if [[ -x ${POS_GNULIB_DIR:-}/gnulib-tool ]]; then
+    GNULIB_SRCDIR=$POS_GNULIB_DIR
     export GNULIB_SRCDIR
   fi
 }
@@ -72,7 +73,7 @@ prep_version() {
   commit=$(prep_upstream commit)
   date=$(prep_upstream date)
   if [[ -z $ref || -z $commit || -z $date ]]; then
-    echo "${source}: ref, commit or date missing in src/${source}.upstream" >&2
+    echo "${source}: ref, commit or date missing in its .upstream" >&2
     exit 1
   fi
   version="${ref}-${date:0:4}${date:5:2}${date:8:2}-${commit:0:12}"
@@ -80,7 +81,7 @@ prep_version() {
 }
 
 # What upstream's bootstrap fetches before generating: translations,
-# submodules and package hooks. gnulib comes from src/gnulib. The copy is
+# submodules and package hooks. gnulib comes from POS_GNULIB_DIR. The copy is
 # not a git repository; an empty one stands in for hooks that run git
 # submodule (tar's), and _prep_finish removes it.
 # Inputs:
@@ -95,7 +96,7 @@ prep_pull() {
 }
 
 # Generate configure and the other build system files. Files taken from
-# gnulib are copied, not linked to src/gnulib (see _prep_finish).
+# gnulib are copied, not linked to it (see _prep_finish).
 # Inputs:
 #   GNULIB_SRCDIR (optional, exported by _prep_setup)
 prep_gen() {
@@ -109,19 +110,19 @@ prep_gen() {
 }
 
 # The prepared tree has to stand alone, as a release tarball does. Some
-# packages have gnulib-tool link imported files to src/gnulib whatever
+# packages have gnulib-tool link imported files to gnulib whatever
 # bootstrap is told (coreutils: --symlink in bootstrap.conf); those links
 # are replaced by copies of their targets. gnulib-tool keeps a file it
 # replaces as <file>~ (the m4 files autopoint copied before it); backups
-# not in src/<source> are removed.
+# not in the committed source are removed.
 # Inputs:
-#   base, source, prep_dir
+#   POS_SRC_DIR, source, prep_dir
 _prep_finish() {
   local link target backup
   cd "$prep_dir" || exit 1
   rm -rf .git autom4te.cache
   while IFS= read -r -d '' backup; do
-    [[ -e $base/src/$source/$backup ]] || rm -f "$backup"
+    [[ -e ${POS_SRC_DIR:?}/$backup ]] || rm -f "$backup"
   done < <(find . -name '*~' ! -type d -print0)
   while IFS= read -r -d '' link; do
     target=$(readlink -f "$link")
@@ -135,7 +136,7 @@ _prep_finish() {
 
 _prep_setup
 # shellcheck source=/dev/null
-source "$base/packages/$source/prepare.sh"
+source "${POS_RECIPE_DIR:?}/prepare.sh"
 declare -F prep >/dev/null || { echo "${source}: prepare.sh must define prep()" >&2; exit 1; }
 cd "$prep_dir"
 prep

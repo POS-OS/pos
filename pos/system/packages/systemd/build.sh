@@ -15,7 +15,7 @@ pkg() {
   # root or its initramfs.
   #
   # Its pam.d files go where POS pam reads vendor configuration
-  # (VENDORDIR/pam.d, packages/pam sets VENDORDIR=/pos/share/pam); the meson
+  # (VENDORDIR/pam.d, pos/core-libs/packages/pam sets VENDORDIR=/pos/share/pam); the meson
   # default /pos/lib/pam.d is not on pam's search path.
   #
   # The boot loader (systemd-boot and the EFI stub) is built: bootctl installs

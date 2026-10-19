@@ -3,7 +3,7 @@ pkg() {
   # tree. Runtime state is /run/sudo, timestamps in /var/db/sudo. The install
   # runs unprivileged, so ownership is not applied here. The secure_path of
   # sudoers is the default one with POS's bin directories after it, as
-  # systemd's search path (packages/systemd).
+  # systemd's search path (pos/system/packages/systemd).
   pkg_configure \
     --libexecdir="${prefix}/libexec" \
     --with-rundir=/run/sudo \

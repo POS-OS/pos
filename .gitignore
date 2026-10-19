@@ -4,7 +4,7 @@
 *.orig
 
 # Archives and notes at the top of the checkout. Anchored so they do not
-# match upstream files in src/ (AUTHORS, TODO, test data archives).
+# match upstream files in pos/*/src/ (AUTHORS, TODO, test data archives).
 /*.gz
 /*.Z
 /*.tar

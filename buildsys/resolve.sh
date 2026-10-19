@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
 # Package metadata and dependency resolution. Sourced by buildsys/build.sh.
 #
-# Every directory in packages/ has a meta file of "key value..." lines.
+# The checkout's pos/ is divided into trees, pos/<tree>, each with any of
+# packages/<package>/ (recipes), src/<source> with src/<source>.upstream
+# (synced upstream sources) and stage (the member list of the stage
+# <tree>). Package names are unique across trees, and so are source names.
+#
+# Every package directory has a meta file of "key value..." lines.
 # Repeated keys accumulate; # starts a comment.
 #
 #   requires        capabilities needed at run time; installed with the
@@ -9,15 +14,20 @@
 #   build-requires  capabilities needed only to build the package
 #   host-requires   Fedora packages dnf installs into the build toolbox
 #   prepare-requires  Fedora packages for preparing the package's source
-#                   (packages/<source>/prepare.sh) in the prepare toolbox
+#                   (<source>'s package directory, prepare.sh) in the
+#                   prepare toolbox
 #   provides        extra capabilities; every package provides its own name
 #   obsoletes       packages this one replaces. Where both are available,
 #                   the obsoleting package is the one chosen
-#   source          tree under src/ (default: the package name); its
-#                   prepare recipe is packages/<source>/prepare.sh
+#   source          source tree (default: the package name); its prepare
+#                   recipe is prepare.sh of the package named after it
 #   with-sources    further source trees the build copies into its own,
 #                   each as a directory named after the source (gcc builds
 #                   gmp, mpfr and mpc in its tree)
+#
+# A source is the package's own tree's or common's; a source of another
+# tree is named <tree>/<source> (gcc: core-libs/gmp), so what crosses
+# trees shows in the meta.
 #   outputs         further packages the build produces (kind output)
 #   output-of       the package whose build produces this one
 #   pipeline        pos (default) or toolchain: the build that builds the
@@ -62,7 +72,7 @@
 
 declare -a PKGS=()
 declare -A KIND=() REQ=() BREQ=() HREQ=() PREQ=() PROV=() OBS=() SRC=() WSRC=() OUTS=() PARENT=()
-declare -A PIPE=()
+declare -A PIPE=() PKGDIR=() SRCPATH=() SRCREFS=()
 declare -A PROVIDERS=() BOOTCAP=() TPROV=()
 declare -A BUILT=() REF=() REF_REQ=()
 PIPELINE=pos
@@ -72,17 +82,57 @@ die() {
   exit 1
 }
 
-# Load all packages/*/meta files into the resolver tables.
+# The tree a checkout path under pos/ is in.
+# Inputs:
+#   $1    path relative to base (pos/<tree>/...)
+tree_of() {
+  local t=${1#pos/}
+  echo "${t%%/*}"
+}
+
+# The member list of a stage.
+# Inputs:
+#   $1    stage name
+stage_file() {
+  echo "$base/pos/$1/stage"
+}
+
+# Find the source trees, pos/<tree>/src/<source>, and those whose
+# .upstream is committed before the tree is synced.
+# Inputs:
+#   base    path to the POS checkout
+# Outputs:
+#   SRCPATH[<source>]   its path relative to base
+sources_load() {
+  local f s rel
+  for f in "$base"/pos/*/src/*; do
+    rel=${f#"$base"/}
+    rel=${rel%.upstream}
+    s=${rel##*/}
+    [[ -z ${SRCPATH[$s]:-} || ${SRCPATH[$s]} == "$rel" ]] ||
+      die "source $s is in two trees: ${SRCPATH[$s]} and $rel"
+    SRCPATH[$s]=$rel
+  done
+}
+
+# Load the meta file of every package directory into the resolver tables,
+# and the sources (sources_load). A source a package names that is not in
+# the checkout gets the path it would have.
 # Inputs:
 #   base    path to the POS checkout
 # Outputs (arrays/maps populated):
-#   PKGS, KIND, REQ, BREQ, HREQ, PREQ, PROV, OBS, SRC, WSRC, OUTS,
-#   PARENT, PIPE, PROVIDERS, BOOTCAP
+#   PKGS, PKGDIR, KIND, REQ, BREQ, HREQ, PREQ, PROV, OBS, SRC, WSRC,
+#   SRCREFS (source and with-sources as written), SRCPATH, OUTS, PARENT,
+#   PIPE, PROVIDERS, BOOTCAP
 meta_load() {
-  local dir p key vals line
-  for dir in "$base"/packages/*/; do
-    p=$(basename "$dir")
-    [[ -f $dir/meta ]] || die "packages/$p: missing meta"
+  local dir p key vals line r
+  sources_load
+  for dir in "$base"/pos/*/packages/*/; do
+    dir=${dir%/}
+    p=${dir##*/}
+    [[ -z ${PKGDIR[$p]:-} ]] || die "package $p is in two trees: ${PKGDIR[$p]} and ${dir#"$base"/}"
+    PKGDIR[$p]=${dir#"$base"/}
+    [[ -f $dir/meta ]] || die "${PKGDIR[$p]}: missing meta"
     PKGS+=("$p")
     KIND[$p]=package REQ[$p]= BREQ[$p]= HREQ[$p]= PREQ[$p]= PROV[$p]=$p OBS[$p]= SRC[$p]=$p
     WSRC[$p]= OUTS[$p]= PARENT[$p]= PIPE[$p]=pos
@@ -103,14 +153,24 @@ meta_load() {
         kind) KIND[$p]=$vals ;;
         outputs) OUTS[$p]+=" $vals" ;;
         output-of) PARENT[$p]=$vals ;;
-        *) die "packages/$p/meta: unknown key: $key" ;;
+        *) die "${PKGDIR[$p]}/meta: unknown key: $key" ;;
       esac
     done <"$dir/meta"
     if [[ ${KIND[$p]} == package ]]; then
       # Everything built gets the common host tools.
       BREQ[$p]+=" host-base"
     fi
+    if [[ ${KIND[$p]} == package || ${KIND[$p]} == source ]]; then
+      SRCREFS[$p]="${SRC[$p]} ${WSRC[$p]}"
+      SRC[$p]=${SRC[$p]##*/}
+      WSRC[$p]=$(for r in ${WSRC[$p]}; do echo "${r##*/}"; done | xargs)
+      for r in ${SRCREFS[$p]}; do
+        [[ $r == */* ]] || r=$(tree_of "${PKGDIR[$p]}")/$r
+        [[ -n ${SRCPATH[${r##*/}]:-} ]] || SRCPATH[${r##*/}]=pos/${r%/*}/src/${r##*/}
+      done
+    fi
   done
+  mapfile -t PKGS < <(printf '%s\n' "${PKGS[@]}" | sort)
   local cap q
   for p in "${PKGS[@]}"; do
     [[ ${KIND[$p]} != output ]] || PIPE[$p]=${PIPE[${PARENT[$p]}]:-pos}
@@ -128,49 +188,61 @@ meta_load() {
 # Validate all loaded package metadata for missing recipes, broken output-of
 # links, missing capability providers, and incomplete obsoletes coverage.
 # Inputs:
-#   base, PKGS, KIND, PARENT, OUTS, REQ, BREQ, PROVIDERS, PIPE, WSRC, OBS, PROV
+#   base, PKGS, PKGDIR, KIND, PARENT, OUTS, REQ, BREQ, PROVIDERS, PIPE, WSRC,
+#   SRCREFS, SRCPATH, OBS, PROV
 meta_validate() {
-  local p cap q err=0
+  local p m cap q t err=0
   local -A required=()
   for p in "${PKGS[@]}"; do
+    m=${PKGDIR[$p]}/meta
     case ${KIND[$p]} in
-      package) [[ -f $base/packages/$p/build.sh ]] || { echo "packages/$p: missing build.sh" >&2; err=1; } ;;
+      package) [[ -f $base/${PKGDIR[$p]}/build.sh ]] || { echo "${PKGDIR[$p]}: missing build.sh" >&2; err=1; } ;;
       output)
         q=${PARENT[$p]}
         if [[ ${KIND[$q]:-} != package || " ${OUTS[$q]} " != *" $p "* ]]; then
-          echo "packages/$p/meta: output-of $q, which does not list it in outputs" >&2
+          echo "$m: output-of $q, which does not list it in outputs" >&2
           err=1
         fi
         ;;
       host|profile|source) ;;
-      *) echo "packages/$p/meta: unknown kind: ${KIND[$p]}" >&2; err=1 ;;
+      *) echo "$m: unknown kind: ${KIND[$p]}" >&2; err=1 ;;
     esac
     for cap in ${REQ[$p]} ${BREQ[$p]}; do
       required[$cap]=1
       if [[ -z ${PROVIDERS[$cap]:-} ]]; then
-        echo "packages/$p/meta: nothing provides $cap" >&2
+        echo "$m: nothing provides $cap" >&2
         err=1
       fi
     done
     case ${PIPE[$p]} in
       pos|toolchain) ;;
-      *) echo "packages/$p/meta: unknown pipeline: ${PIPE[$p]}" >&2; err=1 ;;
+      *) echo "$m: unknown pipeline: ${PIPE[$p]}" >&2; err=1 ;;
     esac
     for q in ${WSRC[$p]}; do
-      if [[ ! -d $base/src/$q ]]; then
-        echo "packages/$p/meta: with-sources $q: no src/$q" >&2
+      if [[ ! -d $base/${SRCPATH[$q]} ]]; then
+        echo "$m: with-sources $q: no ${SRCPATH[$q]}" >&2
+        err=1
+      fi
+    done
+    for q in ${SRCREFS[$p]:-}; do
+      t=$(tree_of "${SRCPATH[${q##*/}]}")
+      if [[ $q == */* && ${q%/*} != "$t" ]]; then
+        echo "$m: source $q: not in pos/${q%/*}/src; it is ${SRCPATH[${q##*/}]}" >&2
+        err=1
+      elif [[ $q != */* && $t != "$(tree_of "${PKGDIR[$p]}")" && $t != common ]]; then
+        echo "$m: source $q is in another tree: name it $t/$q" >&2
         err=1
       fi
     done
     for q in ${OUTS[$p]}; do
       if [[ ${KIND[$q]:-} != output || ${PARENT[$q]} != "$p" ]]; then
-        echo "packages/$p/meta: output $q is not kind output with output-of $p" >&2
+        echo "$m: output $q is not kind output with output-of $p" >&2
         err=1
       fi
     done
     for q in ${OBS[$p]}; do
       if [[ -z ${KIND[$q]:-} ]]; then
-        echo "packages/$p/meta: obsoletes unknown package $q" >&2
+        echo "$m: obsoletes unknown package $q" >&2
         err=1
       fi
     done
@@ -182,7 +254,7 @@ meta_validate() {
       [[ -n ${KIND[$q]:-} ]] || continue
       for cap in ${PROV[$q]}; do
         if [[ -n ${required[$cap]:-} && " ${PROV[$p]} " != *" $cap "* ]]; then
-          echo "packages/$p/meta: obsoletes $q but does not provide $cap" >&2
+          echo "${PKGDIR[$p]}/meta: obsoletes $q but does not provide $cap" >&2
           err=1
         fi
       done
@@ -368,7 +440,7 @@ env_scripts() {
   local p
   for p in "${ENV[@]}"; do
     p=${p%@ref}
-    [[ -f $base/packages/$p/env.sh ]] && echo "$p"
+    [[ -f $base/${PKGDIR[$p]}/env.sh ]] && echo "$p"
   done
   return 0
 }
@@ -385,7 +457,7 @@ targets_expand() {
   local t p
   local -A set=()
   for t in "$@"; do
-    if [[ -f $base/stages/$t/packages ]]; then
+    if [[ -f $(stage_file "$t") ]]; then
       [[ $PIPELINE == pos ]] || die "$t: a toolchain build builds toolchain packages, not stages"
       while read -r p; do
         p=${p%%#*}
@@ -393,11 +465,11 @@ targets_expand() {
         [[ -z $p ]] && continue
         case ${KIND[$p]:-} in
           package|output) ;;
-          '') die "stages/$t/packages: unknown package $p" ;;
-          *) die "stages/$t/packages: $p is not a package (kind ${KIND[$p]})" ;;
+          '') die "pos/$t/stage: unknown package $p" ;;
+          *) die "pos/$t/stage: $p is not a package (kind ${KIND[$p]})" ;;
         esac
         in_pipeline "$p" && set[$p]=1
-      done <"$base/stages/$t/packages"
+      done <"$(stage_file "$t")"
     elif [[ -n ${KIND[$t]:-} ]]; then
       in_pipeline "$t" || die "$t: a ${PIPE[$t]} package; this is a $PIPELINE build"
       set[$t]=1
@@ -414,11 +486,11 @@ targets_expand() {
   done
 }
 
-# Print the names of all defined stages under stages/.
+# Print the names of all stages: the trees with a stage file.
 all_stages() {
   local d
-  for d in "$base"/stages/*/; do
-    [[ -f $d/packages ]] && basename "$d"
+  for d in "$base"/pos/*/; do
+    [[ -f $d/stage ]] && basename "$d"
   done
   return 0
 }

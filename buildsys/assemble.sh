@@ -27,7 +27,7 @@ if [[ -z $bdir || -z $stage ]]; then
   exit 1
 fi
 
-list=${base}/stages/${stage}/packages
+list=${base}/pos/${stage}/stage
 if [[ ! -f $list ]]; then
   echo "unknown stage: $stage (missing $list)" >&2
   exit 1

@@ -14,8 +14,8 @@ id=${1:-$(basename "$(readlink "${builds}/current")")}
 bdir=${builds}/${id}
 
 archives=()
-for s in "${base}"/stages/*/; do
-  a=${bdir}/pos-$(basename "$s")-$(build_stem "$bdir").tar.zst
+for s in "${base}"/pos/*/stage; do
+  a=${bdir}/pos-$(basename "$(dirname "$s")")-$(build_stem "$bdir").tar.zst
   [[ -f $a ]] && archives+=("$a")
 done
 if ((${#archives[@]} == 0)); then

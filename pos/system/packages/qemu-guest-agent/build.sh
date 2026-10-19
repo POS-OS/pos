@@ -1,7 +1,7 @@
 pkg() {
   # Only the guest agent: no emulators, tools, docs, plugins or firmware.
   # --disable-download: everything comes from the prepared tree (keycodemapdb,
-  # packages/qemu/prepare.sh) and the build host (configure's Python
+  # pos/system/packages/qemu/prepare.sh) and the build host (configure's Python
   # packages, host-requires). qemu looks for libudev only when it builds
   # emulators or tools, so the agent has no udev details of disks (device
   # nodes, serial numbers in guest-get-disks and guest-get-fsinfo).

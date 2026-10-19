@@ -31,7 +31,7 @@ output() {
       p=${p%%#*}
       p=${p//[[:space:]]/}
       [[ -n $p ]] && in_build[$p]=1
-    done <"$base/stages/$s/packages"
+    done <"$base/pos/$s/stage"
   done
   rpm_paths assemble pos >"$work/paths"
 

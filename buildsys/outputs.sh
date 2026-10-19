@@ -20,7 +20,7 @@
 #
 #   output()       runs in a container of the build's tools image, as the
 #                  container's root, with network; it sees the recipes
-#                  (buildsys, outputs, stages) and the build directory
+#                  (buildsys, outputs, the stage lists) and the build directory
 #   output_host()  runs on the host after it, for what needs the host's
 #                  podman (podman images, the VM of disk checks)
 #
@@ -91,7 +91,7 @@ _output_setup() {
   work=$bdir/output/$output
   stages=()
   for r in $(output_meta "$output" requires); do
-    [[ ! -f $base/stages/$r/packages ]] || stages+=("$r")
+    [[ ! -f $base/pos/$r/stage ]] || stages+=("$r")
   done
   for f in "$base"/buildsys/output-plugins.d/*.sh; do
     # shellcheck source=/dev/null
@@ -128,7 +128,7 @@ outputs_load() {
   done
   for o in "${OUTPUTS[@]}"; do
     for r in ${OUT_REQ[$o]}; do
-      [[ -f $base/stages/$r/packages || -d $base/outputs/$r ]] ||
+      [[ -f $(stage_file "$r") || -d $base/outputs/$r ]] ||
         die "outputs/$o/meta: requires $r, which is neither a stage nor an output"
     done
   done
@@ -190,7 +190,12 @@ output_make() {
     _output_setup "$1"
     OUTPUT_STATUS=
     if declare -F output >/dev/null; then
-      step_run "output-$output" net root ro:"$base/buildsys" ro:"$base/outputs" ro:"$base/stages" rw:"$bdir" -- \
+      local s
+      local -a stage_mounts=()
+      for s in $(all_stages); do
+        stage_mounts+=(ro:"$(stage_file "$s")")
+      done
+      step_run "output-$output" net root ro:"$base/buildsys" ro:"$base/outputs" "${stage_mounts[@]}" rw:"$bdir" -- \
         bash "$(host_path "$base/buildsys/outputs.sh")" "$(host_path "$bdir")" "$output"
     fi
     if declare -F output_host >/dev/null; then

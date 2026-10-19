@@ -7,8 +7,9 @@
 # its outputs in work/builds/<id>. A package is built once per build; run
 # continues the current build.
 #
-# A source with a prepare recipe (packages/<source>/prepare.sh) is prepared
-# before it is built: the committed src/<source> is copied and turned into
+# A source with a prepare recipe (prepare.sh of the package named after the
+# source) is prepared before it is built: the committed source
+# (pos/<tree>/src/<source>, resolve.sh) is copied and turned into
 # what a release tarball holds (buildsys/prepare.sh). Prepared trees are kept
 # in work/sources/<source>/<key>, keyed by their inputs, and shared by
 # builds.
@@ -46,6 +47,9 @@ CHECKS=yes
 bot_name=pos-bot bot_email=pos-bot@devzero.dk
 sources=$base/work/sources
 refs=$base/work/references
+# The recipes of the checkout, as git pathspecs: the package directories
+# and the stage lists of every tree (resolve.sh).
+RECIPES=(':(glob)pos/*/packages/**' ':(glob)pos/*/stage')
 fedora_release=$(config fedora-release)
 fedora_image=registry.fedoraproject.org/fedora
 export LC_ALL=C
@@ -82,7 +86,7 @@ usage: ./build plan [--new [--toolchain]] [<target>...]
                                                copy its artifacts into the release library
        ./build bump                            commit VERSION with the next BUILD
 
-A target is a stage (stages/<stage>/packages) or a package. The default is
+A target is a stage (pos/<stage>/stage) or a package. The default is
 every stage. run continues the current build; --new starts another, a
 toolchain build with --toolchain. A toolchain build builds the toolchain
 packages (meta: pipeline toolchain) and what they need; a pos build
@@ -207,7 +211,7 @@ build_info() {
 tree_state() {
   local dirty
   dirty=$(git -C "$base" --no-optional-locks status --porcelain --untracked-files=no
-          git -C "$base" --no-optional-locks status --porcelain -- VERSION outputs buildsys packages stages devtools)
+          git -C "$base" --no-optional-locks status --porcelain -- VERSION outputs buildsys devtools "${RECIPES[@]}")
   if [[ -n $dirty ]]; then
     echo "$(git -C "$base" rev-parse HEAD) dirty"
   else
@@ -255,28 +259,41 @@ build_load() {
 
 # The committed state of a source: builds and archives must match a commit.
 # Inputs:
-#   $1    source name (src/<source>)
+#   $1    source name
 source_tree() {
-  local s=$1
-  if [[ -n $(git -C "$base" status --porcelain --untracked-files=no -- "src/$s" "src/$s.upstream") ]]; then
-    die "src/$s has uncommitted changes; commit them before building"
+  local path=${SRCPATH[$1]}
+  if [[ -n $(git -C "$base" status --porcelain --untracked-files=no -- "$path" "$path.upstream") ]]; then
+    die "$path has uncommitted changes; commit them before building"
   fi
-  git -C "$base" rev-parse "HEAD:src/$s"
+  git -C "$base" rev-parse "HEAD:$path"
 }
 
-# Return 0 if a source has a packages/<source>/prepare.sh recipe.
+# Return 0 if a source has a prepare recipe: prepare.sh of the package
+# named after it.
 # Inputs:
 #   $1    source name
 has_prepare() {
-  [[ -f $base/packages/$1/prepare.sh ]]
+  [[ -n ${PKGDIR[$1]:-} && -f $base/${PKGDIR[$1]}/prepare.sh ]]
 }
 
-# Print the committed src/<source>.upstream metadata from HEAD.
+# Print the source's committed .upstream metadata from HEAD.
 # Inputs:
 #   $1    source name
 upstream_info() {
-  git -C "$base" show "HEAD:src/$1.upstream" 2>/dev/null ||
-    die "src/$1.upstream is not committed; prepare reads it from HEAD"
+  git -C "$base" show "HEAD:${SRCPATH[$1]}.upstream" 2>/dev/null ||
+    die "${SRCPATH[$1]}.upstream is not committed; prepare reads it from HEAD"
+}
+
+# The recipe directories, pos/<tree>/packages, as step_run mounts: recipes
+# source each other's.
+# Outputs:
+#   RECIPE_MOUNTS (array of ro:<dir>)
+recipe_mounts() {
+  local d
+  RECIPE_MOUNTS=()
+  for d in "$base"/pos/*/packages; do
+    RECIPE_MOUNTS+=(ro:"$d")
+  done
 }
 
 # The key of a prepared tree: everything that goes into it.
@@ -287,9 +304,9 @@ prepare_key() {
   {
     source_tree "$s"
     upstream_info "$s"
-    cat "$base/packages/$s/prepare.sh" "$base/buildsys/prepare.sh"
+    cat "$base/${PKGDIR[$s]}/prepare.sh" "$base/buildsys/prepare.sh"
     echo "${PREQ[$s]}"
-    if [[ -f $base/src/$s/bootstrap.conf || -x $base/src/$s/autopull.sh ]]; then
+    if [[ -f $base/${SRCPATH[$s]}/bootstrap.conf || -x $base/${SRCPATH[$s]}/autopull.sh ]]; then
       source_tree gnulib
     fi
     for w in ${WSRC[$s]}; do
@@ -301,7 +318,7 @@ prepare_key() {
 # Prepare a source unless a tree with the same key exists. Sets PREPARED to
 # the prepared tree. Prepare has network: it fetches what upstream's
 # release process does. It sees the committed source (prepare recipes
-# compare with it), src/gnulib, and the committed sources of the package's
+# compare with it), gnulib, and the committed sources of the package's
 # with-sources, which upstream's bootstrap may take files from (tar's and
 # cpio's paxutils).
 # Inputs:
@@ -309,7 +326,7 @@ prepare_key() {
 # Outputs:
 #   PREPARED (path to prepared source directory in $sources/$s/$key)
 prepare_source() {
-  local s=$1 key dir log hbase w with_dirs=
+  local s=$1 key dir log hbase w with_dirs= gnulib=''
   local -a mounts
   key=$(prepare_key "$s") || exit 1
   dir=$sources/$s/$key
@@ -319,19 +336,25 @@ prepare_source() {
   hbase=$(host_path "$base")
   rm -rf "$dir" "$dir.tmp"
   mkdir -p "$dir.tmp"
-  git -C "$base" archive --format=tar "HEAD:src/$s" | tar -x -C "$dir.tmp"
+  git -C "$base" archive --format=tar "HEAD:${SRCPATH[$s]}" | tar -x -C "$dir.tmp"
   upstream_info "$s" >"$dir.upstream"
-  mounts=(net ro:"$base/buildsys" ro:"$base/packages" ro:"$base/src/$s" rw:"$dir.tmp" ro:"$dir.upstream")
-  [[ ! -d $base/src/gnulib ]] || mounts+=(ro:"$base/src/gnulib")
+  recipe_mounts
+  mounts=(net ro:"$base/buildsys" "${RECIPE_MOUNTS[@]}" ro:"$base/${SRCPATH[$s]}" rw:"$dir.tmp" ro:"$dir.upstream")
+  if [[ -n ${SRCPATH[gnulib]:-} && -d $base/${SRCPATH[gnulib]} ]]; then
+    gnulib=$hbase/${SRCPATH[gnulib]}
+    mounts+=(ro:"$base/${SRCPATH[gnulib]}")
+  fi
   for w in ${WSRC[$s]}; do
-    mounts+=(ro:"$base/src/$w")
-    with_dirs+=" $w=$hbase/src/$w"
+    mounts+=(ro:"$base/${SRCPATH[$w]}")
+    with_dirs+=" $w=$hbase/${SRCPATH[$w]}"
   done
   title "prepare $s"
   echo "=== prepare $s ($key) ===" | tee "$log"
   step_run "prepare-$s" "${mounts[@]}" -- env \
-    POS_BASE="$hbase" \
     POS_SOURCE="$s" \
+    POS_RECIPE_DIR="$hbase/${PKGDIR[$s]}" \
+    POS_SRC_DIR="$hbase/${SRCPATH[$s]}" \
+    POS_GNULIB_DIR="$gnulib" \
     POS_PREP_DIR="$(host_path "$dir.tmp")" \
     POS_UPSTREAM="$(host_path "$dir.upstream")" \
     POS_WITH_SRC_DIRS="${with_dirs# }" \
@@ -385,7 +408,7 @@ pkg_record() {
   mkdir -p "$dir"
   (cd "$dest" && find pos -mindepth 1 ! -type d ! -path "pos/lib/pos/packages/*" | sed 's|^|/|' | sort) >"$dir/files"
   {
-    sed -e 's/#.*//' -e '/^[[:space:]]*$/d' "$base/packages/$p/meta"
+    sed -e 's/#.*//' -e '/^[[:space:]]*$/d' "$base/${PKGDIR[$p]}/meta"
     echo "build $id"
     echo "build-source ${SRC[$(build_of "$p")]} ${SOURCE_ID:-}"
     for s in "${WITH_SOURCE_IDS[@]}"; do
@@ -443,12 +466,12 @@ root_compose() {
 #   SOURCE_DIR, SOURCE_KEY
 source_of() {
   local s=$1
-  SOURCE_DIR=$base/src/$s
+  SOURCE_DIR=$base/${SRCPATH[$s]}
   if has_prepare "$s"; then
     prepare_source "$s"
     SOURCE_DIR=$PREPARED
     SOURCE_KEY=$(basename "$PREPARED")
-  elif [[ -d $base/src/$s ]]; then
+  elif [[ -d $SOURCE_DIR ]]; then
     SOURCE_KEY=$(source_tree "$s")
   else
     SOURCE_KEY=
@@ -463,9 +486,12 @@ source_of() {
 # Outputs:
 #   BUILT[$p] and BUILT[$q] for each output q in OUTS[$p]
 build_one() {
-  local p=$1 q scripts log root
+  local p=$1 q scripts log root env_files=
   env_of "$p" || die "$p: unresolved: ${MISSING[*]}"
   scripts=$(env_scripts | xargs)
+  for q in $scripts; do
+    env_files+=" ${PKGDIR[$q]}/env.sh"
+  done
   log=$bdir/logs/$p.log
   root=$bdir/roots/$p
   local hbase hbdir src_dir s with_dirs=
@@ -479,7 +505,8 @@ build_one() {
   SOURCE_ID=$SOURCE_KEY
   # The package's own inputs: the recipes (they source each other's),
   # its source trees, and the build's build, dest and debug directories.
-  local -a mounts=(pos:"$root" ro:"$base/buildsys" ro:"$base/packages")
+  recipe_mounts
+  local -a mounts=(pos:"$root" ro:"$base/buildsys" "${RECIPE_MOUNTS[@]}")
   [[ ! -d $src_dir ]] || mounts+=(ro:"$src_dir")
   WITH_SOURCE_IDS=()
   for s in ${WSRC[$p]}; do
@@ -496,13 +523,14 @@ build_one() {
   step_run "$p" "${mounts[@]}" -- env \
     POS_BASE="$hbase" \
     POS_PACKAGE="$p" \
+    POS_RECIPE_DIR="$hbase/${PKGDIR[$p]}" \
     POS_SRC_DIR="$(host_path "$src_dir")" \
     POS_WITH_SRC_DIRS="${with_dirs# }" \
     POS_BUILD_DIR="$hbdir/build/$p" \
     POS_DEST_DIR="$hbdir/dest/$p" \
     POS_DEBUG_DIR="$hbdir/debug/$p" \
     POS_OUTPUTS="${OUTS[$p]# }" \
-    POS_ENV_SCRIPTS="$scripts" \
+    POS_ENV_SCRIPTS="${env_files# }" \
     bash "$hbase/buildsys/pkg.sh" 2>&1 | tee -a "$log"
   for q in "$p" ${OUTS[$p]}; do
     pkg_record "$q"
@@ -584,7 +612,7 @@ source_archives() {
       [[ -z ${seen[$s]:-} ]] || continue
       seen[$s]=1
       if [[ -z $key ]]; then
-        echo "note: no source archive for $s: src/$s is not in the repository"
+        echo "note: no source archive for $s: ${SRCPATH[$s]:-its source} is not in the repository"
         continue
       fi
       out=$bdir/pos-src-$s-${key:0:16}.tar.zst
@@ -600,13 +628,13 @@ source_archives() {
   done
   commit=$(git -C "$base" rev-parse HEAD)
   if [[ $commit != "$(build_info commit)" ]] ||
-     [[ -n $(git -C "$base" status --porcelain --untracked-files=no -- outputs buildsys packages stages) ]]; then
-    echo "warning: outputs, buildsys, packages or stages differ from the commit the build started at;" \
+     [[ -n $(git -C "$base" status --porcelain --untracked-files=no -- outputs buildsys "${RECIPES[@]}") ]]; then
+    echo "warning: outputs, buildsys, recipes or stages differ from the commit the build started at;" \
          "the recipes archive holds HEAD" >&2
   fi
   out=$bdir/pos-recipes-$(build_stem "$bdir").tar.zst
   git -C "$base" archive --format=tar --prefix="pos-recipes-$(build_stem "$bdir")/" HEAD \
-    outputs buildsys packages stages BUILD.md README.md | zstd -q -f -o "$out.tmp"
+    outputs buildsys "${RECIPES[@]}" BUILD.md README.md | zstd -q -f -o "$out.tmp"
   mv "$out.tmp" "$out"
   echo "$out"
 }
@@ -652,7 +680,7 @@ build_os() {
   STAGES_BUILT=()
   build_packages "${TARGETS[@]}"
   for t in "$@"; do
-    [[ -f $base/stages/$t/packages ]] && STAGES_BUILT+=("$t")
+    [[ -f $(stage_file "$t") ]] && STAGES_BUILT+=("$t")
   done
   assemble_stages "${STAGES_BUILT[@]}"
   if [[ $(build_info source-archives) == yes ]]; then

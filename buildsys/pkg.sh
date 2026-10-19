@@ -1,17 +1,18 @@
 #!/usr/bin/env bash
-# Package build runner and helpers for packages/*/build.sh.
+# Package build runner and helpers for build.sh recipes.
 #
 # buildsys/build.sh runs this script in a build container. The builder
 # resolves the package's requirements, composes exactly that set as the
 # container's /pos (read-only), and passes the result in the environment.
-# Of the checkout, the container has the recipes (buildsys, packages), the
-# package's source tree, and the build's build, dest and debug directories.
-# Each packages/<name>/build.sh defines a pkg() phase function called
-# between _pkg_setup and _pkg_finish.
+# Of the checkout, the container has the recipes (buildsys, the package
+# directories pos/<tree>/packages), the package's source tree, and the
+# build's build, dest and debug directories. Each package's build.sh
+# defines a pkg() phase function called between _pkg_setup and _pkg_finish.
 #
 #   POS_BASE        the POS checkout
 #   POS_PACKAGE     the package being built
-#   POS_SRC_DIR     its source tree (src/<source>)
+#   POS_RECIPE_DIR  its package directory, with build.sh
+#   POS_SRC_DIR     its source tree (pos/<tree>/src/<source>, or prepared)
 #   POS_WITH_SRC_DIRS  further source trees (meta "with-sources"), as
 #                   <source>=<dir> words; pkg_sync_src copies each into
 #                   the build tree
@@ -22,8 +23,9 @@
 #   POS_DEBUG_DIR   where _pkg_finish puts the package's separate debug
 #                   info, $POS_DEBUG_DIR/pos/lib/debug; an output's goes
 #                   next to it, as with the staging directories
-#   POS_ENV_SCRIPTS packages in the resolved environment that set up the
-#                   build: _pkg_setup sources packages/<name>/env.sh of each.
+#   POS_ENV_SCRIPTS the env.sh files, relative to POS_BASE, of the packages
+#                   in the resolved environment that set up the build;
+#                   _pkg_setup sources each.
 #                   The compiler comes from the package providing gcc (the
 #                   reference's gcc, or gcc-host, Fedora's, without a
 #                   reference); linking against /pos from the pos-link
@@ -50,14 +52,15 @@ _require_container() {
 
 # Initialize the package build environment and directory layout before pkg() runs.
 # Inputs (environment):
-#   POS_BASE, POS_PACKAGE, POS_SRC_DIR, POS_BUILD_DIR, POS_DEST_DIR,
-#   POS_DEBUG_DIR, POS_OUTPUTS, POS_ENV_SCRIPTS
+#   POS_BASE, POS_PACKAGE, POS_RECIPE_DIR, POS_SRC_DIR, POS_BUILD_DIR,
+#   POS_DEST_DIR, POS_DEBUG_DIR, POS_OUTPUTS, POS_ENV_SCRIPTS
 # Outputs (shell variables set for pkg()):
-#   base, src_dir, build_dir, dest_dir, debug_dir, prefix (/pos),
+#   base, recipe_dir, src_dir, build_dir, dest_dir, debug_dir, prefix (/pos),
 #   sysconfdir (/etc), localstatedir (/var), nproc, CFLAGS, CXXFLAGS, LDFLAGS
 _pkg_setup() {
   _require_container
   base=${POS_BASE:?}
+  recipe_dir=${POS_RECIPE_DIR:?}
   src_dir=${POS_SRC_DIR:?}
   build_dir=${POS_BUILD_DIR:?}
   dest_dir=${POS_DEST_DIR:?}
@@ -87,17 +90,17 @@ _pkg_setup() {
 
   _pkg_flags
 
-  local p
-  for p in ${POS_ENV_SCRIPTS:-}; do
+  local f
+  for f in ${POS_ENV_SCRIPTS:-}; do
     # shellcheck source=/dev/null
-    source "$base/packages/$p/env.sh"
+    source "$base/$f"
   done
 }
 
 # Compiler and linker flags every package is built with (BUILD.md "Build
 # flags"): optimized with debug info, which _pkg_finish splits off, and the
 # hardening Fedora and Arch build with. -fPIE and -fstack-protector-strong
-# are the POS compiler's defaults (packages/gcc/build.sh). env.sh files add
+# are the POS compiler's defaults (pos/toolchain/packages/gcc/build.sh). env.sh files add
 # to these; recipes whose own build sets flags (glibc, gcc) replace them
 # with pos_optflags.
 # Inputs: pos_optflags
@@ -370,7 +373,7 @@ _pkg_finish() {
 
 _pkg_setup
 # shellcheck source=/dev/null
-source "$base/packages/$package/build.sh"
+source "$recipe_dir/build.sh"
 declare -F pkg >/dev/null || { echo "${package}: build.sh must define pkg()" >&2; exit 1; }
 cd "$build_dir"
 pkg

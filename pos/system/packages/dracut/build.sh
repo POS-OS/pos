@@ -3,7 +3,7 @@ pkg() {
 
   # dracut-install finds the libraries a program needs as glibc's loader
   # usually would: /etc/ld.so.conf, then /lib64, /usr/lib64, ... POS's loader
-  # reads /etc/pos/ld.so.conf and searches /pos/lib by default (packages/glibc),
+  # reads /etc/pos/ld.so.conf and searches /pos/lib by default (pos/core-libs/packages/glibc),
   # so it is told the same, ahead of the usual directories, which libraries
   # installed next to POS are in.
   c=src/install/dracut-install.c
@@ -47,6 +47,6 @@ pkg() {
   rm "$f.tmp"
   # Where POS's systemd, udev and dbus have their files, which dracut would
   # otherwise take to be Fedora's /usr (01-dist.conf).
-  install -m 0644 "$base/packages/dracut/01-dist.conf" \
+  install -m 0644 "$recipe_dir/01-dist.conf" \
     "${dest_dir}${prefix}/lib/dracut/dracut.conf.d/01-dist.conf"
 }
