@@ -1,7 +1,8 @@
-# The sdk compiler, built by toolchain builds with the reference's gcc, or
-# Fedora's (gcc-host) without one. gmp, mpfr and mpc are built in its tree
-# and linked in statically, as are libstdc++ and libgcc, so it runs on
-# glibc only and a pos build can change any other library under it. The
+# The sdk compiler, built by toolchain builds with the toolchain
+# reference's gcc, or Fedora's (gcc-host) without one, on the pos
+# reference's glibc. gmp, mpfr and mpc are built in its tree and linked in
+# statically, as are libstdc++ and libgcc, so it runs on glibc only and a
+# pos build can change any other library under it. The
 # build also produces gcc-runtime, which gcc requires; a build does not
 # need its own outputs to run.
 pipeline toolchain

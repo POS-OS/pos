@@ -1,0 +1,9 @@
+# Fedora's kernel headers standing in for linux-headers, a toolchain
+# package, in a pos build without a toolchain reference: the bootstrap
+# glibc of the first pos reference (BUILD.md "Toolchain"). linux-headers
+# obsoletes it, so where a toolchain reference has linux-headers, its are
+# used. gcc-host, which builds that glibc, searches /usr/include after
+# /pos/include.
+kind host
+provides linux-headers
+host-requires kernel-headers

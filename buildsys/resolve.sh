@@ -52,29 +52,36 @@
 # available, those obsoleted by another candidate are dropped; more than one
 # left is an error.
 #
-# A build is in one of two pipelines (PIPELINE). A toolchain build builds
-# the toolchain packages and what they need at run time. A pos build
-# builds everything else and never builds a toolchain package: those are
-# its reference's. A host or profile package that a reference package
-# obsoletes is not available: gcc-host, Fedora's compiler, stands in for
-# gcc only in a build without a reference.
+# A build is in one of two pipelines (PIPELINE), and builds only the
+# packages of its own. A toolchain build builds the toolchain packages; a
+# pos build builds everything else. Each takes what the other builds from
+# a reference (reference.sh): the toolchain from a toolchain reference
+# (REF: its packages), glibc and the rest of core-libs from a pos reference
+# (POSREF). A host or profile package is not available where a toolchain
+# reference package obsoletes it, or a target of the run that does not
+# itself require it: gcc-host and host-linux-headers, Fedora's compiler
+# and kernel headers, stand in for gcc and linux-headers only in a build
+# without a toolchain reference, and gcc-host for gcc in the toolchain
+# build that builds gcc with it.
 #
-# A build with a reference build (REF: the packages built in it) falls
-# back to the reference's copy of a package when nothing available
-# provides a capability, if the capability is a stand-in one (provided by
-# a package another obsoletes: the reference's gcc stands in for
-# gcc-host), or, in a pos build, if no target of the run provides it (it
-# is not being built). In ENV it is <name>@ref. Its own requirements are
-# those it was built with (REF_REQ), and are met by this build's packages
-# where they are built, otherwise by the reference's, whether or not they
-# are targets: the reference's gcc builds glibc, which gcc itself
-# requires.
+# Where nothing available provides a capability, a build falls back to a
+# reference's copy of a package: a toolchain package if the capability is
+# a stand-in one (provided by a package another obsoletes: the
+# reference's gcc stands in for gcc-host) or, in a pos build, if no target
+# of the run provides it (it is not being built); a pos package in a
+# toolchain build, or in a pos build if no target of the run provides it.
+# In ENV it is <name>@ref (toolchain reference) or <name>@pos (pos
+# reference). Its own requirements are those it was built with (REF_REQ),
+# and are met by this build's packages where they are built, otherwise by
+# the references', whether or not they are targets: the reference's gcc
+# builds glibc, which gcc itself requires.
 
 declare -a PKGS=()
 declare -A KIND=() REQ=() BREQ=() HREQ=() PREQ=() PROV=() OBS=() SRC=() WSRC=() OUTS=() PARENT=()
 declare -A PIPE=() PKGDIR=() SRCPATH=() SRCREFS=()
 declare -A PROVIDERS=() BOOTCAP=() TPROV=()
-declare -A BUILT=() REF=() REF_REQ=()
+declare -A BUILT=() REF=() POSREF=() REF_REQ=()
+declare -a TARGETS=()
 PIPELINE=pos
 
 die() {
@@ -263,15 +270,35 @@ meta_validate() {
   return $err
 }
 
-# Built packages, and host and profile packages that no reference package
-# obsoletes.
+# Built packages, and host and profile packages that no toolchain
+# reference package obsoletes, nor a target of the run that does not
+# require what they provide (see the top).
 # Inputs:
 #   $1    package name
+#   REF, TARGETS
 available() {
   case ${KIND[$1]} in
-    host|profile) ! obsoleted_by_any "$1" "${!REF[@]}" ;;
+    host|profile) ! obsoleted_by_any "$1" "${!REF[@]}" && ! obsoleted_by_target "$1" ;;
     *) [[ -n ${BUILT[$1]:-} ]] ;;
   esac
+}
+
+# True when a target of the run obsoletes p and its build does not require
+# a capability p provides: gcc, built with gcc-host, does.
+# Inputs:
+#   $1        package name p
+#   TARGETS
+obsoleted_by_target() {
+  local p=$1 t b cap
+  for t in "${TARGETS[@]}"; do
+    obsoleted_by_any "$p" "$t" || continue
+    b=$(build_of "$t")
+    for cap in ${BREQ[$b]} ${REQ[$b]}; do
+      [[ " ${PROV[$p]} " != *" $cap "* ]] || continue 2
+    done
+    return 0
+  done
+  return 1
 }
 
 # Whether the build's pipeline builds a package.
@@ -344,30 +371,36 @@ provider() {
   esac
 }
 
-# The reference's copy of a provider, as PROVIDER=<name>@ref (see the top).
+# A reference's copy of a provider, as PROVIDER=<name>@ref or <name>@pos
+# (see the top).
 # Inputs:
 #   $1    capability name
 #   $2    non-empty when resolving a requirement of a reference package
 # Outputs:
-#   PROVIDER (shell variable, set to <name>@ref when found)
+#   PROVIDER (shell variable, set to <name>@ref or <name>@pos when found)
 provider_ref() {
   local cap=$1 ref=$2 p
-  [[ -n $ref || -n ${BOOTCAP[$cap]:-} ]] ||
-    [[ $PIPELINE == pos && -z ${TPROV[$cap]:-} ]] || return 1
   for p in ${PROVIDERS[$cap]:-}; do
     if [[ -n ${REF[$p]:-} ]]; then
+      [[ -n $ref || -n ${BOOTCAP[$cap]:-} ]] ||
+        [[ $PIPELINE == pos && -z ${TPROV[$cap]:-} ]] || continue
       PROVIDER=$p@ref
+      return 0
+    elif [[ -n ${POSREF[$p]:-} ]]; then
+      [[ -n $ref || $PIPELINE == toolchain || -z ${TPROV[$cap]:-} ]] || continue
+      PROVIDER=$p@pos
       return 0
     fi
   done
   return 1
 }
 
-# Return 0 if an environment entry is satisfied from the reference build (<pkg>@ref).
+# Return 0 if an environment entry is satisfied from a reference build
+# (<pkg>@ref or <pkg>@pos).
 # Inputs:
 #   $1    environment entry
 is_ref() {
-  [[ $1 == *@ref ]]
+  [[ $1 == *@ref || $1 == *@pos ]]
 }
 
 # Resolve the build environment of a package: its requirements and,
@@ -410,7 +443,7 @@ env_of() {
     [[ -n ${inenv[$PROVIDER]:-} ]] && continue
     inenv[$PROVIDER]=1
     if is_ref "$PROVIDER"; then
-      for q in ${REF_REQ[${PROVIDER%@ref}]:-}; do
+      for q in ${REF_REQ[${PROVIDER%@*}]:-}; do
         queue+=("ref:$q")
       done
     else
@@ -428,7 +461,7 @@ env_of() {
 env_provides() {
   local cap=$1 p
   for p in "${ENV[@]}"; do
-    [[ " ${PROV[${p%@ref}]} " == *" $cap "* ]] && return 0
+    [[ " ${PROV[${p%@*}]} " == *" $cap "* ]] && return 0
   done
   return 1
 }
@@ -439,7 +472,7 @@ env_provides() {
 env_scripts() {
   local p
   for p in "${ENV[@]}"; do
-    p=${p%@ref}
+    p=${p%@*}
     [[ -f $base/${PKGDIR[$p]}/env.sh ]] && echo "$p"
   done
   return 0
@@ -566,10 +599,9 @@ wanted() {
         fi
         for q in ${PROVIDERS[$cap]:-}; do
           b=$(build_of "$q")
-          # Only packages are built, and a pos build does not build the
-          # toolchain; a toolchain build builds what the toolchain needs.
+          # Only packages are built, each by the builds of its pipeline.
           [[ ${KIND[$b]} == package ]] || continue
-          [[ $PIPELINE == pos && ${PIPE[$b]} == toolchain ]] && continue
+          in_pipeline "$b" || continue
           if [[ -z ${want[$b]:-} ]] && ! available "$q"; then
             want[$b]=1
             changed=1
@@ -583,20 +615,32 @@ wanted() {
 
 # Set NEXT to the next package to build: a wanted package whose environment
 # resolves. A candidate obsoleted by another buildable candidate waits, so
-# the replacement is built instead of the bootstrap package. Returns 1 when
-# nothing can be built.
+# the replacement is built instead of the bootstrap package. A candidate
+# whose environment takes a reference's copy of a package the run builds
+# waits while another is ready: binutils is built with the build's
+# linux-headers, not the reference's (it is built with the reference's
+# gcc, which needs binutils). Returns 1 when nothing can be built.
 # Inputs:
 #   $@    target package names
 # Outputs:
 #   NEXT (package name ready to build), WANTED (array of remaining unbuilt packages)
 next_package() {
-  local p
-  local -a ready=()
+  local p e
+  local -a ready=() first=()
+  local -A want=()
   wanted "$@"
   for p in "${WANTED[@]}"; do
-    env_of "$p" && ready+=("$p")
+    want[$p]=1
   done
-  for p in "${ready[@]}"; do
+  for p in "${WANTED[@]}"; do
+    env_of "$p" || continue
+    ready+=("$p")
+    for e in "${ENV[@]}"; do
+      is_ref "$e" && [[ -n ${want[$(build_of "${e%@*}")]:-} ]] && continue 2
+    done
+    first+=("$p")
+  done
+  for p in "${first[@]}" "${ready[@]}"; do
     if ! obsoleted_by_any "$p" "${ready[@]}"; then
       NEXT=$p
       return 0

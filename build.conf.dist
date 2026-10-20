@@ -12,14 +12,23 @@
 #tools-image registry.fedoraproject.org/fedora:44
 
 # Directory of reference builds (POS_REFERENCE_DIR), the toolchain builds
-# ./build reference stores. No default: without it, only a toolchain build
-# can be made, with Fedora's compiler.
+# and pos builds' core-libs ./build reference stores. No default: without
+# it, only the bootstrap pos build (glibc, with Fedora's compiler) can be
+# made.
 #reference-dir /path/to/pos-references
 
-# Reference build a new build takes the toolchain from (POS_REFERENCE): a
-# build ID in reference-dir, or none for a toolchain build with Fedora's
-# compiler. Default: the one ./build reference marked last.
-#reference none
+# Toolchain reference a new build takes the toolchain from
+# (POS_TOOLCHAIN_REFERENCE): a toolchain build ID in reference-dir, or none
+# for a build with Fedora's compiler. Default: the one ./build reference
+# marked last.
+#toolchain-reference none
+
+# Pos reference a new build takes glibc and core-libs from
+# (POS_POS_REFERENCE): a pos build ID in reference-dir, or none. Default:
+# for a pos build, the one its toolchain reference was built on (a newer
+# one may be named here); for a toolchain build, the one ./build reference
+# marked last.
+#pos-reference none
 
 # Release library (POS_RELEASE_DIR): ./build publish copies a numbered
 # build's artifacts into <release-dir>/<release>; publish reads it, builds

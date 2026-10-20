@@ -9,7 +9,7 @@ reaches through `flatpak-spawn --host` from inside a toolbox, as the
 
     $ ./build plan                 # what run would build, in order
     $ ./build run --new --toolchain  # build the toolchain (see "Toolchain")
-    $ ./build reference            # store it as the reference of later builds
+    $ ./build reference            # store it as the toolchain reference of later builds
     $ ./build run                  # build and assemble every stage
     $ ./build run core-libs        # one stage
     $ ./build run zlib             # one package (and what it needs)
@@ -65,7 +65,7 @@ with `./build tag`, or `./build publish`, which also publishes it (see
    record names its commit with a clean tree, and its BUILD (`VERSION` at
    its commit) is above every `main-*` tag.
 2. The build's commit is tagged `main-<BUILD>`, an annotated tag with the
-   build ID, its identifier, the reference and whether checks were
+   build ID, its identifier, the references and whether checks were
    skipped.
 3. `./build bump` commits `VERSION` with the next BUILD, as pos-bot. Run
    it alone when `tag` or `publish` failed after tagging.
@@ -159,7 +159,8 @@ an unknown key is an error.
 | `fedora-release` | `POS_FEDORA_RELEASE` | 44 |
 | `tools-image` | `POS_TOOLS_IMAGE` | `registry.fedoraproject.org/fedora:<release>` |
 | `reference-dir` | `POS_REFERENCE_DIR` | none: no reference store |
-| `reference` | `POS_REFERENCE` | the store's default (see "Reference builds"); `none`: a toolchain build with Fedora's compiler |
+| `toolchain-reference` | `POS_TOOLCHAIN_REFERENCE` | the store's default (see "Reference builds"); `none`: a build with Fedora's compiler |
+| `pos-reference` | `POS_POS_REFERENCE` | a pos build: its toolchain reference's; a toolchain build: the store's default |
 | `release-dir` | `POS_RELEASE_DIR` | none: `publish` needs it; read by `publish`, not recorded by builds |
 
 ## Trees
@@ -173,12 +174,12 @@ list of the stage named after the tree.
 | `core-libs`, `system`, `sdk` | the stages: their member lists, and the packages and sources of their members |
 | `toolchain` | the toolchain pipeline (see "Toolchain"): linux-headers, binutils, gcc with gcc-runtime, and mpc, which gcc builds in its tree |
 | `common` | sources of packages of several trees: gnulib |
-| `build-env` | the host and profile packages builds require (host-base, host-toolchain, gcc-host, pos-link) |
+| `build-env` | the host and profile packages builds require (host-base, host-toolchain, gcc-host, host-linux-headers, pos-link) |
 
 A package lives in the tree of the stage that ships it, and one no stage
 ships by its role. The toolchain is the exception: the sdk stage (and
 core-libs, gcc-runtime) lists toolchain packages, which a pos build takes
-from its reference, while their recipes and sources are the `toolchain`
+from its toolchain reference, while their recipes and sources are the `toolchain`
 tree, so that tree is exactly what toolchain builds build. A stage's
 `stage` file lists packages of any tree.
 
@@ -284,7 +285,7 @@ build gets.
 other packages copy into their tree (mpc).
 
 `run` picks a package whose requirements are all available (built in this
-build, host packages, or from the reference build), builds it, and repeats
+build, host packages, or from a reference build), builds it, and repeats
 until the targets are built. Where several are ready, a package obsoleted
 by another ready one waits. A build does not see the whole build history:
 its `/pos` holds exactly the package's requirements, plus the run-time
@@ -312,39 +313,63 @@ toolchain`. It is built apart from the rest, and a build is one of two
 kinds (`info`: `pipeline`):
 
 * A toolchain build (`run --new --toolchain`) builds the toolchain
-  packages, and what they need at run time, glibc. Its compiler is the
-  reference's gcc, or Fedora's without a reference. `./build reference`
-  stores it as the reference of later builds.
-* A pos build (`run --new`) builds every stage with the reference's
-  toolchain, and never builds a toolchain package. Its own packages are
-  all built from the checkout; the stages that list toolchain packages
-  (sdk, and core-libs' gcc-runtime) are assembled with the reference's.
-  A pos build needs a reference.
+  packages only. Its compiler is the toolchain reference's gcc, or
+  Fedora's without one; it builds on the glibc of a pos reference, a
+  stored pos build, and never builds glibc. `./build reference` stores it
+  as the toolchain reference of later builds, which records the pos
+  reference it was built on.
+* A pos build (`run --new`) builds every stage with the toolchain
+  reference's toolchain, and never builds a toolchain package. Its own
+  packages are all built from the checkout; the stages that list
+  toolchain packages (sdk, and core-libs' gcc-runtime) are assembled with
+  the toolchain reference's. Until it has built them, core-libs is the
+  pos reference's: by default the one the toolchain was built on.
+  `./build reference` stores its core-libs as the pos reference of later
+  toolchain builds.
 
-A toolchain build without a reference uses Fedora's compiler, the
+The interface between the two is a built pos: the toolchain tree builds
+nothing of pos, and pos nothing of the toolchain (see "Reference builds").
+
+A build without a toolchain reference uses Fedora's compiler, the
 `gcc-host` profile, which provides `gcc`: it runs Fedora's gcc with
 `/pos` ahead of `/usr` in its search (`gcc-host/env.sh`). gcc obsoletes
-`gcc-host`, and a host or profile package a reference package obsoletes is
-not available, so with a reference the reference's gcc is the compiler.
-From nothing, POS is built in three builds:
+`gcc-host`, and a host or profile package a toolchain reference package
+obsoletes is not available, so with a toolchain reference its gcc is the
+compiler. A pos build without one is the bootstrap of the first pos
+reference: it builds packages, not stages, and its glibc is built with
+Fedora's kernel headers (`host-linux-headers`, which linux-headers
+obsoletes). From nothing, POS is built in four builds:
 
-    $ POS_REFERENCE=none ./build run --new --toolchain  # by Fedora's gcc
+    $ POS_TOOLCHAIN_REFERENCE=none ./build run --new glibc        # glibc by Fedora's gcc
+    $ ./build reference                                           # the first pos reference
+    $ POS_TOOLCHAIN_REFERENCE=none ./build run --new --toolchain  # by Fedora's gcc
     $ ./build reference
-    $ ./build run --new --toolchain                     # by itself
+    $ ./build run --new --toolchain                               # by itself
     $ ./build reference
-    $ ./build run --new                                 # the stages
+    $ ./build run --new                                           # the stages
+    $ ./build reference                                           # pos reference of later toolchains
 
 The second toolchain build is the one released: its gcc is built by a POS
-gcc of the same sources. A toolchain update is a toolchain build with
-the current reference, stored as the next reference.
+gcc of the same sources. The bootstrap glibc is only what the first
+toolchains run on; the pos build builds glibc again with the toolchain's
+kernel headers. A toolchain update is a toolchain build with the current
+references, stored as the next toolchain reference.
+
+A toolchain built on glibc N runs on glibc N or newer (symbol
+versioning), so a toolchain is built on the oldest pos it serves, and a
+glibc update in pos needs no toolchain build. A pos build may take a
+newer pos reference than its toolchain was built on (`pos-reference`);
+an older glibc is refused. libstdc++ (gcc-runtime) is configured against
+the glibc it is built on: new glibc features reach it only with a
+toolchain build.
 
 The toolchain runs on glibc only. gcc builds gmp, mpfr and mpc in its tree
 (`with-sources`) and links them statically, as it does libstdc++ and libgcc
 (`--with-static-standard-libraries`); gcc and binutils use their bundled
 zlib and no zstd. The gcc recipe fails if a compiler program needs another
 library. So a pos build can change any library but glibc, whose ABI is
-backward compatible, under the toolchain it builds with: the reference's
-gcc runs on the pos build's glibc as soon as that is built. gmp and mpfr
+backward compatible, under the toolchain it builds with: the toolchain
+reference's gcc runs on the pos build's glibc as soon as that is built. gmp and mpfr
 are also pos packages, built from the same sources for coreutils and
 gawk; mpc is only built in gcc's tree (`kind source`).
 
@@ -380,7 +405,7 @@ two things:
   more than bash, coreutils and dnf.
 * `/pos`: the package's resolved environment, composed for this build: the
   staging trees of the POS packages in it (this build's `dest/<name>`, or
-  the reference's), hard-linked into `roots/<package>`, mounted read-only.
+  a reference's), hard-linked into `roots/<package>`, mounted read-only.
   A path has one owner: composing fails when two packages of the
   environment ship the same file or link. The root is removed after the
   build, and kept when it fails, to look at.
@@ -399,36 +424,58 @@ build directory.
 A built package's staging tree carries its metadata in
 `/pos/lib/pos/packages/<name>/`: `meta` (the package's meta, the build
 ID, the packages it was built against, the tools image ID and the
-reference build) and `files`. The metadata stays in the stage archives, so
+reference builds) and `files`. The metadata stays in the stage archives, so
 an installed `/pos` records what it contains.
 
 `./build clean` removes the tools image; a later `run` makes it again.
 
 ## Reference builds
-A reference build is a stored toolchain build. Its packages are available
-to the resolver as `<name>@ref`: where no package of the build provides a
-capability, the reference's copy does, if the capability is a stand-in one
-(one that a package another obsoletes provides: the reference's gcc stands
-in for `gcc-host`), or, in a pos build, if no target of the run provides
-it. A pos build does not build the toolchain packages, so they are always
-the reference's. A run of a single package builds only that package,
-against the reference.
+A reference build is a stored build of the other pipeline. There are two
+kinds:
+
+* A toolchain reference is a toolchain build: the toolchain packages. Its
+  packages are available to the resolver as `<name>@ref`. Where no
+  package of the build provides a capability, the reference's copy does,
+  if the capability is a stand-in one (one that a package another
+  obsoletes provides: the reference's gcc stands in for `gcc-host`), or,
+  in a pos build, if no target of the run provides it. A pos build does
+  not build the toolchain packages, so they are always the reference's.
+* A pos reference is a pos build's core-libs: glibc and the libraries
+  that link it. Its packages are `<name>@pos`, and provide what no package
+  of the build does in a toolchain build, which builds no pos package, or,
+  in a pos build, if no target of the run provides it. A run of a single
+  package in a new pos build builds only that package, against the pos
+  reference's core-libs; what it requires outside core-libs must be among
+  the targets.
 
 A reference package's own requirements are those it was built with (its
 recorded meta). They are met by this build's packages once built,
-otherwise by the reference's, targets or not: the reference's gcc
-requires glibc, and builds it, running on the reference's glibc until
-then.
+otherwise by the references', targets or not: the toolchain reference's
+gcc requires glibc, and builds it, running on the pos reference's glibc
+until then. Where a package is ready with a reference's copy of a
+package the run builds, it waits while another is ready without one, so
+the toolchain build builds binutils with its own linux-headers, though
+it builds it with the reference's gcc.
 
-`./build reference [<id>]` (default: the current build) stores a complete
-toolchain build in the reference store, the `reference-dir` setting, as
+`./build reference [<id>]` (default: the current build) stores a build in
+the reference store, the `reference-dir` setting, as
 `pos-ref-<id>.tar.zst`: its `info` and the staging trees and debug info of
-its packages, the toolchain and glibc. It marks the build the store's
-`default`, the reference of new builds. A build records its reference in
-`info` (`reference`) and restores it from the store into
-`work/references/<id>` when it is not there. The store is a directory
+what it stores. Of a toolchain build, which must be complete, that is
+its toolchain packages; of a pos build, its core-libs packages, which
+must include glibc. It marks the build the store's `default-toolchain` or
+`default-pos`, the reference of that kind of new builds (a store's
+`default` from before pos references counts as `default-toolchain`). A
+build records its references in `info` (`toolchain-reference`,
+`pos-reference`) and restores them from the store into
+`work/references/<id>` when they are not there. The store is a directory
 outside the checkout, so removing builds never removes a reference.
-References from before toolchain builds, complete pos builds, are refused.
+
+A pos build's pos reference is, by default, the one its toolchain
+reference was built on (`pos-reference` in the reference's `info`); the
+`pos-reference` setting can name a newer one, as long as its glibc is
+not older (`include/features.h`). A toolchain reference from before pos
+references holds glibc as well, which is not used: it was built on that
+glibc, and a pos build with it needs `pos-reference` set.
 
 Comparing a pos build made with a toolchain built from nothing to one
 made with a later toolchain (`devtools/compare-builds.sh`: the files of
@@ -472,7 +519,7 @@ them:
 * PIE and `-fstack-protector-strong` are the POS compiler's defaults
   (`--enable-default-pie --enable-default-ssp`), and it gives every link
   a build ID (`--enable-linker-build-id`). Fedora's compiler, used in a
-  toolchain build without a reference, does both through its own
+  build without a toolchain reference, does both through its own
   defaults.
 
 meson builds use `--buildtype=plain` and cmake builds
@@ -658,7 +705,7 @@ and `pos-link` adds only
 gcc drops the later duplicate, and libstdc++'s `#include_next <stdlib.h>`
 finds nothing after itself (ncurses then falls back to `<iostream.h>`).
 
-A toolchain build without a reference is built by the host toolchain.
+A build without a toolchain reference is built by the host toolchain.
 Only there does `gcc-host` add `-isystem /pos/include`,
 `C_INCLUDE_PATH`, `CPLUS_INCLUDE_PATH`, and `LIBRARY_PATH` to put `/pos`
 ahead of the host's `/usr`.
@@ -685,7 +732,7 @@ then `LD_LIBRARY_PATH`, then its cache, then its default directory
 would only repeat it. Library lookup is decided in one place: the cache and
 `/etc/pos/ld.so.conf`.
 
-glibc is built with the reference's gcc, which runs on the reference's glibc. This is the same arrangement
+glibc is built with the toolchain reference's gcc, which runs on the pos reference's glibc. This is the same arrangement
 as Fedora: the gcc in `/usr` was linked against the installed libc, and it
 compiles the glibc that will replace it. The compiler runs on the old libc.
 The new one is a build output. glibc passes `-nostdlib -nostartfiles` and
@@ -693,8 +740,10 @@ names the build-tree `libc.so` and `ld.so` on the link line, then appends
 its own `-Wl,-dynamic-linker=/pos/lib/ld-linux-x86-64.so.2`.
 
 The extra search path other packages get stays off for this build: glibc
-requires `gcc`, not `pos-link`. With `gcc-host` it does get `/pos` in its
-search; there `/pos` holds the kernel headers only, which glibc wants.
+requires `gcc`, not `pos-link`. With `gcc-host`, in the bootstrap pos
+build, it does get `/pos` in its search; there `/pos` is empty, and the
+kernel headers glibc wants are Fedora's, in `/usr/include`
+(`host-linux-headers`).
 `C_INCLUDE_PATH` and `LIBRARY_PATH` are not disabled by `-nostdinc` or
 `-nostdlib`, and the `/pos` link flags are not ones glibc puts on its own
 binaries. Fedora gets the header isolation from `--with-headers`, which
@@ -702,7 +751,7 @@ turns on `-nostdinc` and adds only the kernel headers. Our recipe does not
 pass that, because the kernel headers and the installed glibc headers share
 `/pos/include`.
 
-In a toolchain build without a reference, the host gcc is still
+In a build without a toolchain reference, the host gcc is still
 visible and keeps `/usr/include` and `/usr/lib64` in its default search
 after `/pos`. A configure check for a library that is not in `/pos` yet
 then finds the tools image's copy, and the binary fails to load because the
@@ -721,7 +770,7 @@ reads compiled locales only from its own prefix, not Fedora's
 
 gmp and mpfr are in this stage. coreutils `expr` and `factor`, and gawk
 `-M`, link them at run time. gmp `--enable-cxx` needs libstdc++, from the
-reference's gcc-runtime. The compiler has its own static copies (see
+toolchain reference's gcc-runtime. The compiler has its own static copies (see
 "Toolchain").
 
 `ca-certificates` installs the Mozilla trusted root certificates as
@@ -1061,7 +1110,7 @@ The sdk stage (`pos/sdk/stage`) is the compiler, the assembler and linker, and t
 headers (linux-headers, binutils, gcc), plus developer tools moved out
 of the system stage (diffutils, patch, man-pages). The first three are
 the toolchain, built by toolchain builds (see "Toolchain"); a pos build
-assembles the stage with its reference's. The sdk is a component POS
+assembles the stage with its toolchain reference's. The sdk is a component POS
 ships, so it installs under `/pos` like the base system. A base system
 image does not include it; the builds of other packages require it.
 The headers are needed only while compiling: glibc's `errno.h` includes
@@ -1110,7 +1159,7 @@ The compiler searches `/pos/include` as its system header directory, so gcc
 requires linux-headers even though they are not part of the core-libs
 archive.
 
-The sdk archive ships the gcc of the reference, a toolchain build made
+The sdk archive ships the gcc of the toolchain reference, a toolchain build made
 with the previous toolchain. Two toolchain builds in a row from the same
 sources should produce the same compiler; comparing them would be the
 check gcc's own `make bootstrap` does. The pos package gmp is

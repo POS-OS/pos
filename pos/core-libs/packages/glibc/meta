@@ -1,5 +1,6 @@
-# Built by the build's compiler: the reference's gcc, which runs on the
-# reference's glibc until this one is built, or gcc-host without one.
+# Built by the build's compiler: the toolchain reference's gcc, which
+# runs on the pos reference's glibc until this one is built, or gcc-host
+# (with host-linux-headers) in the bootstrap build without one.
 # No pos-link: glibc links its new libc by path from the build tree, and
 # the search path pos-link adds would reach it (BUILD.md "Core libs stage").
 build-requires gcc linux-headers

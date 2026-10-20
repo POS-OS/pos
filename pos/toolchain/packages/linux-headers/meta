@@ -5,3 +5,6 @@ source linux
 # fixdep, the one program the build compiles and runs, is built with
 # Fedora's compiler.
 build-requires host-gcc
+# Fedora's kernel headers stand in for these in a pos build without a
+# toolchain reference (pos/build-env/packages/host-linux-headers).
+obsoletes host-linux-headers

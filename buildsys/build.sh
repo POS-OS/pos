@@ -24,12 +24,13 @@
 #
 # A build is a toolchain build or a pos build (resolve.sh). The toolchain
 # (gcc, binutils, the kernel headers) is built by toolchain builds, with
-# the toolchain of a reference build, a stored toolchain build
+# the toolchain of a toolchain reference, a stored toolchain build
 # (work/references/<ref>, restored from the reference store), or Fedora's
-# without one. A pos build builds the rest with its reference's toolchain,
-# and assembles the stages with the reference's toolchain packages in
-# them. podman runs on the host; from inside a toolbox through
-# flatpak-spawn.
+# without one, on the glibc of a pos reference, a stored pos build
+# (reference.sh). A pos build builds the rest with its toolchain
+# reference's toolchain, and assembles the stages with the reference's
+# toolchain packages in them. podman runs on the host; from inside a
+# toolbox through flatpak-spawn.
 
 set -euo pipefail
 
@@ -76,8 +77,9 @@ usage: ./build plan [--new [--toolchain]] [<target>...]
        ./build output [--no-checks] [<output>...]
                                                make outputs of the current build again
        ./build status                          show the current build
-       ./build reference [<id>]                store a complete toolchain build as
-                                               the default reference
+       ./build reference [<id>]                store a toolchain build, or a pos
+                                               build's core-libs, as the default
+                                               reference of its kind
        ./build clean [<id>]                    remove the tools image of a build
        ./build validate [--unchecked] [<id>]   check that a build is an OS build
        ./build tag [--unchecked]               number the current build: validate it,
@@ -90,23 +92,27 @@ A target is a stage (pos/<stage>/stage) or a package. The default is
 every stage. run continues the current build; --new starts another, a
 toolchain build with --toolchain. A toolchain build builds the toolchain
 packages (meta: pipeline toolchain) and what they need; a pos build
-builds the rest, and takes the toolchain from its reference. An output
+builds the rest, and takes the toolchain from its toolchain reference. An output
 (outputs/<output>: images, disks, RPM packages) is made when run
 assembles all the stages it requires, after the outputs it requires.
 --source-archives makes the new build also write an archive of every
 source it built from (pos-src-<source>-<key>.tar.zst) and of the build
 recipes (pos-recipes-<stem>.tar.zst).
 
-A new build takes the toolchain from a reference build, a toolchain build,
-by default the one reference marked last. A toolchain build without one
-(reference none) is built by Fedora's compiler; a pos build needs one.
+A new build takes the toolchain from a toolchain reference, a stored
+toolchain build, and core-libs from a pos reference, a stored pos build's
+core-libs; by default the ones reference marked last, and for a pos build
+the pos reference its toolchain was built on. A toolchain build without a
+toolchain reference (none) is built by Fedora's compiler; it needs a pos
+reference. A pos build without one builds glibc, the first pos reference.
 Settings (build.conf.dist) are read from
 $build_config; an environment variable overrides one:
   fedora-release  POS_FEDORA_RELEASE  the Fedora release (default 44)
   tools-image     POS_TOOLS_IMAGE     the image tools are installed on
                                       (default $fedora_image:<release>)
   reference-dir   POS_REFERENCE_DIR   the reference store
-  reference       POS_REFERENCE       the reference build, or none
+  toolchain-reference  POS_TOOLCHAIN_REFERENCE  the toolchain reference, or none
+  pos-reference   POS_POS_REFERENCE   the pos reference, or none
   release-dir     POS_RELEASE_DIR     the release library publish copies into
 EOF
   exit 1
@@ -150,11 +156,26 @@ current_id() {
   [[ -L $builds/current ]] && basename "$(readlink "$builds/current")"
 }
 
-# Return 0 if the active pipeline is a standalone toolchain/SDK build.
+# Return 0 if the active pipeline is the toolchain's.
 # Inputs:
-#   PIPELINE    active pipeline name ("pos", "toolchain", or "sdk")
+#   PIPELINE    active pipeline name ("pos" or "toolchain")
 is_toolchain_pipeline() {
-  [[ ${PIPELINE:-pos} == toolchain || ${PIPELINE:-pos} == sdk ]]
+  [[ ${PIPELINE:-pos} == toolchain ]]
+}
+
+# A pos build without a toolchain reference is the bootstrap of the first
+# pos reference: it builds packages (glibc) with Fedora's compiler, not
+# stages, which hold the toolchain.
+# Inputs:
+#   $@              targets as given (stages and/or packages)
+#   PIPELINE, TOOLCHAIN_REF
+bootstrap_check() {
+  local t
+  [[ $PIPELINE == pos && $TOOLCHAIN_REF == none ]] || return 0
+  for t in "$@"; do
+    [[ ! -f $(stage_file "$t") ]] ||
+      die "$t: a pos build without a toolchain reference builds packages, not stages (BUILD.md \"Toolchain\")"
+  done
 }
 
 # Create a new build directory under $builds/<id>, build its tools container
@@ -164,15 +185,12 @@ is_toolchain_pipeline() {
 #   $1          whether to produce source archives ("yes" or "no")
 #   PIPELINE    active pipeline name ("pos" or "toolchain")
 build_new() {
-  local archives=$1 ref from branch version
+  local archives=$1 from branch version
   id=$(date +%Y%m%d%H%M)
   [[ ! -e $builds/$id ]] || die "build $id already exists; wait a minute"
   branch=$(git -C "$base" rev-parse --abbrev-ref HEAD)
   version=$(version_info HEAD "$branch" "$id") || exit 1
-  ref=$(reference_choose)
-  is_toolchain_pipeline || [[ $ref != none ]] ||
-    die "a pos build takes the toolchain from an SDK reference; make one with: POS_REFERENCE=none ./build run --new --toolchain"
-  reference_restore "$ref"
+  references_choose
   from=$(tools_base)
   bdir=$builds/$id
   mkdir -p "$bdir"/{dest,debug,build,logs}
@@ -183,7 +201,8 @@ build_new() {
     echo "fedora $fedora_release"
     echo "tools-base $from"
     echo "tools-image localhost/pos-tools:$id"
-    echo "reference $ref"
+    echo "toolchain-reference $TOOLCHAIN_REF"
+    echo "pos-reference $POS_REF"
     echo "branch $branch"
     tree_state | awk '{print "commit", $1; print "tree", $2}'
     echo "$version"
@@ -244,17 +263,17 @@ step_made() {
 }
 
 # Load the build in bdir: its pipeline (pos for builds from before
-# pipelines), what it has built and its reference.
+# pipelines), what it has built and its references.
 # Inputs:
 #   bdir    active build directory
 # Outputs:
-#   PIPELINE, BUILT[], REF[], REF_REQ[]
+#   PIPELINE, BUILT[], TOOLCHAIN_REF, POS_REF, REF[], POSREF[], REF_REQ[]
 build_load() {
   PIPELINE=$(build_info pipeline)
   PIPELINE=${PIPELINE:-pos}
   load_built
-  reference_restore "$(build_reference)"
-  load_reference "$(build_reference)"
+  build_references
+  load_references
 }
 
 # The committed state of a source: builds and archives must match a commit.
@@ -416,23 +435,25 @@ pkg_record() {
     done
     echo "build-env ${ENV[*]}"
     echo "build-tools $TOOLS_ID"
-    echo "build-reference $(build_reference)"
+    echo "build-toolchain-reference $TOOLCHAIN_REF"
+    echo "build-pos-reference $POS_REF"
     echo "built $(date -u +%FT%TZ)"
   } >"$dir/meta.tmp"
   mv "$dir/meta.tmp" "$dir/meta"
   step_made "package-$p"
 }
 
-# The staging tree of a package in the environment: this build's, or the
-# reference's (<name>@ref).
+# The staging tree of a package in the environment: this build's, or a
+# reference's (<name>@ref, <name>@pos).
 # Inputs:
-#   $1    environment entry (<pkg> or <pkg>@ref)
+#   $1    environment entry (<pkg>, <pkg>@ref or <pkg>@pos)
+#   TOOLCHAIN_REF, POS_REF
 env_tree() {
-  if is_ref "$1"; then
-    echo "$refs/$(build_reference)/dest/${1%@ref}/pos"
-  else
-    echo "$bdir/dest/$1/pos"
-  fi
+  case $1 in
+    *@ref) echo "$refs/$TOOLCHAIN_REF/dest/${1%@ref}/pos" ;;
+    *@pos) echo "$refs/$POS_REF/dest/${1%@pos}/pos" ;;
+    *) echo "$bdir/dest/$1/pos" ;;
+  esac
 }
 
 # Compose the /pos of a package build: the trees of the POS packages in
@@ -447,10 +468,10 @@ root_compose() {
   rm -rf "$root"
   mkdir -p "$root"
   for q in "${ENV[@]}"; do
-    case ${KIND[${q%@ref}]} in
+    case ${KIND[${q%@*}]} in
       package|output)
         cp -al --update=none-fail "$(env_tree "$q")/." "$root/" ||
-          die "$p: ${q%@ref} ships a path another package of the environment ships" ;;
+          die "$p: ${q%@*} ships a path another package of the environment ships" ;;
     esac
   done
 }
@@ -567,25 +588,22 @@ cmd_plan() {
     esac
   done
   [[ -z $toolchain || -n $id ]] || die "--toolchain is chosen when a build is created; use it with --new"
-  local ref
   if [[ -z $id ]] && id=$(current_id); then
     bdir=$builds/$id
     build_load
-    ref=$(build_reference)
   else
     id="<new>"
     PIPELINE=${toolchain:+toolchain}
     PIPELINE=${PIPELINE:-pos}
-    ref=$(reference_choose)
-    is_toolchain_pipeline || [[ $ref != none ]] || die "a pos build takes the toolchain from an SDK reference"
-    reference_restore "$ref"
-    load_reference "$ref"
+    references_choose
+    load_references
   fi
   ((${#args[@]})) || mapfile -t args < <(pipeline_targets)
+  bootstrap_check "${args[@]}"
   targets_expand "${args[@]}"
   is_toolchain_pipeline || targets_check "${TARGETS[@]}"
   echo "build $id ($PIPELINE)"
-  echo "reference $ref (${#REF[@]} packages)"
+  echo "toolchain reference $TOOLCHAIN_REF (${#REF[@]} packages), pos reference $POS_REF (${#POSREF[@]} packages)"
   while next_package "${TARGETS[@]}"; do
     env_of "$NEXT"
     printf '%3d %-24s setup: %s\n' $((++n)) "$NEXT" "$(env_scripts | xargs)"
@@ -664,7 +682,7 @@ assemble_stages() {
   for t in "$@"; do
     title "assemble $t"
     step_start "stage-$t"
-    "$base/buildsys/assemble.sh" "$bdir" "$t" "$refs/$(build_reference)"
+    "$base/buildsys/assemble.sh" "$bdir" "$t" "$refs/$TOOLCHAIN_REF"
     step_made "stage-$t"
   done
 }
@@ -721,11 +739,13 @@ cmd_run() {
     die "build $id builds in toolboxes, which this buildsys no longer does; start another with run --new"
   build_versioned "$bdir"
   build_load
-  echo "build $id ($PIPELINE), reference $(build_reference) (${#REF[@]} packages)"
+  echo "build $id ($PIPELINE), toolchain reference $TOOLCHAIN_REF (${#REF[@]} packages)," \
+       "pos reference $POS_REF (${#POSREF[@]} packages)"
   if ((${#args[@]} == 0)); then
     all=1
     mapfile -t args < <(pipeline_targets)
   fi
+  bootstrap_check "${args[@]}"
   targets_expand "${args[@]}"
   is_toolchain_pipeline || targets_check "${TARGETS[@]}"
   tools_ensure

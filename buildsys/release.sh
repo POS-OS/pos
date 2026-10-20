@@ -143,7 +143,7 @@ tag_check() {
 }
 
 # Tag the build's commit main-<BUILD>, an annotated tag with the build's
-# ID, identifier, reference and checks.
+# ID, identifier, references and checks.
 # Inputs:
 #   id, bdir, BUILD_NUMBER, UNCHECKED (tag_check)
 tag_make() {
@@ -153,7 +153,8 @@ tag_make() {
 
 build $id
 version $(build_identifier "$bdir")
-reference $(build_info reference)
+toolchain-reference $(build_info toolchain-reference)
+pos-reference $(build_info pos-reference)
 $(checks_said)" "$commit"
   echo "tagged $commit main-$BUILD_NUMBER"
 }

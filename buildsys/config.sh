@@ -14,7 +14,8 @@ config_keys=(
   "fedora-release POS_FEDORA_RELEASE 44"
   "tools-image POS_TOOLS_IMAGE -"
   "reference-dir POS_REFERENCE_DIR -"
-  "reference POS_REFERENCE -"
+  "toolchain-reference POS_TOOLCHAIN_REFERENCE -"
+  "pos-reference POS_POS_REFERENCE -"
   "release-dir POS_RELEASE_DIR -"
 )
 
@@ -41,7 +42,10 @@ config_load() {
       read -r k _ <<<"$line"
       [[ $k == "$key" ]] && known=1
     done
-    if [[ -z $known ]]; then
+    if [[ $key == reference ]]; then
+      echo "$build_config: the setting reference is now toolchain-reference" >&2
+      exit 1
+    elif [[ -z $known ]]; then
       echo "$build_config: unknown setting: $key" >&2
       exit 1
     fi
@@ -51,22 +55,14 @@ config_load() {
 
 # The value of a setting; empty for one without a default.
 # Inputs:
-#   $1    setting key (fedora-release, tools-image, reference-dir, reference,
-#         release-dir)
+#   $1    setting key (fedora-release, tools-image, reference-dir,
+#         toolchain-reference, pos-reference, release-dir)
 config() {
   local line k var def
   for line in "${config_keys[@]}"; do
     read -r k var def <<<"$line"
     [[ $k == "$1" ]] || continue
     [[ $def != - ]] || def=
-    if [[ $k == reference-dir && -z ${!var:-} && -n ${POS_SDK_DIR:-} ]]; then
-      echo "$POS_SDK_DIR"
-      return 0
-    fi
-    if [[ $k == reference && -z ${!var:-} && -n ${POS_SDK:-} ]]; then
-      echo "$POS_SDK"
-      return 0
-    fi
     if [[ -n ${!var:-} ]]; then
       echo "${!var}"
     else
@@ -79,3 +75,7 @@ config() {
 }
 
 config_load
+if [[ -n ${POS_REFERENCE:-} ]]; then
+  echo "POS_REFERENCE is now POS_TOOLCHAIN_REFERENCE" >&2
+  exit 1
+fi

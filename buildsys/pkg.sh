@@ -27,8 +27,8 @@
 #                   in the resolved environment that set up the build;
 #                   _pkg_setup sources each.
 #                   The compiler comes from the package providing gcc (the
-#                   reference's gcc, or gcc-host, Fedora's, without a
-#                   reference); linking against /pos from the pos-link
+#                   toolchain reference's gcc, or gcc-host, Fedora's, without
+#                   one); linking against /pos from the pos-link
 #                   profile.
 set -euo pipefail
 
