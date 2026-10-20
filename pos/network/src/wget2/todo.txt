@@ -1,0 +1,13 @@
+RFC and other documents
+ RFC 6249 Metalink/HTTP: Mirrors and Hashes
+ RFC 5854 The Metalink Download Description Format
+ RFC 5988 Link HTTP Header update
+ RFC 3864 Link HTTP Header
+ RFC 3230 Digest HTTP Header
+ RFC 2069 Digest Access Authentication (old)
+ RFC 2617 Basic and Digest Access Authentication
+ RFC 3986 Uniform Resource Identifier (URI): Generic Syntax
+          (obsoletes RFC 2396, 1738, 1808, 2732)
+
+ WARC latest draft (ISO 28500 final costs 122 CHF)
+   http://bibnum.bnf.fr/WARC/WARC_ISO_28500_version1_latestdraft.pdf

@@ -1,0 +1,49 @@
+sudo: required
+dist: bionic
+
+language: c
+
+os:
+  - linux
+  - osx
+
+compiler:
+  - gcc
+  - clang
+
+git:
+    depth: 3
+
+matrix:
+    exclude:
+        - os: osx
+          compiler: gcc
+
+cache: ccache
+
+addons:
+    apt:
+        packages:
+            - autoconf
+            - automake
+            - autopoint
+            - libtool
+            - gettext
+            - flex
+            - liblzma-dev
+            - libidn2-0-dev
+            - libunistring-dev
+            - gnutls-dev
+            - libgcrypt-dev
+            - libc6
+            - valgrind
+            - lcov
+            - lzip
+            - texinfo
+            - gperf
+
+before_install:
+  - echo $TRAVIS_OS_NAME
+  - ./.travis_setup.sh
+
+script: ./.travis.sh
