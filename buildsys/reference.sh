@@ -56,8 +56,7 @@ references_choose() {
   TOOLCHAIN_REF=$(config toolchain-reference)
   TOOLCHAIN_REF=${TOOLCHAIN_REF:-$(reference_default toolchain)}
   TOOLCHAIN_REF=${TOOLCHAIN_REF:-none}
-  reference_restore "$TOOLCHAIN_REF"
-  [[ $TOOLCHAIN_REF == none ]] || reference_kind "$TOOLCHAIN_REF" toolchain
+  reference_restore "$TOOLCHAIN_REF" toolchain
   POS_REF=$(config pos-reference)
   if [[ -z $POS_REF && $PIPELINE == pos ]]; then
     # The bootstrap builds the first pos reference without one.
@@ -66,8 +65,7 @@ references_choose() {
   [[ -n $POS_REF || ($PIPELINE == pos && $TOOLCHAIN_REF == none) ]] ||
     POS_REF=$(reference_default pos)
   POS_REF=${POS_REF:-none}
-  reference_restore "$POS_REF"
-  [[ $POS_REF == none ]] || reference_kind "$POS_REF" pos
+  reference_restore "$POS_REF" pos
   if [[ $PIPELINE == toolchain ]]; then
     [[ $POS_REF != none ]] ||
       die "a toolchain build builds on the glibc of a pos reference; make one with:
@@ -112,7 +110,7 @@ pos_ref_check() {
   on=$(ref_info "$TOOLCHAIN_REF" pos-reference)
   on=${on:-$TOOLCHAIN_REF}
   [[ $on != "$POS_REF" ]] || return 0
-  reference_restore "$on"
+  [[ $on == "$TOOLCHAIN_REF" ]] || reference_restore "$on" pos
   need=$(glibc_version "$on")
   have=$(glibc_version "$POS_REF")
   [[ -n $need ]] || die "reference $on, which toolchain reference $TOOLCHAIN_REF was built on, has no glibc"
@@ -121,30 +119,45 @@ pos_ref_check() {
     die "pos reference $POS_REF has glibc $have; toolchain reference $TOOLCHAIN_REF needs $need or newer (built on $on)"
 }
 
-# Unpack a reference from the store into work/references/<ref>, unless it is
-# there. The store is a directory; this is where a remote one would be
-# fetched from. It holds pos-ref-<ref>.tar.zst archives, or reference
-# directories ($store/$ref).
+# The store archive of a reference of a kind: pos-ref-<kind>-<ref>.tar.zst.
+# Inputs:
+#   $1      reference ID
+#   $2      toolchain or pos
+reference_archive() {
+  echo "pos-ref-$2-$1.tar.zst"
+}
+
+# Unpack a reference of a kind from the store into work/references/<ref>,
+# unless it is there, and check that it is of that kind. The store is a
+# directory; this is where a remote one would be fetched from. It holds
+# reference archives (reference_archive; pos-ref-<ref>.tar.zst from before
+# the kinds had names of their own), or reference directories
+# ($store/$ref).
 # Inputs:
 #   $1      reference ID or "none"
+#   $2      toolchain or pos
 #   refs    work/references directory
 reference_restore() {
-  local ref=$1 store archive
-  [[ $ref != none && ! -f $refs/$ref/info ]] || return 0
-  store=$(config reference-dir)
-  [[ -n $store ]] || die "reference $ref is not in $refs, and reference-dir is not set"
-  if [[ -f $store/$ref/info ]]; then
-    rm -rf "$refs/$ref"
-    ln -sfn "$store/$ref" "$refs/$ref"
-    return 0
+  local ref=$1 kind=$2 store archive
+  [[ $ref != none ]] || return 0
+  if [[ ! -f $refs/$ref/info ]]; then
+    store=$(config reference-dir)
+    [[ -n $store ]] || die "reference $ref is not in $refs, and reference-dir is not set"
+    if [[ -f $store/$ref/info ]]; then
+      rm -rf "$refs/$ref"
+      ln -sfn "$store/$ref" "$refs/$ref"
+    else
+      archive=$store/$(reference_archive "$ref" "$kind")
+      [[ -f $archive ]] || archive=$store/pos-ref-$ref.tar.zst
+      [[ -f $archive ]] || die "no $kind reference $ref: missing $(reference_archive "$ref" "$kind") in $store"
+      echo "restoring reference $ref from $archive" >&2
+      rm -rf "$refs/$ref.tmp"
+      mkdir -p "$refs/$ref.tmp"
+      tar --zstd -xf "$archive" -C "$refs/$ref.tmp"
+      mv "$refs/$ref.tmp" "$refs/$ref"
+    fi
   fi
-  archive=$store/pos-ref-$ref.tar.zst
-  [[ -f $archive ]] || die "no reference $ref: missing pos-ref-$ref.tar.zst in $store"
-  echo "restoring reference $ref from $archive" >&2
-  rm -rf "$refs/$ref.tmp"
-  mkdir -p "$refs/$ref.tmp"
-  tar --zstd -xf "$archive" -C "$refs/$ref.tmp"
-  mv "$refs/$ref.tmp" "$refs/$ref"
+  reference_kind "$ref" "$kind"
 }
 
 # The packages of the references the resolver may use, with the
@@ -189,12 +202,13 @@ build_references() {
   TOOLCHAIN_REF=${TOOLCHAIN_REF:-none}
   POS_REF=$(build_info pos-reference)
   POS_REF=${POS_REF:-none}
-  reference_restore "$TOOLCHAIN_REF"
-  reference_restore "$POS_REF"
+  reference_restore "$TOOLCHAIN_REF" toolchain
+  reference_restore "$POS_REF" pos
 }
 
 # Store a build in the reference store (reference-dir) and mark it the
-# default reference of its kind for new builds. The archive holds the
+# default reference of its kind for new builds, as
+# pos-ref-<kind>-<id>.tar.zst (reference_archive). The archive holds the
 # build's info and the staging trees and debug info of what it stores: a
 # complete toolchain build's toolchain packages, or a pos build's core-libs
 # packages, which must include glibc.
@@ -236,7 +250,7 @@ cmd_reference() {
     trees+=("dest/$p")
     [[ ! -d $bdir/debug/$p ]] || debug+=("debug/$p")
   done
-  out=$store/pos-ref-$id.tar.zst
+  out=$store/$(reference_archive "$id" "$kind")
   if [[ ! -f $out ]]; then
     tar --zstd -cf "$out.tmp" -C "$bdir" info "${trees[@]}" "${debug[@]}"
     mv "$out.tmp" "$out"

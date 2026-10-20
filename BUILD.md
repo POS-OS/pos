@@ -459,15 +459,17 @@ it builds it with the reference's gcc.
 
 `./build reference [<id>]` (default: the current build) stores a build in
 the reference store, the `reference-dir` setting, as
-`pos-ref-<id>.tar.zst`: its `info` and the staging trees and debug info of
-what it stores. Of a toolchain build, which must be complete, that is
+`pos-ref-toolchain-<id>.tar.zst` or `pos-ref-pos-<id>.tar.zst`: its
+`info` and the staging trees and debug info of what it stores. Of a toolchain build, which must be complete, that is
 its toolchain packages; of a pos build, its core-libs packages, which
 must include glibc. It marks the build the store's `default-toolchain` or
 `default-pos`, the reference of that kind of new builds (a store's
 `default` from before pos references counts as `default-toolchain`). A
 build records its references in `info` (`toolchain-reference`,
 `pos-reference`) and restores them from the store into
-`work/references/<id>` when they are not there. The store is a directory
+`work/references/<id>` when they are not there, checking that each is of
+its kind; an archive named `pos-ref-<id>.tar.zst`, from before the kinds
+had names of their own, is read as either. The store is a directory
 outside the checkout, so removing builds never removes a reference.
 
 A pos build's pos reference is, by default, the one its toolchain
