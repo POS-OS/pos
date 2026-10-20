@@ -1,0 +1,28 @@
+#!/bin/bash
+
+# 'th dport' in a typeof map is restored from set userdata. A later
+# transaction re-evaluating it must not fail with a bogus
+# "conflicting transport layer protocols specified: tcp vs. th".
+
+set -e
+
+$NFT -f - <<EOF
+table ip t {
+	map m {
+		typeof ip saddr : ip daddr . th dport
+		elements = { 10.1.1.1 : 10.2.3.4 . 4242 }
+	}
+
+	chain c {
+		type nat hook prerouting priority dstnat; policy accept;
+		meta l4proto tcp dnat ip to ip saddr map @m
+	}
+
+	chain d {
+		type nat hook prerouting priority dstnat; policy accept;
+	}
+}
+EOF
+
+# separate transaction
+$NFT add rule 'ip t d meta l4proto tcp dnat ip addr . port to ip saddr map @m'

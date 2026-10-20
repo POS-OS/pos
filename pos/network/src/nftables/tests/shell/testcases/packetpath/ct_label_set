@@ -1,0 +1,31 @@
+#!/bin/bash
+
+set -e
+
+ip link set lo up
+
+$NFT -f - <<EOF
+table ip test {
+    counter labeled {}
+    counter unlabeled {}
+    chain output {
+        type filter hook output priority filter; policy accept;
+            # set bit 1 on each echo-request
+            icmp type echo-request ip daddr 127.0.0.1 ct label set 1
+            # count only if label is already set
+            icmp type echo-request ip daddr 127.0.0.1 ct label 1 counter name labeled
+            # label 3 is never set, must not match
+            icmp type echo-request ip daddr 127.0.0.1 ct label 3 counter name unlabeled
+    }
+}
+EOF
+
+# Packet 1: replace sets bit 1
+ping -c 1 -W 1 127.0.0.1 >/dev/null
+
+# Packet 2+: same rule applies on same ICMP ct
+ping -c 2 -W 1 127.0.0.1 >/dev/null
+
+# Assert correct number of matched packets
+$NFT list counter ip test labeled | grep -q 'packets 3'
+$NFT list counter ip test unlabeled | grep -q 'packets 0'

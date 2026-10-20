@@ -1,0 +1,19 @@
+table inet t {
+	ct timeout tcp-test {
+		protocol tcp
+		l3proto inet
+		policy = { syn_sent : 1s, established : 1s }
+	}
+
+	ct timeout udp-test {
+		protocol udp
+		l3proto inet
+		policy = { unreplied : 2m, replied : 2m10s }
+	}
+
+	chain output {
+		type filter hook output priority filter; policy accept;
+		tcp dport 12345 ct timeout set "tcp-test"
+		ct timeout set "udp-test"
+	}
+}

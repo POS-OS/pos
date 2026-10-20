@@ -1,0 +1,16 @@
+table ip t {
+	map m {
+		typeof ip saddr : ip daddr . th dport
+		elements = { 10.1.1.1 : 10.2.3.4 . 4242 }
+	}
+
+	chain c {
+		type nat hook prerouting priority dstnat; policy accept;
+		meta l4proto 6 dnat ip to ip saddr map @m
+	}
+
+	chain d {
+		type nat hook prerouting priority dstnat; policy accept;
+		meta l4proto 6 dnat ip to ip saddr map @m
+	}
+}

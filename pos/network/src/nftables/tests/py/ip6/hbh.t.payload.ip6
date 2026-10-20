@@ -1,0 +1,97 @@
+# hbh hdrlength 22
+ip6 test-ip6 filter-input
+  [ exthdr load ipv6 1b @ 0 + 1 => reg 1 ]
+  [ cmp eq reg 1 0x16 ]
+
+# hbh hdrlength != 233
+ip6 test-ip6 filter-input
+  [ exthdr load ipv6 1b @ 0 + 1 => reg 1 ]
+  [ cmp neq reg 1 0xe9 ]
+
+# hbh hdrlength 33-45
+ip6 test-ip6 filter-input
+  [ exthdr load ipv6 1b @ 0 + 1 => reg 1 ]
+  [ range eq reg 1 0x21 0x2d ]
+
+# hbh hdrlength != 33-45
+ip6 test-ip6 filter-input
+  [ exthdr load ipv6 1b @ 0 + 1 => reg 1 ]
+  [ range neq reg 1 0x21 0x2d ]
+
+# hbh hdrlength {33, 55, 67, 88}
+__set%d test-ip6 3
+__set%d test-ip6 0
+	element 21	element 37	element 43	element 58
+ip6 test-ip6 filter-input
+  [ exthdr load ipv6 1b @ 0 + 1 => reg 1 ]
+  [ lookup reg 1 set __set%d ]
+
+# hbh hdrlength != {33, 55, 67, 88}
+__set%d test-ip6 3
+__set%d test-ip6 0
+	element 21	element 37	element 43	element 58
+ip6 test-ip6 filter-input
+  [ exthdr load ipv6 1b @ 0 + 1 => reg 1 ]
+  [ lookup reg 1 set __set%d 0x1 ]
+
+# hbh nexthdr {esp, ah, comp, udp, udplite, tcp, dccp, sctp, icmpv6}
+__set%d test-ip6 3
+__set%d test-ip6 0
+	element 32	element 33	element 6c	element 11	element 88	element 06	element 21	element 84	element 3a
+ip6 test-ip6 filter-input
+  [ exthdr load ipv6 1b @ 0 + 0 => reg 1 ]
+  [ lookup reg 1 set __set%d ]
+
+# hbh nexthdr != {esp, ah, comp, udp, udplite, tcp, dccp, sctp, icmpv6}
+__set%d test-ip6 3
+__set%d test-ip6 0
+	element 32	element 33	element 6c	element 11	element 88	element 06	element 21	element 84	element 3a
+ip6 test-ip6 filter-input
+  [ exthdr load ipv6 1b @ 0 + 0 => reg 1 ]
+  [ lookup reg 1 set __set%d 0x1 ]
+
+# hbh nexthdr 22
+ip6 test-ip6 filter-input
+  [ exthdr load ipv6 1b @ 0 + 0 => reg 1 ]
+  [ cmp eq reg 1 0x16 ]
+
+# hbh nexthdr != 233
+ip6 test-ip6 filter-input
+  [ exthdr load ipv6 1b @ 0 + 0 => reg 1 ]
+  [ cmp neq reg 1 0xe9 ]
+
+# hbh nexthdr 33-45
+ip6 test-ip6 filter-input
+  [ exthdr load ipv6 1b @ 0 + 0 => reg 1 ]
+  [ range eq reg 1 0x21 0x2d ]
+
+# hbh nexthdr != 33-45
+ip6 test-ip6 filter-input
+  [ exthdr load ipv6 1b @ 0 + 0 => reg 1 ]
+  [ range neq reg 1 0x21 0x2d ]
+
+# hbh nexthdr {33, 55, 67, 88}
+__set%d test-ip6 3
+__set%d test-ip6 0
+	element 21	element 37	element 43	element 58
+ip6 test-ip6 filter-input
+  [ exthdr load ipv6 1b @ 0 + 0 => reg 1 ]
+  [ lookup reg 1 set __set%d ]
+
+# hbh nexthdr != {33, 55, 67, 88}
+__set%d test-ip6 3
+__set%d test-ip6 0
+	element 21	element 37	element 43	element 58
+ip6 test-ip6 filter-input
+  [ exthdr load ipv6 1b @ 0 + 0 => reg 1 ]
+  [ lookup reg 1 set __set%d 0x1 ]
+
+# hbh nexthdr ip
+ip6 test-ip6 filter-input
+  [ exthdr load ipv6 1b @ 0 + 0 => reg 1 ]
+  [ cmp eq reg 1 0x00 ]
+
+# hbh nexthdr != ip
+ip6 test-ip6 filter-input
+  [ exthdr load ipv6 1b @ 0 + 0 => reg 1 ]
+  [ cmp neq reg 1 0x00 ]

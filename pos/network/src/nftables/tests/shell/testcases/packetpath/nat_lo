@@ -1,0 +1,42 @@
+#!/bin/bash
+
+set -e
+
+$NFT -f - <<EOF
+table inet nat {
+	chain output {
+		type nat hook output priority dstnat; policy accept;
+		tcp dport 1234 redirect to :12345
+	}
+}
+
+table inet filter {
+	chain input {
+		type filter hook input priority filter; policy drop;
+		ct state new,established,related accept
+		meta l4proto { icmp, icmpv6 } accept
+		counter drop
+	}
+}
+EOF
+
+ip link set lo up
+
+# Start listener on the target port
+timeout 5 socat TCP6-LISTEN:12345,ipv6only=1,fork STDOUT &
+PID1=$!
+timeout 5 socat TCP4-LISTEN:12345,fork STDOUT &
+PID2=$!
+
+# Give socat a moment to bind
+sleep 1
+
+# Test IPv4 translation
+echo "Testing IPv4..."
+echo "hello ipv4" | socat -u STDIN TCP:127.0.0.1:1234
+
+# Test IPv6 translation
+echo "Testing IPv6..."
+echo "hello ipv6" | socat -u STDIN TCP:[::1]:1234
+
+kill $PID1 $PID2

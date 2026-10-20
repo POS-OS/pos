@@ -1,0 +1,179 @@
+# rt nexthdr 1
+ip6 test-ip6 input
+  [ exthdr load ipv6 1b @ 43 + 0 => reg 1 ]
+  [ cmp eq reg 1 0x01 ]
+
+# rt nexthdr != 1
+ip6 test-ip6 input
+  [ exthdr load ipv6 1b @ 43 + 0 => reg 1 ]
+  [ cmp neq reg 1 0x01 ]
+
+# rt nexthdr {udplite, ipcomp, udp, ah, sctp, esp, dccp, tcp, ipv6-icmp}
+__set%d test-ip6 3
+__set%d test-ip6 0
+	element 88	element 6c	element 11	element 33	element 84	element 32	element 21	element 06	element 3a
+ip6 test-ip6 input
+  [ exthdr load ipv6 1b @ 43 + 0 => reg 1 ]
+  [ lookup reg 1 set __set%d ]
+
+# rt nexthdr != {udplite, ipcomp, udp, ah, sctp, esp, dccp, tcp, ipv6-icmp}
+__set%d test-ip6 3
+__set%d test-ip6 0
+	element 88	element 6c	element 11	element 33	element 84	element 32	element 21	element 06	element 3a
+ip6 test-ip6 input
+  [ exthdr load ipv6 1b @ 43 + 0 => reg 1 ]
+  [ lookup reg 1 set __set%d 0x1 ]
+
+# rt nexthdr icmp
+ip6 test-ip6 input
+  [ exthdr load ipv6 1b @ 43 + 0 => reg 1 ]
+  [ cmp eq reg 1 0x01 ]
+
+# rt nexthdr != icmp
+ip6 test-ip6 input
+  [ exthdr load ipv6 1b @ 43 + 0 => reg 1 ]
+  [ cmp neq reg 1 0x01 ]
+
+# rt nexthdr 22
+ip6 test-ip6 input
+  [ exthdr load ipv6 1b @ 43 + 0 => reg 1 ]
+  [ cmp eq reg 1 0x16 ]
+
+# rt nexthdr != 233
+ip6 test-ip6 input
+  [ exthdr load ipv6 1b @ 43 + 0 => reg 1 ]
+  [ cmp neq reg 1 0xe9 ]
+
+# rt nexthdr 33-45
+ip6 test-ip6 input
+  [ exthdr load ipv6 1b @ 43 + 0 => reg 1 ]
+  [ range eq reg 1 0x21 0x2d ]
+
+# rt nexthdr != 33-45
+ip6 test-ip6 input
+  [ exthdr load ipv6 1b @ 43 + 0 => reg 1 ]
+  [ range neq reg 1 0x21 0x2d ]
+
+# rt nexthdr { 33, 55, 67, 88}
+__set%d test-ip6 3
+__set%d test-ip6 0
+	element 21	element 37	element 43	element 58
+ip6 test-ip6 input
+  [ exthdr load ipv6 1b @ 43 + 0 => reg 1 ]
+  [ lookup reg 1 set __set%d ]
+
+# rt nexthdr != { 33, 55, 67, 88}
+__set%d test-ip6 3
+__set%d test-ip6 0
+	element 21	element 37	element 43	element 58
+ip6 test-ip6 input
+  [ exthdr load ipv6 1b @ 43 + 0 => reg 1 ]
+  [ lookup reg 1 set __set%d 0x1 ]
+
+# rt hdrlength 22
+ip6 test-ip6 input
+  [ exthdr load ipv6 1b @ 43 + 1 => reg 1 ]
+  [ cmp eq reg 1 0x16 ]
+
+# rt hdrlength != 233
+ip6 test-ip6 input
+  [ exthdr load ipv6 1b @ 43 + 1 => reg 1 ]
+  [ cmp neq reg 1 0xe9 ]
+
+# rt hdrlength 33-45
+ip6 test-ip6 input
+  [ exthdr load ipv6 1b @ 43 + 1 => reg 1 ]
+  [ range eq reg 1 0x21 0x2d ]
+
+# rt hdrlength != 33-45
+ip6 test-ip6 input
+  [ exthdr load ipv6 1b @ 43 + 1 => reg 1 ]
+  [ range neq reg 1 0x21 0x2d ]
+
+# rt hdrlength { 33, 55, 67, 88}
+__set%d test-ip6 3
+__set%d test-ip6 0
+	element 21	element 37	element 43	element 58
+ip6 test-ip6 input
+  [ exthdr load ipv6 1b @ 43 + 1 => reg 1 ]
+  [ lookup reg 1 set __set%d ]
+
+# rt hdrlength != { 33, 55, 67, 88}
+__set%d test-ip6 3
+__set%d test-ip6 0
+	element 21	element 37	element 43	element 58
+ip6 test-ip6 input
+  [ exthdr load ipv6 1b @ 43 + 1 => reg 1 ]
+  [ lookup reg 1 set __set%d 0x1 ]
+
+# rt type 22
+ip6 test-ip6 input
+  [ exthdr load ipv6 1b @ 43 + 2 => reg 1 ]
+  [ cmp eq reg 1 0x16 ]
+
+# rt type != 233
+ip6 test-ip6 input
+  [ exthdr load ipv6 1b @ 43 + 2 => reg 1 ]
+  [ cmp neq reg 1 0xe9 ]
+
+# rt type 33-45
+ip6 test-ip6 input
+  [ exthdr load ipv6 1b @ 43 + 2 => reg 1 ]
+  [ range eq reg 1 0x21 0x2d ]
+
+# rt type != 33-45
+ip6 test-ip6 input
+  [ exthdr load ipv6 1b @ 43 + 2 => reg 1 ]
+  [ range neq reg 1 0x21 0x2d ]
+
+# rt type { 33, 55, 67, 88}
+__set%d test-ip6 3
+__set%d test-ip6 0
+	element 21	element 37	element 43	element 58
+ip6 test-ip6 input
+  [ exthdr load ipv6 1b @ 43 + 2 => reg 1 ]
+  [ lookup reg 1 set __set%d ]
+
+# rt type != { 33, 55, 67, 88}
+__set%d test-ip6 3
+__set%d test-ip6 0
+	element 21	element 37	element 43	element 58
+ip6 test-ip6 input
+  [ exthdr load ipv6 1b @ 43 + 2 => reg 1 ]
+  [ lookup reg 1 set __set%d 0x1 ]
+
+# rt seg-left 22
+ip6 test-ip6 input
+  [ exthdr load ipv6 1b @ 43 + 3 => reg 1 ]
+  [ cmp eq reg 1 0x16 ]
+
+# rt seg-left != 233
+ip6 test-ip6 input
+  [ exthdr load ipv6 1b @ 43 + 3 => reg 1 ]
+  [ cmp neq reg 1 0xe9 ]
+
+# rt seg-left 33-45
+ip6 test-ip6 input
+  [ exthdr load ipv6 1b @ 43 + 3 => reg 1 ]
+  [ range eq reg 1 0x21 0x2d ]
+
+# rt seg-left != 33-45
+ip6 test-ip6 input
+  [ exthdr load ipv6 1b @ 43 + 3 => reg 1 ]
+  [ range neq reg 1 0x21 0x2d ]
+
+# rt seg-left { 33, 55, 67, 88}
+__set%d test-ip6 3
+__set%d test-ip6 0
+	element 21	element 37	element 43	element 58
+ip6 test-ip6 input
+  [ exthdr load ipv6 1b @ 43 + 3 => reg 1 ]
+  [ lookup reg 1 set __set%d ]
+
+# rt seg-left != { 33, 55, 67, 88}
+__set%d test-ip6 3
+__set%d test-ip6 0
+	element 21	element 37	element 43	element 58
+ip6 test-ip6 input
+  [ exthdr load ipv6 1b @ 43 + 3 => reg 1 ]
+  [ lookup reg 1 set __set%d 0x1 ]

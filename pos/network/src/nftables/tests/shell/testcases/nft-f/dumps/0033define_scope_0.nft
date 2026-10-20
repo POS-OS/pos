@@ -1,0 +1,5 @@
+table inet t {
+	chain c {
+		iifgroup 111 counter packets 0 bytes 0
+	}
+}

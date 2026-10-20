@@ -1,0 +1,918 @@
+{
+  "nftables": [
+    {
+      "metainfo": {
+        "version": "VERSION",
+        "release_name": "RELEASE_NAME",
+        "json_schema_version": 1
+      }
+    },
+    {
+      "table": {
+        "family": "ip",
+        "name": "ctz",
+        "handle": 0
+      }
+    },
+    {
+      "chain": {
+        "family": "ip",
+        "table": "ctz",
+        "name": "prerouting_before",
+        "handle": 0,
+        "type": "filter",
+        "hook": "prerouting",
+        "prio": -201,
+        "policy": "accept"
+      }
+    },
+    {
+      "chain": {
+        "family": "ip",
+        "table": "ctz",
+        "name": "prerouting_at",
+        "handle": 0,
+        "type": "filter",
+        "hook": "prerouting",
+        "prio": -200,
+        "policy": "accept"
+      }
+    },
+    {
+      "chain": {
+        "family": "ip",
+        "table": "ctz",
+        "name": "prerouting_after",
+        "handle": 0,
+        "type": "filter",
+        "hook": "prerouting",
+        "prio": -199,
+        "policy": "accept"
+      }
+    },
+    {
+      "chain": {
+        "family": "ip",
+        "table": "ctz",
+        "name": "input",
+        "handle": 0,
+        "type": "filter",
+        "hook": "input",
+        "prio": 0,
+        "policy": "accept"
+      }
+    },
+    {
+      "chain": {
+        "family": "ip",
+        "table": "ctz",
+        "name": "forward",
+        "handle": 0,
+        "type": "filter",
+        "hook": "forward",
+        "prio": 0,
+        "policy": "accept"
+      }
+    },
+    {
+      "chain": {
+        "family": "ip",
+        "table": "ctz",
+        "name": "output_before",
+        "handle": 0,
+        "type": "filter",
+        "hook": "output",
+        "prio": -201,
+        "policy": "accept"
+      }
+    },
+    {
+      "chain": {
+        "family": "ip",
+        "table": "ctz",
+        "name": "output_at",
+        "handle": 0,
+        "type": "filter",
+        "hook": "output",
+        "prio": -200,
+        "policy": "accept"
+      }
+    },
+    {
+      "chain": {
+        "family": "ip",
+        "table": "ctz",
+        "name": "output_after",
+        "handle": 0,
+        "type": "filter",
+        "hook": "output",
+        "prio": -199,
+        "policy": "accept"
+      }
+    },
+    {
+      "chain": {
+        "family": "ip",
+        "table": "ctz",
+        "name": "postrouting",
+        "handle": 0,
+        "type": "filter",
+        "hook": "postrouting",
+        "prio": 0,
+        "policy": "accept"
+      }
+    },
+    {
+      "chain": {
+        "family": "ip",
+        "table": "ctz",
+        "name": "nonbase",
+        "handle": 0
+      }
+    },
+    {
+      "rule": {
+        "family": "ip",
+        "table": "ctz",
+        "chain": "prerouting_before",
+        "handle": 0,
+        "expr": [
+          {
+            "mangle": {
+              "key": {
+                "ct": {
+                  "key": "zone"
+                }
+              },
+              "value": 1
+            }
+          }
+        ]
+      }
+    },
+    {
+      "rule": {
+        "family": "ip",
+        "table": "ctz",
+        "chain": "prerouting_before",
+        "handle": 0,
+        "expr": [
+          {
+            "jump": {
+              "target": "nonbase"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "rule": {
+        "family": "ip",
+        "table": "ctz",
+        "chain": "output_before",
+        "handle": 0,
+        "expr": [
+          {
+            "mangle": {
+              "key": {
+                "ct": {
+                  "key": "zone"
+                }
+              },
+              "value": 1
+            }
+          }
+        ]
+      }
+    },
+    {
+      "rule": {
+        "family": "ip",
+        "table": "ctz",
+        "chain": "output_before",
+        "handle": 0,
+        "expr": [
+          {
+            "jump": {
+              "target": "nonbase"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "rule": {
+        "family": "ip",
+        "table": "ctz",
+        "chain": "nonbase",
+        "handle": 0,
+        "expr": [
+          {
+            "mangle": {
+              "key": {
+                "ct": {
+                  "key": "zone"
+                }
+              },
+              "value": 1
+            }
+          }
+        ]
+      }
+    },
+    {
+      "table": {
+        "family": "ip6",
+        "name": "ctz",
+        "handle": 0
+      }
+    },
+    {
+      "chain": {
+        "family": "ip6",
+        "table": "ctz",
+        "name": "prerouting_before",
+        "handle": 0,
+        "type": "filter",
+        "hook": "prerouting",
+        "prio": -201,
+        "policy": "accept"
+      }
+    },
+    {
+      "chain": {
+        "family": "ip6",
+        "table": "ctz",
+        "name": "prerouting_at",
+        "handle": 0,
+        "type": "filter",
+        "hook": "prerouting",
+        "prio": -200,
+        "policy": "accept"
+      }
+    },
+    {
+      "chain": {
+        "family": "ip6",
+        "table": "ctz",
+        "name": "prerouting_after",
+        "handle": 0,
+        "type": "filter",
+        "hook": "prerouting",
+        "prio": -199,
+        "policy": "accept"
+      }
+    },
+    {
+      "chain": {
+        "family": "ip6",
+        "table": "ctz",
+        "name": "input",
+        "handle": 0,
+        "type": "filter",
+        "hook": "input",
+        "prio": 0,
+        "policy": "accept"
+      }
+    },
+    {
+      "chain": {
+        "family": "ip6",
+        "table": "ctz",
+        "name": "forward",
+        "handle": 0,
+        "type": "filter",
+        "hook": "forward",
+        "prio": 0,
+        "policy": "accept"
+      }
+    },
+    {
+      "chain": {
+        "family": "ip6",
+        "table": "ctz",
+        "name": "output_before",
+        "handle": 0,
+        "type": "filter",
+        "hook": "output",
+        "prio": -201,
+        "policy": "accept"
+      }
+    },
+    {
+      "chain": {
+        "family": "ip6",
+        "table": "ctz",
+        "name": "output_at",
+        "handle": 0,
+        "type": "filter",
+        "hook": "output",
+        "prio": -200,
+        "policy": "accept"
+      }
+    },
+    {
+      "chain": {
+        "family": "ip6",
+        "table": "ctz",
+        "name": "output_after",
+        "handle": 0,
+        "type": "filter",
+        "hook": "output",
+        "prio": -199,
+        "policy": "accept"
+      }
+    },
+    {
+      "chain": {
+        "family": "ip6",
+        "table": "ctz",
+        "name": "postrouting",
+        "handle": 0,
+        "type": "filter",
+        "hook": "postrouting",
+        "prio": 0,
+        "policy": "accept"
+      }
+    },
+    {
+      "chain": {
+        "family": "ip6",
+        "table": "ctz",
+        "name": "nonbase",
+        "handle": 0
+      }
+    },
+    {
+      "rule": {
+        "family": "ip6",
+        "table": "ctz",
+        "chain": "prerouting_before",
+        "handle": 0,
+        "expr": [
+          {
+            "mangle": {
+              "key": {
+                "ct": {
+                  "key": "zone"
+                }
+              },
+              "value": 1
+            }
+          }
+        ]
+      }
+    },
+    {
+      "rule": {
+        "family": "ip6",
+        "table": "ctz",
+        "chain": "prerouting_before",
+        "handle": 0,
+        "expr": [
+          {
+            "jump": {
+              "target": "nonbase"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "rule": {
+        "family": "ip6",
+        "table": "ctz",
+        "chain": "output_before",
+        "handle": 0,
+        "expr": [
+          {
+            "mangle": {
+              "key": {
+                "ct": {
+                  "key": "zone"
+                }
+              },
+              "value": 1
+            }
+          }
+        ]
+      }
+    },
+    {
+      "rule": {
+        "family": "ip6",
+        "table": "ctz",
+        "chain": "output_before",
+        "handle": 0,
+        "expr": [
+          {
+            "jump": {
+              "target": "nonbase"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "rule": {
+        "family": "ip6",
+        "table": "ctz",
+        "chain": "nonbase",
+        "handle": 0,
+        "expr": [
+          {
+            "mangle": {
+              "key": {
+                "ct": {
+                  "key": "zone"
+                }
+              },
+              "value": 1
+            }
+          }
+        ]
+      }
+    },
+    {
+      "table": {
+        "family": "bridge",
+        "name": "ctz",
+        "handle": 0
+      }
+    },
+    {
+      "chain": {
+        "family": "bridge",
+        "table": "ctz",
+        "name": "prerouting_before",
+        "handle": 0,
+        "type": "filter",
+        "hook": "prerouting",
+        "prio": -201,
+        "policy": "accept"
+      }
+    },
+    {
+      "chain": {
+        "family": "bridge",
+        "table": "ctz",
+        "name": "prerouting_at",
+        "handle": 0,
+        "type": "filter",
+        "hook": "prerouting",
+        "prio": -200,
+        "policy": "accept"
+      }
+    },
+    {
+      "chain": {
+        "family": "bridge",
+        "table": "ctz",
+        "name": "prerouting_after",
+        "handle": 0,
+        "type": "filter",
+        "hook": "prerouting",
+        "prio": -199,
+        "policy": "accept"
+      }
+    },
+    {
+      "chain": {
+        "family": "bridge",
+        "table": "ctz",
+        "name": "input",
+        "handle": 0,
+        "type": "filter",
+        "hook": "input",
+        "prio": 0,
+        "policy": "accept"
+      }
+    },
+    {
+      "chain": {
+        "family": "bridge",
+        "table": "ctz",
+        "name": "forward",
+        "handle": 0,
+        "type": "filter",
+        "hook": "forward",
+        "prio": 0,
+        "policy": "accept"
+      }
+    },
+    {
+      "chain": {
+        "family": "bridge",
+        "table": "ctz",
+        "name": "output_before",
+        "handle": 0,
+        "type": "filter",
+        "hook": "output",
+        "prio": -201,
+        "policy": "accept"
+      }
+    },
+    {
+      "chain": {
+        "family": "bridge",
+        "table": "ctz",
+        "name": "output_at",
+        "handle": 0,
+        "type": "filter",
+        "hook": "output",
+        "prio": -200,
+        "policy": "accept"
+      }
+    },
+    {
+      "chain": {
+        "family": "bridge",
+        "table": "ctz",
+        "name": "output_after",
+        "handle": 0,
+        "type": "filter",
+        "hook": "output",
+        "prio": -199,
+        "policy": "accept"
+      }
+    },
+    {
+      "chain": {
+        "family": "bridge",
+        "table": "ctz",
+        "name": "postrouting",
+        "handle": 0,
+        "type": "filter",
+        "hook": "postrouting",
+        "prio": 0,
+        "policy": "accept"
+      }
+    },
+    {
+      "chain": {
+        "family": "bridge",
+        "table": "ctz",
+        "name": "nonbase",
+        "handle": 0
+      }
+    },
+    {
+      "rule": {
+        "family": "bridge",
+        "table": "ctz",
+        "chain": "prerouting_before",
+        "handle": 0,
+        "expr": [
+          {
+            "mangle": {
+              "key": {
+                "ct": {
+                  "key": "zone"
+                }
+              },
+              "value": 1
+            }
+          }
+        ]
+      }
+    },
+    {
+      "rule": {
+        "family": "bridge",
+        "table": "ctz",
+        "chain": "prerouting_before",
+        "handle": 0,
+        "expr": [
+          {
+            "jump": {
+              "target": "nonbase"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "rule": {
+        "family": "bridge",
+        "table": "ctz",
+        "chain": "nonbase",
+        "handle": 0,
+        "expr": [
+          {
+            "mangle": {
+              "key": {
+                "ct": {
+                  "key": "zone"
+                }
+              },
+              "value": 1
+            }
+          }
+        ]
+      }
+    },
+    {
+      "table": {
+        "family": "inet",
+        "name": "ctz",
+        "handle": 0
+      }
+    },
+    {
+      "chain": {
+        "family": "inet",
+        "table": "ctz",
+        "name": "prerouting_before",
+        "handle": 0,
+        "type": "filter",
+        "hook": "prerouting",
+        "prio": -201,
+        "policy": "accept"
+      }
+    },
+    {
+      "chain": {
+        "family": "inet",
+        "table": "ctz",
+        "name": "prerouting_at",
+        "handle": 0,
+        "type": "filter",
+        "hook": "prerouting",
+        "prio": -200,
+        "policy": "accept"
+      }
+    },
+    {
+      "chain": {
+        "family": "inet",
+        "table": "ctz",
+        "name": "prerouting_after",
+        "handle": 0,
+        "type": "filter",
+        "hook": "prerouting",
+        "prio": -199,
+        "policy": "accept"
+      }
+    },
+    {
+      "chain": {
+        "family": "inet",
+        "table": "ctz",
+        "name": "input",
+        "handle": 0,
+        "type": "filter",
+        "hook": "input",
+        "prio": 0,
+        "policy": "accept"
+      }
+    },
+    {
+      "chain": {
+        "family": "inet",
+        "table": "ctz",
+        "name": "forward",
+        "handle": 0,
+        "type": "filter",
+        "hook": "forward",
+        "prio": 0,
+        "policy": "accept"
+      }
+    },
+    {
+      "chain": {
+        "family": "inet",
+        "table": "ctz",
+        "name": "output_before",
+        "handle": 0,
+        "type": "filter",
+        "hook": "output",
+        "prio": -201,
+        "policy": "accept"
+      }
+    },
+    {
+      "chain": {
+        "family": "inet",
+        "table": "ctz",
+        "name": "output_at",
+        "handle": 0,
+        "type": "filter",
+        "hook": "output",
+        "prio": -200,
+        "policy": "accept"
+      }
+    },
+    {
+      "chain": {
+        "family": "inet",
+        "table": "ctz",
+        "name": "output_after",
+        "handle": 0,
+        "type": "filter",
+        "hook": "output",
+        "prio": -199,
+        "policy": "accept"
+      }
+    },
+    {
+      "chain": {
+        "family": "inet",
+        "table": "ctz",
+        "name": "postrouting",
+        "handle": 0,
+        "type": "filter",
+        "hook": "postrouting",
+        "prio": 0,
+        "policy": "accept"
+      }
+    },
+    {
+      "chain": {
+        "family": "inet",
+        "table": "ctz",
+        "name": "nonbase",
+        "handle": 0
+      }
+    },
+    {
+      "chain": {
+        "family": "inet",
+        "table": "ctz",
+        "name": "ingress",
+        "handle": 0,
+        "type": "filter",
+        "hook": "ingress",
+        "prio": 0,
+        "policy": "accept"
+      }
+    },
+    {
+      "rule": {
+        "family": "inet",
+        "table": "ctz",
+        "chain": "prerouting_before",
+        "handle": 0,
+        "expr": [
+          {
+            "mangle": {
+              "key": {
+                "ct": {
+                  "key": "zone"
+                }
+              },
+              "value": 1
+            }
+          }
+        ]
+      }
+    },
+    {
+      "rule": {
+        "family": "inet",
+        "table": "ctz",
+        "chain": "prerouting_before",
+        "handle": 0,
+        "expr": [
+          {
+            "jump": {
+              "target": "nonbase"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "rule": {
+        "family": "inet",
+        "table": "ctz",
+        "chain": "output_before",
+        "handle": 0,
+        "expr": [
+          {
+            "mangle": {
+              "key": {
+                "ct": {
+                  "key": "zone"
+                }
+              },
+              "value": 1
+            }
+          }
+        ]
+      }
+    },
+    {
+      "rule": {
+        "family": "inet",
+        "table": "ctz",
+        "chain": "output_before",
+        "handle": 0,
+        "expr": [
+          {
+            "jump": {
+              "target": "nonbase"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "rule": {
+        "family": "inet",
+        "table": "ctz",
+        "chain": "nonbase",
+        "handle": 0,
+        "expr": [
+          {
+            "mangle": {
+              "key": {
+                "ct": {
+                  "key": "zone"
+                }
+              },
+              "value": 1
+            }
+          }
+        ]
+      }
+    },
+    {
+      "table": {
+        "family": "arp",
+        "name": "ctz",
+        "handle": 0
+      }
+    },
+    {
+      "chain": {
+        "family": "arp",
+        "table": "ctz",
+        "name": "input",
+        "handle": 0,
+        "type": "filter",
+        "hook": "input",
+        "prio": 0,
+        "policy": "accept"
+      }
+    },
+    {
+      "chain": {
+        "family": "arp",
+        "table": "ctz",
+        "name": "output",
+        "handle": 0,
+        "type": "filter",
+        "hook": "output",
+        "prio": 0,
+        "policy": "accept"
+      }
+    },
+    {
+      "chain": {
+        "family": "arp",
+        "table": "ctz",
+        "name": "nonbase",
+        "handle": 0
+      }
+    },
+    {
+      "table": {
+        "family": "netdev",
+        "name": "ctz",
+        "handle": 0
+      }
+    },
+    {
+      "chain": {
+        "family": "netdev",
+        "table": "ctz",
+        "name": "ingress",
+        "handle": 0,
+        "type": "filter",
+        "hook": "ingress",
+        "prio": 0,
+        "policy": "accept"
+      }
+    },
+    {
+      "chain": {
+        "family": "netdev",
+        "table": "ctz",
+        "name": "nonbase",
+        "handle": 0
+      }
+    },
+    {
+      "chain": {
+        "family": "netdev",
+        "table": "ctz",
+        "name": "egress",
+        "handle": 0,
+        "type": "filter",
+        "hook": "egress",
+        "prio": 0,
+        "policy": "accept"
+      }
+    }
+  ]
+}

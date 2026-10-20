@@ -1,0 +1,206 @@
+table ip ctz {
+	chain prerouting_before {
+		type filter hook prerouting priority -201; policy accept;
+		ct zone set 1
+		jump nonbase
+	}
+
+	chain prerouting_at {
+		type filter hook prerouting priority -200; policy accept;
+	}
+
+	chain prerouting_after {
+		type filter hook prerouting priority -199; policy accept;
+	}
+
+	chain input {
+		type filter hook input priority filter; policy accept;
+	}
+
+	chain forward {
+		type filter hook forward priority filter; policy accept;
+	}
+
+	chain output_before {
+		type filter hook output priority -201; policy accept;
+		ct zone set 1
+		jump nonbase
+	}
+
+	chain output_at {
+		type filter hook output priority -200; policy accept;
+	}
+
+	chain output_after {
+		type filter hook output priority -199; policy accept;
+	}
+
+	chain postrouting {
+		type filter hook postrouting priority filter; policy accept;
+	}
+
+	chain nonbase {
+		ct zone set 1
+	}
+}
+table ip6 ctz {
+	chain prerouting_before {
+		type filter hook prerouting priority -201; policy accept;
+		ct zone set 1
+		jump nonbase
+	}
+
+	chain prerouting_at {
+		type filter hook prerouting priority -200; policy accept;
+	}
+
+	chain prerouting_after {
+		type filter hook prerouting priority -199; policy accept;
+	}
+
+	chain input {
+		type filter hook input priority filter; policy accept;
+	}
+
+	chain forward {
+		type filter hook forward priority filter; policy accept;
+	}
+
+	chain output_before {
+		type filter hook output priority -201; policy accept;
+		ct zone set 1
+		jump nonbase
+	}
+
+	chain output_at {
+		type filter hook output priority -200; policy accept;
+	}
+
+	chain output_after {
+		type filter hook output priority -199; policy accept;
+	}
+
+	chain postrouting {
+		type filter hook postrouting priority filter; policy accept;
+	}
+
+	chain nonbase {
+		ct zone set 1
+	}
+}
+table bridge ctz {
+	chain prerouting_before {
+		type filter hook prerouting priority filter - 1; policy accept;
+		ct zone set 1
+		jump nonbase
+	}
+
+	chain prerouting_at {
+		type filter hook prerouting priority filter; policy accept;
+	}
+
+	chain prerouting_after {
+		type filter hook prerouting priority filter + 1; policy accept;
+	}
+
+	chain input {
+		type filter hook input priority 0; policy accept;
+	}
+
+	chain forward {
+		type filter hook forward priority 0; policy accept;
+	}
+
+	chain output_before {
+		type filter hook output priority filter - 1; policy accept;
+	}
+
+	chain output_at {
+		type filter hook output priority filter; policy accept;
+	}
+
+	chain output_after {
+		type filter hook output priority filter + 1; policy accept;
+	}
+
+	chain postrouting {
+		type filter hook postrouting priority 0; policy accept;
+	}
+
+	chain nonbase {
+		ct zone set 1
+	}
+}
+table inet ctz {
+	chain prerouting_before {
+		type filter hook prerouting priority -201; policy accept;
+		ct zone set 1
+		jump nonbase
+	}
+
+	chain prerouting_at {
+		type filter hook prerouting priority -200; policy accept;
+	}
+
+	chain prerouting_after {
+		type filter hook prerouting priority -199; policy accept;
+	}
+
+	chain input {
+		type filter hook input priority filter; policy accept;
+	}
+
+	chain forward {
+		type filter hook forward priority filter; policy accept;
+	}
+
+	chain output_before {
+		type filter hook output priority -201; policy accept;
+		ct zone set 1
+		jump nonbase
+	}
+
+	chain output_at {
+		type filter hook output priority -200; policy accept;
+	}
+
+	chain output_after {
+		type filter hook output priority -199; policy accept;
+	}
+
+	chain postrouting {
+		type filter hook postrouting priority filter; policy accept;
+	}
+
+	chain nonbase {
+		ct zone set 1
+	}
+
+	chain ingress {
+		type filter hook ingress priority filter; policy accept;
+	}
+}
+table arp ctz {
+	chain input {
+		type filter hook input priority filter; policy accept;
+	}
+
+	chain output {
+		type filter hook output priority filter; policy accept;
+	}
+
+	chain nonbase {
+	}
+}
+table netdev ctz {
+	chain ingress {
+		type filter hook ingress priority filter; policy accept;
+	}
+
+	chain nonbase {
+	}
+
+	chain egress {
+		type filter hook egress priority filter; policy accept;
+	}
+}

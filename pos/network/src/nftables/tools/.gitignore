@@ -1,0 +1,5 @@
+nftables.service
+*.o
+.deps/
+.libs/
+nft-afl

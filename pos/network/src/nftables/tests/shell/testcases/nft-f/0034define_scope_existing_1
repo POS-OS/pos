@@ -1,0 +1,25 @@
+#!/bin/bash
+
+# Same defines, but the table already exists in the kernel, so table_evaluate()
+# takes no reference on the parsed one.  nft_cmd_expand() has moved the rules
+# into commands of their own, and cmd_free() frees the table and its scope while
+# a rule command still holds the variable expression.  The rule is rejected on
+# purpose, which is what leaves that expression unevaluated.
+#
+# The ruleset must be rejected with 1, not aborted.
+
+set -e
+
+$NFT add table inet t
+
+RULESET="table inet t {
+	define B = 111
+
+	chain c {
+		tcp dport 70000 meta iifgroup \$B counter
+	}
+}"
+
+rc=0
+$NFT -f - <<< "$RULESET" || rc=$?
+[ "$rc" -eq 1 ]

@@ -1,0 +1,22 @@
+#!/bin/bash
+
+# a define in table or chain scope holds a reference to the outer variable it
+# expands to.  The table is kept in the cache once the ruleset is committed, so
+# that reference outlives the release of the top-level scope.
+
+set -e
+
+RULESET="define outer = 111
+
+table inet t {
+	define t_unused = \$outer
+	define t_used = \$outer
+
+	chain c {
+		define c_unused = \$outer
+
+		meta iifgroup { \$t_used } counter
+	}
+}"
+
+$NFT -f - <<< "$RULESET"

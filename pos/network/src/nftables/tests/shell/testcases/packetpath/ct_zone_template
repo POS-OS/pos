@@ -1,0 +1,29 @@
+#!/bin/bash
+
+# Check 'ct zone set 1' actually works, i.e. conntrack is created in
+# the assigned zone.
+
+. $NFT_TEST_LIBRARY_FILE
+
+set -e
+
+ip link set lo up
+
+$NFT -f - <<EOF
+table ip t {
+	chain output {
+		type filter hook output priority raw; policy accept;
+		ip daddr 127.0.0.1 ct zone set 1
+	}
+}
+EOF
+
+ping -c 1 -W 1 127.0.0.1 > /dev/null
+
+set +e
+
+conntrack -L -w 1 -s 127.0.0.1 -d 127.0.0.1 -p icmp 2>/dev/null | grep -q .
+assert_pass "ct zone set must place the new conntrack entry in zone 1"
+
+conntrack -L -w 0 -s 127.0.0.1 -d 127.0.0.1 -p icmp 2>/dev/null | grep -q .
+assert_fail "conntrack entry must not end up in the default zone"

@@ -1,0 +1,14 @@
+table inet nat {
+	chain output {
+		type nat hook output priority dstnat; policy accept;
+		tcp dport 1234 redirect to :12345
+	}
+}
+table inet filter {
+	chain input {
+		type filter hook input priority filter; policy drop;
+		ct state established,related,new accept
+		meta l4proto { 1, 58 } accept
+		counter packets 0 bytes 0 drop
+	}
+}

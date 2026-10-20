@@ -1,0 +1,82 @@
+#!/bin/bash
+# nftables ct timeout test for tcp.
+# Defines ct timeout policies (1s) and verifies they expire for matching flows
+# while non matching flow stay alive >2s
+
+. "$NFT_TEST_LIBRARY_FILE"
+
+ip link set lo up
+
+$NFT -f - <<EOF
+table inet t {
+	ct timeout tcp-test {
+		protocol tcp;
+		policy = { syn_sent: 1s, established: 1s }
+	}
+
+	ct timeout udp-test {
+		protocol udp;
+		policy = { unreplied: 120s, replied: 130s }
+	}
+
+	chain output {
+		type filter hook output priority filter; policy accept;
+
+		# matching rules - only packets that hit these rules receive the
+		# corresponding ct-timeout policy
+		tcp dport 12345 ct timeout set "tcp-test"
+
+		# check kernel doesn't assign this to icmp/tcp etc.
+		ct timeout set "udp-test"
+	}
+}
+EOF
+
+assert_pass "ruleset load"
+
+# ----------------------------------------------------------------------
+# 1. TCP matching test
+# Listener on 12345 (matches tcp-test), initiator connects to it.
+# After the connection becomes ESTABLISHED we sleep so the ct timeout
+# expires and the conntrack entry should disappear.
+
+# start listener (responder)
+timeout  9 socat -u TCP-LISTEN:12345,reuseaddr STDOUT &
+LISTENER_PID=$!
+timeout 10 socat -u TCP-LISTEN:12346,reuseaddr STDOUT &
+LISTENER2_PID=$!
+sleep 1
+
+# start initiator (client)
+sleep 6 | socat -u STDIN TCP:127.0.0.1:12345  &
+
+# wait long enough for the 1s ESTABLISHED timeout
+sleep 2
+
+conntrack -L -s 127.0.0.1 -d 127.0.0.1 -p tcp --dport 12345 | grep .
+assert_fail "TCP matching flow timed out as expected"
+
+# ----------------------------------------------------------------------
+# 2. TCP non-matching test
+#    Listener on 12346 (no matching rule default ct timeout, which is long).
+
+# start initiator for port 12346
+sleep 5 | socat -u STDIN TCP:127.0.0.1:12346 &
+sleep 2
+
+# check that a TCP entry for our non-matching port is present
+conntrack -L -s 127.0.0.1 -d 127.0.0.1 -p tcp --dport 12346 | grep .
+assert_pass "TCP flow with standard timeout present"
+
+sysctl net.netfilter.nf_conntrack_icmp_timeout=2
+ping -c 1 127.0.0.1
+assert_pass "ping localhost"
+sleep 3
+
+conntrack -L -s 127.0.0.1 -d 127.0.0.1 -p icmp | grep .
+assert_fail "ICMP expired"
+
+# wait for "timeout"s.
+wait
+
+$NFT list ruleset

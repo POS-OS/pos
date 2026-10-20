@@ -1,0 +1,96 @@
+{
+  "nftables": [
+    {
+      "metainfo": {
+        "version": "VERSION",
+        "release_name": "RELEASE_NAME",
+        "json_schema_version": 1
+      }
+    },
+    {
+      "table": {
+        "family": "inet",
+        "name": "t",
+        "handle": 0
+      }
+    },
+    {
+      "chain": {
+        "family": "inet",
+        "table": "t",
+        "name": "output",
+        "handle": 0,
+        "type": "filter",
+        "hook": "output",
+        "prio": 0,
+        "policy": "accept"
+      }
+    },
+    {
+      "ct timeout": {
+        "family": "inet",
+        "name": "tcp-test",
+        "table": "t",
+        "handle": 0,
+        "protocol": "tcp",
+        "l3proto": "inet",
+        "policy": {
+          "syn_sent": 1,
+          "established": 1
+        }
+      }
+    },
+    {
+      "ct timeout": {
+        "family": "inet",
+        "name": "udp-test",
+        "table": "t",
+        "handle": 0,
+        "protocol": "udp",
+        "l3proto": "inet",
+        "policy": {
+          "unreplied": 120,
+          "replied": 130
+        }
+      }
+    },
+    {
+      "rule": {
+        "family": "inet",
+        "table": "t",
+        "chain": "output",
+        "handle": 0,
+        "expr": [
+          {
+            "match": {
+              "op": "==",
+              "left": {
+                "payload": {
+                  "protocol": "tcp",
+                  "field": "dport"
+                }
+              },
+              "right": 12345
+            }
+          },
+          {
+            "ct timeout": "tcp-test"
+          }
+        ]
+      }
+    },
+    {
+      "rule": {
+        "family": "inet",
+        "table": "t",
+        "chain": "output",
+        "handle": 0,
+        "expr": [
+          {
+            "ct timeout": "udp-test"
+          }
+        ]
+      }
+    }
+  ]
+}

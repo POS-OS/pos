@@ -1,0 +1,681 @@
+# ip6 dscp cs1
+inet test-inet input 
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 2b @ network header + 0 => reg 1 ]
+  [ bitwise reg 1 = ( reg 1 & 0x0fc0 ) ^ 0x0000 ]
+  [ cmp eq reg 1 0x0200 ]
+
+# ip6 dscp != cs1
+inet test-inet input 
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 2b @ network header + 0 => reg 1 ]
+  [ bitwise reg 1 = ( reg 1 & 0x0fc0 ) ^ 0x0000 ]
+  [ cmp neq reg 1 0x0200 ]
+
+# ip6 dscp 0x38
+inet test-inet input 
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 2b @ network header + 0 => reg 1 ]
+  [ bitwise reg 1 = ( reg 1 & 0x0fc0 ) ^ 0x0000 ]
+  [ cmp eq reg 1 0x0e00 ]
+
+# ip6 dscp != 0x20
+inet test-inet input 
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 2b @ network header + 0 => reg 1 ]
+  [ bitwise reg 1 = ( reg 1 & 0x0fc0 ) ^ 0x0000 ]
+  [ cmp neq reg 1 0x0800 ]
+
+# ip6 dscp {cs0, cs1, cs2, cs3, cs4, cs5, cs6, cs7, af11, af12, af13, af21, af22, af23, af31, af32, af33, af41, af42, af43, ef}
+__set%d test-inet 3
+__set%d test-inet 0
+	element 0000	element 0200	element 0400	element 0600	element 0800	element 0a00	element 0c00	element 0e00	element 0280	element 0300	element 0380	element 0480	element 0500	element 0580	element 0680	element 0700	element 0780	element 0880	element 0900	element 0980	element 0b80
+inet test-inet input 
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 2b @ network header + 0 => reg 1 ]
+  [ bitwise reg 1 = ( reg 1 & 0x0fc0 ) ^ 0x0000 ]
+  [ lookup reg 1 set __set%d ]
+
+# ip6 dscp vmap { 0x04 : accept, 0x3f : continue } counter
+__map%d test-inet b size 2
+__map%d test-inet 0
+	element 0100 : accept	element 0fc0 : continue
+ip6 test-ip6 input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 2b @ network header + 0 => reg 1 ]
+  [ bitwise reg 1 = ( reg 1 & 0x0fc0 ) ^ 0x0000 ]
+  [ lookup reg 1 set __map%d dreg 0 ]
+  [ counter pkts 0 bytes 0 ]
+
+# meta mark set ip6 dscp map @map1
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 2b @ network header + 0 => reg 1 ]
+  [ bitwise reg 1 = ( reg 1 & 0x0fc0 ) ^ 0x0000 ]
+  [ byteorder reg 1 = ntoh(reg 1, 2, 2) ]
+  [ bitwise reg 1 = ( reg 1 >> 0x00000006 ) ]
+  [ lookup reg 1 set map1 dreg 1 ]
+  [ meta set mark with reg 1 ]
+
+# meta mark set ip6 dscp . ip6 daddr map @map2
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 2b @ network header + 0 => reg 1 ]
+  [ bitwise reg 1 = ( reg 1 & 0x0fc0 ) ^ 0x0000 ]
+  [ byteorder reg 1 = ntoh(reg 1, 2, 2) ]
+  [ bitwise reg 1 = ( reg 1 >> 0x00000006 ) ]
+  [ payload load 16b @ network header + 24 => reg 9 ]
+  [ lookup reg 1 set map2 dreg 1 ]
+  [ meta set mark with reg 1 ]
+
+# ip6 dscp @map3
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 2b @ network header + 0 => reg 1 ]
+  [ bitwise reg 1 = ( reg 1 & 0x0fc0 ) ^ 0x0000 ]
+  [ byteorder reg 1 = ntoh(reg 1, 2, 2) ]
+  [ bitwise reg 1 = ( reg 1 >> 0x00000006 ) ]
+  [ lookup reg 1 set map3 ]
+
+# ip6 dscp . ip6 daddr @map4
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 2b @ network header + 0 => reg 1 ]
+  [ bitwise reg 1 = ( reg 1 & 0x0fc0 ) ^ 0x0000 ]
+  [ byteorder reg 1 = ntoh(reg 1, 2, 2) ]
+  [ bitwise reg 1 = ( reg 1 >> 0x00000006 ) ]
+  [ payload load 16b @ network header + 24 => reg 9 ]
+  [ lookup reg 1 set map4 ]
+
+# ip6 flowlabel 22
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 3b @ network header + 1 => reg 1 ]
+  [ bitwise reg 1 = ( reg 1 & 0x0fffff ) ^ 0x000000 ]
+  [ cmp eq reg 1 0x000016 ]
+
+# ip6 flowlabel != 233
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 3b @ network header + 1 => reg 1 ]
+  [ bitwise reg 1 = ( reg 1 & 0x0fffff ) ^ 0x000000 ]
+  [ cmp neq reg 1 0x0000e9 ]
+
+# ip6 flowlabel { 33, 55, 67, 88}
+__set%d test-inet 3
+__set%d test-inet 0
+	element 000021	element 000037	element 000043	element 000058
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 3b @ network header + 1 => reg 1 ]
+  [ bitwise reg 1 = ( reg 1 & 0x0fffff ) ^ 0x000000 ]
+  [ lookup reg 1 set __set%d ]
+
+# ip6 flowlabel != { 33, 55, 67, 88}
+__set%d test-inet 3
+__set%d test-inet 0
+	element 000021	element 000037	element 000043	element 000058
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 3b @ network header + 1 => reg 1 ]
+  [ bitwise reg 1 = ( reg 1 & 0x0fffff ) ^ 0x000000 ]
+  [ lookup reg 1 set __set%d 0x1 ]
+
+# ip6 flowlabel vmap { 0 : accept, 2 : continue }
+__map%d test-inet b size 2
+__map%d test-inet 0
+	element 000000 : accept	element 000002 : continue
+inet test-inet input 
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 3b @ network header + 1 => reg 1 ]
+  [ bitwise reg 1 = ( reg 1 & 0x0fffff ) ^ 0x000000 ]
+  [ lookup reg 1 set __map%d dreg 0 ]
+
+# ip6 length 22
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 2b @ network header + 4 => reg 1 ]
+  [ cmp eq reg 1 0x0016 ]
+
+# ip6 length != 233
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 2b @ network header + 4 => reg 1 ]
+  [ cmp neq reg 1 0x00e9 ]
+
+# ip6 length 33-45
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 2b @ network header + 4 => reg 1 ]
+  [ range eq reg 1 0x0021 0x002d ]
+
+# ip6 length != 33-45
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 2b @ network header + 4 => reg 1 ]
+  [ range neq reg 1 0x0021 0x002d ]
+
+# ip6 length { 33, 55, 67, 88}
+__set%d test-inet 3
+__set%d test-inet 0
+	element 0021	element 0037	element 0043	element 0058
+inet test-inet input 
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 2b @ network header + 4 => reg 1 ]
+  [ lookup reg 1 set __set%d ]
+
+# ip6 length != {33, 55, 67, 88}
+__set%d test-inet 3
+__set%d test-inet 0
+	element 0021	element 0037	element 0043	element 0058
+inet test-inet input 
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 2b @ network header + 4 => reg 1 ]
+  [ lookup reg 1 set __set%d 0x1 ]
+
+# ip6 nexthdr {udp, ah, comp, udplite, tcp, dccp, sctp}
+__set%d test-inet 3
+__set%d test-inet 0
+	element 11	element 33	element 6c	element 88	element 06	element 21	element 84
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 1b @ network header + 6 => reg 1 ]
+  [ lookup reg 1 set __set%d ]
+
+# ip6 nexthdr {esp, ah, comp, udp, udplite, tcp, dccp, sctp, icmpv6}
+__set%d test-inet 3
+__set%d test-inet 0
+	element 32	element 33	element 6c	element 11	element 88	element 06	element 21	element 84	element 3a
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 1b @ network header + 6 => reg 1 ]
+  [ lookup reg 1 set __set%d ]
+
+# ip6 nexthdr != {esp, ah, comp, udp, udplite, tcp, dccp, sctp, icmpv6}
+__set%d test-inet 3
+__set%d test-inet 0
+	element 32	element 33	element 6c	element 11	element 88	element 06	element 21	element 84	element 3a
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 1b @ network header + 6 => reg 1 ]
+  [ lookup reg 1 set __set%d 0x1 ]
+
+# ip6 nexthdr esp
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 1b @ network header + 6 => reg 1 ]
+  [ cmp eq reg 1 0x32 ]
+
+# ip6 nexthdr != esp
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 1b @ network header + 6 => reg 1 ]
+  [ cmp neq reg 1 0x32 ]
+
+# ip6 nexthdr 33-44
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 1b @ network header + 6 => reg 1 ]
+  [ range eq reg 1 0x21 0x2c ]
+
+# ip6 nexthdr != 33-44
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 1b @ network header + 6 => reg 1 ]
+  [ range neq reg 1 0x21 0x2c ]
+
+# ip6 hoplimit 1
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 1b @ network header + 7 => reg 1 ]
+  [ cmp eq reg 1 0x01 ]
+
+# ip6 hoplimit != 233
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 1b @ network header + 7 => reg 1 ]
+  [ cmp neq reg 1 0xe9 ]
+
+# ip6 hoplimit 33-45
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 1b @ network header + 7 => reg 1 ]
+  [ range eq reg 1 0x21 0x2d ]
+
+# ip6 hoplimit != 33-45
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 1b @ network header + 7 => reg 1 ]
+  [ range neq reg 1 0x21 0x2d ]
+
+# ip6 hoplimit {33, 55, 67, 88}
+__set%d test-inet 3
+__set%d test-inet 0
+	element 21	element 37	element 43	element 58
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 1b @ network header + 7 => reg 1 ]
+  [ lookup reg 1 set __set%d ]
+
+# ip6 hoplimit != {33, 55, 67, 88}
+__set%d test-inet 3
+__set%d test-inet 0
+	element 21	element 37	element 43	element 58
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 1b @ network header + 7 => reg 1 ]
+  [ lookup reg 1 set __set%d 0x1 ]
+
+# ip6 saddr 1234:1234:1234:1234:1234:1234:1234:1234
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 16b @ network header + 8 => reg 1 ]
+  [ cmp eq reg 1 0x12341234 0x12341234 0x12341234 0x12341234 ]
+
+# ip6 saddr ::1234:1234:1234:1234:1234:1234:1234
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 16b @ network header + 8 => reg 1 ]
+  [ cmp eq reg 1 0x00001234 0x12341234 0x12341234 0x12341234 ]
+
+# ip6 saddr 1234::1234:1234:1234:1234:1234:1234
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 16b @ network header + 8 => reg 1 ]
+  [ cmp eq reg 1 0x12340000 0x12341234 0x12341234 0x12341234 ]
+
+# ip6 saddr 1234:1234::1234:1234:1234:1234:1234
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 16b @ network header + 8 => reg 1 ]
+  [ cmp eq reg 1 0x12341234 0x00001234 0x12341234 0x12341234 ]
+
+# ip6 saddr 1234:1234:0:1234:1234:1234:1234:1234
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 16b @ network header + 8 => reg 1 ]
+  [ cmp eq reg 1 0x12341234 0x00001234 0x12341234 0x12341234 ]
+
+# ip6 saddr 1234:1234:1234::1234:1234:1234:1234
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 16b @ network header + 8 => reg 1 ]
+  [ cmp eq reg 1 0x12341234 0x12340000 0x12341234 0x12341234 ]
+
+# ip6 saddr 1234:1234:1234:1234:0:1234:1234:1234
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 16b @ network header + 8 => reg 1 ]
+  [ cmp eq reg 1 0x12341234 0x12341234 0x00001234 0x12341234 ]
+
+# ip6 saddr 1234:1234:1234:1234:1234::1234:1234
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 16b @ network header + 8 => reg 1 ]
+  [ cmp eq reg 1 0x12341234 0x12341234 0x12340000 0x12341234 ]
+
+# ip6 saddr 1234:1234:1234:1234:1234:1234:0:1234
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 16b @ network header + 8 => reg 1 ]
+  [ cmp eq reg 1 0x12341234 0x12341234 0x12341234 0x00001234 ]
+
+# ip6 saddr 1234:1234:1234:1234:1234:1234:1234::
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 16b @ network header + 8 => reg 1 ]
+  [ cmp eq reg 1 0x12341234 0x12341234 0x12341234 0x12340000 ]
+
+# ip6 saddr ::1234:1234:1234:1234:1234:1234
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 16b @ network header + 8 => reg 1 ]
+  [ cmp eq reg 1 0x00000000 0x12341234 0x12341234 0x12341234 ]
+
+# ip6 saddr 1234::1234:1234:1234:1234:1234
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 16b @ network header + 8 => reg 1 ]
+  [ cmp eq reg 1 0x12340000 0x00001234 0x12341234 0x12341234 ]
+
+# ip6 saddr 1234:1234::1234:1234:1234:1234
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 16b @ network header + 8 => reg 1 ]
+  [ cmp eq reg 1 0x12341234 0x00000000 0x12341234 0x12341234 ]
+
+# ip6 saddr 1234:1234:1234::1234:1234:1234
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 16b @ network header + 8 => reg 1 ]
+  [ cmp eq reg 1 0x12341234 0x12340000 0x00001234 0x12341234 ]
+
+# ip6 saddr 1234:1234:1234:1234::1234:1234
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 16b @ network header + 8 => reg 1 ]
+  [ cmp eq reg 1 0x12341234 0x12341234 0x00000000 0x12341234 ]
+
+# ip6 saddr 1234:1234:1234:1234:1234::1234
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 16b @ network header + 8 => reg 1 ]
+  [ cmp eq reg 1 0x12341234 0x12341234 0x12340000 0x00001234 ]
+
+# ip6 saddr 1234:1234:1234:1234:1234:1234::
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 16b @ network header + 8 => reg 1 ]
+  [ cmp eq reg 1 0x12341234 0x12341234 0x12341234 0x00000000 ]
+
+# ip6 saddr ::1234:1234:1234:1234:1234
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 16b @ network header + 8 => reg 1 ]
+  [ cmp eq reg 1 0x00000000 0x00001234 0x12341234 0x12341234 ]
+
+# ip6 saddr 1234::1234:1234:1234:1234
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 16b @ network header + 8 => reg 1 ]
+  [ cmp eq reg 1 0x12340000 0x00000000 0x12341234 0x12341234 ]
+
+# ip6 saddr 1234:1234::1234:1234:1234
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 16b @ network header + 8 => reg 1 ]
+  [ cmp eq reg 1 0x12341234 0x00000000 0x00001234 0x12341234 ]
+
+# ip6 saddr 1234:1234:1234::1234:1234
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 16b @ network header + 8 => reg 1 ]
+  [ cmp eq reg 1 0x12341234 0x12340000 0x00000000 0x12341234 ]
+
+# ip6 saddr 1234:1234:1234:1234::1234
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 16b @ network header + 8 => reg 1 ]
+  [ cmp eq reg 1 0x12341234 0x12341234 0x00000000 0x00001234 ]
+
+# ip6 saddr 1234:1234:1234:1234:1234::
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 16b @ network header + 8 => reg 1 ]
+  [ cmp eq reg 1 0x12341234 0x12341234 0x12340000 0x00000000 ]
+
+# ip6 saddr ::1234:1234:1234:1234
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 16b @ network header + 8 => reg 1 ]
+  [ cmp eq reg 1 0x00000000 0x00000000 0x12341234 0x12341234 ]
+
+# ip6 saddr 1234::1234:1234:1234
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 16b @ network header + 8 => reg 1 ]
+  [ cmp eq reg 1 0x12340000 0x00000000 0x00001234 0x12341234 ]
+
+# ip6 saddr 1234:1234::1234:1234
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 16b @ network header + 8 => reg 1 ]
+  [ cmp eq reg 1 0x12341234 0x00000000 0x00000000 0x12341234 ]
+
+# ip6 saddr 1234:1234:1234::1234
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 16b @ network header + 8 => reg 1 ]
+  [ cmp eq reg 1 0x12341234 0x12340000 0x00000000 0x00001234 ]
+
+# ip6 saddr 1234:1234:1234:1234::
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 16b @ network header + 8 => reg 1 ]
+  [ cmp eq reg 1 0x12341234 0x12341234 0x00000000 0x00000000 ]
+
+# ip6 saddr ::1234:1234:1234
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 16b @ network header + 8 => reg 1 ]
+  [ cmp eq reg 1 0x00000000 0x00000000 0x00001234 0x12341234 ]
+
+# ip6 saddr 1234::1234:1234
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 16b @ network header + 8 => reg 1 ]
+  [ cmp eq reg 1 0x12340000 0x00000000 0x00000000 0x12341234 ]
+
+# ip6 saddr 1234:1234::1234
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 16b @ network header + 8 => reg 1 ]
+  [ cmp eq reg 1 0x12341234 0x00000000 0x00000000 0x00001234 ]
+
+# ip6 saddr 1234:1234:1234::
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 16b @ network header + 8 => reg 1 ]
+  [ cmp eq reg 1 0x12341234 0x12340000 0x00000000 0x00000000 ]
+
+# ip6 saddr ::1234:1234
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 16b @ network header + 8 => reg 1 ]
+  [ cmp eq reg 1 0x00000000 0x00000000 0x00000000 0x12341234 ]
+
+# ip6 saddr 1234::1234
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 16b @ network header + 8 => reg 1 ]
+  [ cmp eq reg 1 0x12340000 0x00000000 0x00000000 0x00001234 ]
+
+# ip6 saddr 1234:1234::
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 16b @ network header + 8 => reg 1 ]
+  [ cmp eq reg 1 0x12341234 0x00000000 0x00000000 0x00000000 ]
+
+# ip6 saddr ::1234
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 16b @ network header + 8 => reg 1 ]
+  [ cmp eq reg 1 0x00000000 0x00000000 0x00000000 0x00001234 ]
+
+# ip6 saddr 1234::
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 16b @ network header + 8 => reg 1 ]
+  [ cmp eq reg 1 0x12340000 0x00000000 0x00000000 0x00000000 ]
+
+# ip6 saddr ::/64
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 8b @ network header + 8 => reg 1 ]
+  [ cmp eq reg 1 0x00000000 0x00000000 ]
+
+# ip6 saddr ::1 ip6 daddr ::2
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 16b @ network header + 8 => reg 1 ]
+  [ cmp eq reg 1 0x00000000 0x00000000 0x00000000 0x00000001 ]
+  [ payload load 16b @ network header + 24 => reg 1 ]
+  [ cmp eq reg 1 0x00000000 0x00000000 0x00000000 0x00000002 ]
+
+# ip6 daddr != {::1234:1234:1234:1234:1234:1234:1234, 1234:1234::1234:1234:1234:1234:1234 }
+__set%d test-inet 3
+__set%d test-inet 0
+	element 00001234 12341234 12341234 12341234	element 12341234 00001234 12341234 12341234
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 16b @ network header + 24 => reg 1 ]
+  [ lookup reg 1 set __set%d 0x1 ]
+
+# ip6 daddr != ::1234:1234:1234:1234:1234:1234:1234-1234:1234::1234:1234:1234:1234:1234
+inet test-inet input
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 16b @ network header + 24 => reg 1 ]
+  [ range neq reg 1 0x00001234 0x12341234 0x12341234 0x12341234 0x12341234 0x00001234 0x12341234 0x12341234 ]
+
+# iif "lo" ip6 daddr set ::1
+inet test-inet input
+  [ meta load iif => reg 1 ]
+  [ cmp eq reg 1 0x00000001 ]
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ immediate reg 1 0x00000000 0x00000000 0x00000000 0x00000001 ]
+  [ payload write reg 1 => 16b @ network header + 24 csum_type 0 csum_off 0 csum_flags 0x1 ]
+
+# iif "lo" ip6 hoplimit set 1
+inet test-inet input
+  [ meta load iif => reg 1 ]
+  [ cmp eq reg 1 0x00000001 ]
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ immediate reg 1 0x01 ]
+  [ payload write reg 1 => 1b @ network header + 7 csum_type 0 csum_off 0 csum_flags 0x0 ]
+
+# iif "lo" ip6 dscp set af42
+inet test-inet input
+  [ meta load iif => reg 1 ]
+  [ cmp eq reg 1 0x00000001 ]
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 2b @ network header + 0 => reg 1 ]
+  [ bitwise reg 1 = ( reg 1 & 0xf03f ) ^ 0x0900 ]
+  [ payload write reg 1 => 2b @ network header + 0 csum_type 0 csum_off 0 csum_flags 0x0 ]
+
+# iif "lo" ip6 dscp set 63
+inet test-inet input
+  [ meta load iif => reg 1 ]
+  [ cmp eq reg 1 0x00000001 ]
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 2b @ network header + 0 => reg 1 ]
+  [ bitwise reg 1 = ( reg 1 & 0xf03f ) ^ 0x0fc0 ]
+  [ payload write reg 1 => 2b @ network header + 0 csum_type 0 csum_off 0 csum_flags 0x0 ]
+
+# iif "lo" ip6 ecn set ect0
+inet test-inet input
+  [ meta load iif => reg 1 ]
+  [ cmp eq reg 1 0x00000001 ]
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 1b @ network header + 1 => reg 1 ]
+  [ bitwise reg 1 = ( reg 1 & 0xcf ) ^ 0x20 ]
+  [ payload write reg 1 => 1b @ network header + 1 csum_type 0 csum_off 0 csum_flags 0x0 ]
+
+# iif "lo" ip6 ecn set ce
+inet test-inet input
+  [ meta load iif => reg 1 ]
+  [ cmp eq reg 1 0x00000001 ]
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 1b @ network header + 1 => reg 1 ]
+  [ bitwise reg 1 = ( reg 1 & 0xcf ) ^ 0x30 ]
+  [ payload write reg 1 => 1b @ network header + 1 csum_type 0 csum_off 0 csum_flags 0x0 ]
+
+# iif "lo" ip6 flowlabel set 0
+inet test-inet input
+  [ meta load iif => reg 1 ]
+  [ cmp eq reg 1 0x00000001 ]
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 3b @ network header + 1 => reg 1 ]
+  [ bitwise reg 1 = ( reg 1 & 0xf00000 ) ^ 0x000000 ]
+  [ payload write reg 1 => 3b @ network header + 1 csum_type 0 csum_off 0 csum_flags 0x0 ]
+
+# iif "lo" ip6 flowlabel set 12345
+inet test-inet input
+  [ meta load iif => reg 1 ]
+  [ cmp eq reg 1 0x00000001 ]
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 3b @ network header + 1 => reg 1 ]
+  [ bitwise reg 1 = ( reg 1 & 0xf00000 ) ^ 0x003039 ]
+  [ payload write reg 1 => 3b @ network header + 1 csum_type 0 csum_off 0 csum_flags 0x0 ]
+
+# iif "lo" ip6 flowlabel set 0xfffff
+inet test-inet input
+  [ meta load iif => reg 1 ]
+  [ cmp eq reg 1 0x00000001 ]
+  [ meta load nfproto => reg 1 ]
+  [ cmp eq reg 1 0x0a ]
+  [ payload load 3b @ network header + 1 => reg 1 ]
+  [ bitwise reg 1 = ( reg 1 & 0xf00000 ) ^ 0x0fffff ]
+  [ payload write reg 1 => 3b @ network header + 1 csum_type 0 csum_off 0 csum_flags 0x0 ]
