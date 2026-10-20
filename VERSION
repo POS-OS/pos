@@ -18,4 +18,4 @@ RPM_RELEASE=1
 
 # The BUILD number of main's next numbered build. ./build tag numbers a
 # build with it and commits the next; not edited by hand.
-BUILD=4
+BUILD=5
