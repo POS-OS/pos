@@ -1,0 +1,9 @@
+[Unit]
+Description=OpenSSH host keys
+Documentation=man:ssh-keygen(1)
+Before=sshd.service
+
+[Service]
+Type=oneshot
+# Makes the host keys of the default types that are missing.
+ExecStart=/pos/bin/ssh-keygen -A

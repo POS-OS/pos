@@ -69,5 +69,13 @@ check "PAM: passwd" passwd -S root
 check "sudo" bash -c 'useradd -m smoke && echo "smoke:smoke-test" | chpasswd &&
   echo "smoke ALL=(ALL) ALL" >/etc/sudoers.d/smoke &&
   su -s /pos/bin/bash -c "echo smoke-test | sudo -S -k true" smoke'
+# A native system (vm-disk) has the library of stage images: the network
+# stage merges over /pos, and its programs run.
+if [[ -f /pos/lib/pos/stages/pos-network.raw ]]; then
+  check "pos-stage enable network" bash -c 'pos-stage enable network &&
+    pos-stage list | grep -qx "network enabled" || { systemd-sysext status; false; }'
+  check "network stage tools" bash -c 'ip -br link && ping -c 1 127.0.0.1 &&
+    curl --version && ssh -V && nft --version && rsync --version'
+fi
 
 exit "$failed"

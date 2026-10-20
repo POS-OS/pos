@@ -1,0 +1,13 @@
+#%PAM-1.0
+# sshd: POS's default stack, with a login's session (pam_loginuid,
+# pam_keyinit), as console logins (login).
+auth      include     system-auth
+
+account   required    pam_nologin.so
+account   include     system-auth
+
+password  include     system-auth
+
+session   required    pam_loginuid.so
+session   optional    pam_keyinit.so force revoke
+session   include     system-auth

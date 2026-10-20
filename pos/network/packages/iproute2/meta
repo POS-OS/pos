@@ -1,0 +1,4 @@
+build-requires gcc pos-link
+# libmnl for devlink, rdma, dcb, vdpa and tc's extended errors; libelf
+# (elfutils) for tc's eBPF loader; libcap for ip vrf.
+requires glibc libmnl elfutils libcap

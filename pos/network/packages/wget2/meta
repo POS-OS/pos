@@ -1,0 +1,5 @@
+build-requires gcc pos-link
+requires glibc openssl nghttp2 zlib zstd xz bzip2 pcre2
+# gnulib bootstrap checks the tools in bootstrap.conf buildreq; translations
+# are fetched with wget.
+prepare-requires wget lzip texinfo-tex

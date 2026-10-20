@@ -22,6 +22,22 @@ fs_stages() {
   find "$work/root" ! -type l -perm -g=w ! -perm -1000 -exec chmod g-w {} +
 }
 
+# Put stage images into the tree's library of stage images,
+# /pos/lib/pos/stages/pos-<stage>.raw, which pos-stage enables them from
+# (BUILD.md "Stage images"). The images are what stage-images made.
+# Inputs:
+#   $@    the stages
+#   bdir, stem, work, output
+fs_stage_images() {
+  local s img lib=$work/root/pos/lib/pos/stages
+  mkdir -p "$lib"
+  for s in "$@"; do
+    img=$bdir/pos-$s-$stem.raw
+    [[ -f $img ]] || die "$output: stage $s has no image in $bdir (output stage-images)"
+    install -m 0644 "$img" "$lib/pos-$s.raw"
+  done
+}
+
 # Make the root layout around /pos: the directories with their modes and
 # the symlinks into /pos for the paths in BUILD.md "Prefix".
 #   dir <path> <mode>        directory

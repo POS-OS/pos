@@ -1,3 +1,5 @@
-# POS's own system integration (src/pos-integration): data only. Its PAM
-# stack uses pam's modules, systemd's pam_systemd and util-linux's login.
-requires pam systemd util-linux
+# POS's own system integration (src/pos-integration): data, and the
+# pos-stage script. Its PAM stack uses pam's modules, systemd's pam_systemd
+# and util-linux's login; pos-stage bash, coreutils, systemd and glibc's
+# ldconfig.
+requires pam systemd util-linux bash coreutils glibc

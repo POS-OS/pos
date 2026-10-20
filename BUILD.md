@@ -172,6 +172,7 @@ list of the stage named after the tree.
 | Tree | What it holds |
 | --- | --- |
 | `core-libs`, `system`, `sdk` | the stages: their member lists, and the packages and sources of their members |
+| `network` | the optional network stage (see "Network stage"), as the stages above |
 | `toolchain` | the toolchain pipeline (see "Toolchain"): linux-headers, binutils, gcc with gcc-runtime, and mpc, which gcc builds in its tree |
 | `common` | sources of packages of several trees: gnulib |
 | `build-env` | the host and profile packages builds require (host-base, host-toolchain, gcc-host, host-linux-headers, pos-link) |
@@ -802,7 +803,8 @@ rpm-pos-sdk and rpm-pos-fedora; fedora-toolbox from container-fs-dnf).
 | output | requires | makes |
 | --- | --- | --- |
 | `container-fs` | core-libs, system, sdk | `pos-container-fs-<stem>.tar.zst` |
-| `vm-disk` | core-libs, system | `pos-vm-disk-<stem>.qcow2` |
+| `stage-images` | system, network | `pos-network-<stem>.raw` |
+| `vm-disk` | core-libs, system, stage-images | `pos-vm-disk-<stem>.qcow2` |
 | `rpm-pos` | core-libs, system | `rpm/pos`, `rpm/pos-debuginfo` |
 | `rpm-pos-sdk` | sdk | `rpm/pos-sdk`, `rpm/pos-sdk-debuginfo` |
 | `rpm-pos-fedora` | core-libs, system, sdk | `rpm/pos-fedora` |
@@ -824,7 +826,8 @@ containers"), and `output_host()`, which runs on the host after it, for
 what needs the host's podman. Both call the functions of
 `buildsys/output-plugins.d`: `fs.sh` makes a root tree and archives it,
 `disk.sh` makes a disk of it and checks the disk, `rpm.sh` makes RPM
-packages and `podman.sh` builds and imports podman images. A recipe may
+packages, `sysext.sh` makes stage images (see "Stage images") and
+`podman.sh` builds and imports podman images. A recipe may
 use another output's files: vm-disk-dnf takes vm-disk's `root/` and
 `repart.d`.
 
@@ -982,6 +985,45 @@ units, module loading in the initrd and after, unit file modes, the login
 prompt on tty1, the QEMU guest agent, network and dnf, the PAM services
 and sudo. Its status is the number of failed checks. `disk_check` runs it in `output_host()` (see "Build numbers").
 
+## Stage images
+An optional stage (network) ships with an installed system without being
+part of its `/pos`: as a system extension image in the system's library
+of stage images, which `pos-stage` enables. The stage arrives built, from
+the same build as the rest, and nothing is downloaded or integrated on
+the machine; enabling it runs only what a first boot runs for its files.
+
+* `stage-images` makes the image of a stage with `sysext_stage`
+  (`buildsys/output-plugins.d/sysext.sh`): `pos-<stage>-<stem>.raw`, an
+  EROFS file system (lz4hc) of the stage's `/pos`, with
+  `/usr/lib/extension-release.d/extension-release.pos-<stage>`. Its `ID`
+  and `SYSEXT_LEVEL` are those of the system stage's os-release, where
+  assemble.sh writes the build's identifier as `SYSEXT_LEVEL`: systemd-sysext
+  merges an image only onto the build it was made with.
+* `fs_stage_images` (fs.sh) puts the images into an image's library,
+  `/pos/lib/pos/stages/pos-<stage>.raw`. vm-disk has one, so it is made
+  once the network stage is assembled too.
+* `pos-stage` (`/pos/sbin`, pos-integration) enables a stage: it links the
+  image into `/etc/extensions`, runs `systemd-sysext refresh`, which merges
+  the enabled images over `/pos` read-only and reloads systemd, then
+  `systemd-sysusers`, `systemd-tmpfiles --create` (the stage's factory
+  files) and `ldconfig`. `pos-stage disable` removes the link and merges
+  again; `pos-stage list` shows the library. systemd-sysext.service merges
+  the enabled images at every boot, before tmpfiles runs; the stage's
+  users were made when it was enabled and stay in `/etc/passwd`.
+  Services a stage brings are not enabled: that is left to the
+  administrator (`systemctl enable --now sshd`).
+* systemd-sysext merges `/usr` and `/opt` unless `SYSTEMD_SYSEXT_HIERARCHIES`
+  says otherwise. pos-integration's drop-in for systemd-sysext.service, and
+  pos-stage, set it to `/pos`. The images' `/usr` (the extension-release)
+  is not merged: `/usr` stays writable (`/usr/lib/modules`). The drop-in
+  applies wherever POS's systemd runs, a pos-fedora system too, where it
+  keeps Fedora's own extensions of `/usr` from merging; there the tools of
+  the optional stages are Fedora's (see "RPM packages").
+* An update replaces the library with the base, so an enabled stage stays
+  the build's: the link in `/etc/extensions` names the library's path.
+  smoke.sh enables the network stage and runs its tools where the library
+  is.
+
 ## Images made with podman
 `podman_build` makes an image with podman from the output's
 `containerfile`, on top of the image of another output, which it requires.
@@ -1068,6 +1110,11 @@ those, pos-fedora:
   Fedora binaries request `/lib64/ld-linux-x86-64.so.2`, so they run on
   POS glibc. A path that only Fedora packages pos-fedora does not replace
   have is not linked, so those install next to it.
+
+The optional stages (network) have no RPM package, and pos-fedora claims
+none of their packages: on an RPM system, Fedora's curl, openssh, iproute
+and the others install in `/usr` as on Fedora. The stages are for native
+systems, as images (see "Stage images").
 
 A claim stands only if POS has every versioned soname and symbol version
 the Fedora package provides; otherwise rpm-pos-fedora drops it with a warning
@@ -1271,3 +1318,45 @@ no systemd units and no default `logrotate.conf`; `run-parts` has no
 provider. These belong in pos-integration too (units, sysusers.d). The
 policy for units no preset names is systemd's default, enable; Fedora's
 `99-default-disable.preset` is not there.
+
+# Network stage
+The network stage (`pos/network/stage`) is the network tools, optional
+on a system: it is not in `/pos` until enabled (see "Stage images"). It
+builds on core-libs and system, whose systemd-networkd and
+systemd-resolved configure the network without it.
+
+* iproute2 (ip, ss, bridge, tc, devlink and the rest) with libmnl, libelf
+  for tc's eBPF loader (no libbpf) and libcap; no arpd (Berkeley DB). Its
+  default tables are in `/pos/share/iproute2`, which `/etc/iproute2`
+  overrides per file.
+* iputils: ping, tracepath, arping and clockdiff, without set-uid or file
+  capabilities. ping uses ICMP datagram sockets, which systemd's sysctl
+  defaults (`net.ipv4.ping_group_range`) allow every group; arping and
+  clockdiff need root.
+* ethtool, with netlink (libmnl). nftables with libnftnl and libmnl,
+  readline for `nft -i`, without JSON or iptables compatibility;
+  nftables.service loads `/etc/nftables/rules/main.nft` where there is one.
+* curl and libcurl: OpenSSL with OpenSSL's trust store (`/etc/ssl/cert.pem`,
+  ca-certificates), HTTP/2 with nghttp2 (its library only), zlib and zstd.
+  Not built for lack of the libraries: brotli, IDN (libidn2), libpsl,
+  libssh2 (scp:, sftp:), GSSAPI, LDAP.
+* GNU Wget2 and libwget, as Fedora has it, with `wget` a link to `wget2`
+  (Fedora's wget2-wget): OpenSSL (its default is GnuTLS) with OpenSSL's
+  trust store, HTTP/2 with nghttp2, pcre2, and zlib, zstd, xz and bzip2
+  encodings; no libpsl, HSTS preload list (libhsts), IDN or brotli, and no
+  man page (pandoc). Wget2 has no FTP or WARC, which Wget 1 had. Built from
+  git with gnulib bootstrap, as the GNU packages of the system stage,
+  synced without its submodules (gnulib is POS's, the wiki is not needed).
+* rsync with popt, zlib and zstd from POS (not its included copies) and
+  OpenSSL; no lz4 or xxhash. Its daemon units are installed.
+* OpenSSH (ssh, sshd, scp, sftp, ssh-agent, ssh-keygen): configuration in
+  `/etc/ssh` (factory), PAM on (the shipped `sshd_config`, edited in
+  prepare) with pam's vendor file `sshd`, the privilege separation user
+  `sshd` (sysusers.d) and directory `/var/empty/sshd`. POS's units:
+  sshd.service (`Type=notify`; sshd notifies systemd itself) and
+  sshd-keygen.service, which makes the missing host keys before sshd
+  starts. No Kerberos, libedit, FIDO security keys or SELinux.
+
+Wi-Fi (iwd, iw, wireless-regdb) and the packet capture tools are not in
+the stage yet. RPM systems have no package of the stage: their network
+tools are Fedora's (see "RPM packages").

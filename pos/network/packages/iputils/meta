@@ -1,0 +1,4 @@
+build-requires gcc pos-link
+requires glibc libcap
+# The man pages are DocBook, made with xsltproc.
+host-requires meson ninja-build libxslt docbook5-style-xsl

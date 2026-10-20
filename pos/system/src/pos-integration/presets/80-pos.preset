@@ -4,3 +4,5 @@
 enable systemd-networkd.service
 enable systemd-networkd-wait-online.service
 enable systemd-resolved.service
+# Merges the stages pos-stage enabled at boot.
+enable systemd-sysext.service

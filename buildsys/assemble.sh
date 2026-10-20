@@ -65,12 +65,13 @@ done < "$list"
 # release, BUILD_ID the build's identifier and POS_BUILD the OS build,
 # <build>.<revision>, which has no field of its own. RELEASE_TYPE is
 # development for a <branch>.<timestamp> release, stable for a static
-# one. NAME stays the package's, without a version. A copy, not the
-# package's staging tree.
+# one. SYSEXT_LEVEL is the build's identifier too: systemd-sysext merges
+# only stage images of the same build (BUILD.md "Stage images"). NAME stays
+# the package's, without a version. A copy, not the package's staging tree.
 osrel=$root/pos/lib/os-release
 if [[ -f $osrel ]]; then
   name=$(sed -n 's/^NAME="\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' "$osrel")
-  sed -i -E '/^(PRETTY_NAME|VERSION|VERSION_ID|BUILD_ID|POS_BUILD|RELEASE_TYPE)=/d' "$osrel"
+  sed -i -E '/^(PRETTY_NAME|VERSION|VERSION_ID|BUILD_ID|POS_BUILD|RELEASE_TYPE|SYSEXT_LEVEL)=/d' "$osrel"
   {
     echo "PRETTY_NAME=\"$name $(info_get "$bdir" product-version)\""
     echo "VERSION=\"$(info_get "$bdir" product-release)\""
@@ -78,6 +79,7 @@ if [[ -f $osrel ]]; then
     echo "BUILD_ID=$(build_identifier "$bdir")"
     echo "POS_BUILD=$(os_build "$bdir")"
     echo "RELEASE_TYPE=$(info_get "$bdir" release-type)"
+    echo "SYSEXT_LEVEL=$(build_identifier "$bdir")"
   } >>"$osrel"
 fi
 

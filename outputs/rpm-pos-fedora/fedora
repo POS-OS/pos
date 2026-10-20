@@ -12,6 +12,8 @@
 # Development packages and the compiler are not listed: the POS compiler
 # searches /pos/include, not the /usr/include Fedora -devel packages
 # install into.
+# The optional stages (network) have no RPM package and are not claimed:
+# their Fedora packages install in /usr, as on Fedora.
 
 glibc glibc glibc-common glibc-gconv-extra glibc-minimal-langpack glibc-all-langpacks libnsl nss_db nss_hesiod
 # glibc: the UTF-8 locales are compiled (/pos/lib/locale), not the legacy

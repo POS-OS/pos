@@ -1,0 +1,22 @@
+# Network tools: an optional stage. It ships with an installation as a
+# system extension image and is enabled with pos-stage (BUILD.md "Network
+# stage").
+# Netlink libraries: libmnl for iproute2, ethtool and nftables; libnftnl
+# for nftables.
+libmnl
+libnftnl
+# Links, addresses, routes, sockets (ip, ss, bridge, tc).
+iproute2
+# ICMP diagnostics: ping, tracepath, arping, clockdiff.
+iputils
+# Wired device settings: link speed, offloads.
+ethtool
+# Packet filtering.
+nftables
+# Transfer: curl and libcurl (HTTP/2 with nghttp2), wget2, rsync.
+nghttp2
+curl
+wget2
+rsync
+# Remote shell: ssh, sshd, scp, sftp.
+openssh

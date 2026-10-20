@@ -1,0 +1,2 @@
+build-requires gcc pos-link
+requires glibc openssl zlib pam libxcrypt

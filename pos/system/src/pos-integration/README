@@ -4,7 +4,8 @@ which no upstream package ships. Installed by packages/pos-integration.
 pam.d/  POS's PAM configuration: system-auth, the stack services
         include; a file for every PAM service in POS (util-linux's login,
         su, runuser, chfn, chsh; shadow's passwd, chpasswd, newusers;
-        sudo; cronie's crond; systemd ships its own); and other, which
+        sudo; cronie's crond; systemd ships its own, and the packages of
+        the optional stages theirs: openssh's sshd); and other, which
         denies the rest. Installed into pam's vendor directory
         (/pos/share/pam/pam.d); /etc/pam.d overrides it per service.
 
@@ -19,3 +20,11 @@ udev/  udev rules that start POS's services for devices:
         99-qemu-guest-agent.rules starts qemu-guest-agent.service when
         the VM has the guest agent's port. Installed into
         /pos/lib/udev/rules.d.
+
+bin/pos-stage  Enables and disables the optional stages: links an image of
+        the library (/pos/lib/pos/stages) into /etc/extensions, merges it
+        with systemd-sysext and runs sysusers, tmpfiles and ldconfig for
+        it. Installed as /pos/sbin/pos-stage.
+
+systemd/  Drop-ins for systemd's units: systemd-sysext.service merges
+        over /pos (SYSTEMD_SYSEXT_HIERARCHIES), where the stages go.

@@ -1,0 +1,75 @@
+#!/pos/bin/bash
+# Enable and disable the optional stages of the installed build. Each is
+# an image in the library, /pos/lib/pos/stages/pos-<stage>.raw; an enabled
+# one is linked from /etc/extensions, and systemd-sysext merges it over
+# /pos, now and at every boot (systemd-sysext.service). An image only
+# merges onto the build it was made with (SYSEXT_LEVEL in os-release).
+#
+#   pos-stage list
+#   pos-stage enable <stage>...
+#   pos-stage disable <stage>...
+set -euo pipefail
+
+library=/pos/lib/pos/stages
+links=/etc/extensions
+# systemd-sysext merges /usr and /opt by default; POS's stages extend
+# /pos (as systemd-sysext.service.d/pos.conf sets for the boot).
+export SYSTEMD_SYSEXT_HIERARCHIES=/pos
+
+usage() {
+  echo "usage: pos-stage list | enable <stage>... | disable <stage>..." >&2
+  exit 2
+}
+
+# The stages in the library, one per line: <stage> enabled|disabled.
+list() {
+  local img stage
+  for img in "$library"/pos-*.raw; do
+    [[ -f $img ]] || continue
+    stage=${img##*/pos-}
+    stage=${stage%.raw}
+    if [[ $(readlink "$links/pos-$stage.raw" 2>/dev/null) == "$img" ]]; then
+      echo "$stage enabled"
+    else
+      echo "$stage disabled"
+    fi
+  done
+}
+
+# What a first boot does with a stage's files, for the stages merged now:
+# their users and groups (sysusers.d), their /etc and /var defaults
+# (factory tmpfiles.d) and the loader cache. Services are left as they
+# are: enabling one is the administrator's choice.
+activate() {
+  systemd-sysusers
+  systemd-tmpfiles --create
+  ldconfig
+}
+
+# Inputs:
+#   $1    enable or disable
+#   $@    stage names
+change() {
+  local action=$1 stage img
+  shift
+  (($#)) || usage
+  for stage in "$@"; do
+    img=$library/pos-$stage.raw
+    [[ -f $img ]] || { echo "pos-stage: no stage $stage in $library" >&2; exit 1; }
+    if [[ $action == enable ]]; then
+      mkdir -p "$links"
+      ln -sfn "$img" "$links/pos-$stage.raw"
+    else
+      rm -f "$links/pos-$stage.raw"
+    fi
+  done
+  # Merges the enabled images again, then reloads systemd's units.
+  systemd-sysext refresh
+  [[ $action == disable ]] || activate
+}
+
+case ${1:-} in
+  list) (($# == 1)) || usage; list ;;
+  enable | disable) change "$@" ;;
+  *) usage ;;
+esac

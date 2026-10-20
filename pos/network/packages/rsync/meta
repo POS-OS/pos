@@ -1,0 +1,4 @@
+build-requires gcc pos-link
+requires glibc acl attr popt zlib zstd openssl
+# md2man makes the man pages from Markdown.
+host-requires python3-commonmark

@@ -1,8 +1,10 @@
-# The OS stages, Fedora's kernel, systemd-boot and the partitions of
-# repart.d. root/ is the configuration of the kernel's installation
-# (/etc/kernel) and the network; vm-disk-dnf uses it and repart.d too.
+# The OS stages, the library of the optional ones (pos-stage enables
+# them), Fedora's kernel, systemd-boot and the partitions of repart.d.
+# root/ is the configuration of the kernel's installation (/etc/kernel)
+# and the network; vm-disk-dnf uses it and repart.d too.
 output() {
   fs_stages
+  fs_stage_images network
   fs_layout "$(output_dir)/layout"
   fs_copy "$(output_dir)/root"
   fs_factory
