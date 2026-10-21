@@ -59,10 +59,9 @@
 # (REF: its packages), glibc and the rest of core-libs from a pos reference
 # (POSREF). A host or profile package is not available where a toolchain
 # reference package obsoletes it, or a target of the run that does not
-# itself require it: gcc-host and host-linux-headers, Fedora's compiler
-# and kernel headers, stand in for gcc and linux-headers only in a build
-# without a toolchain reference, and gcc-host for gcc in the toolchain
-# build that builds gcc with it.
+# itself require it: gcc-host, Fedora's compiler, stands in for gcc only
+# in a build without a toolchain reference, and in the toolchain build
+# that builds gcc with it.
 #
 # Where nothing available provides a capability, a build falls back to a
 # reference's copy of a package: a toolchain package if the capability is
@@ -617,9 +616,9 @@ wanted() {
 # resolves. A candidate obsoleted by another buildable candidate waits, so
 # the replacement is built instead of the bootstrap package. A candidate
 # whose environment takes a reference's copy of a package the run builds
-# waits while another is ready: binutils is built with the build's
-# linux-headers, not the reference's (it is built with the reference's
-# gcc, which needs binutils). Returns 1 when nothing can be built.
+# waits while another is ready: a package built with the toolchain
+# reference's gcc gets the build's glibc, which gcc requires, once it is
+# built, not the pos reference's. Returns 1 when nothing can be built.
 # Inputs:
 #   $@    target package names
 # Outputs:

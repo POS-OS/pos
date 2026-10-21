@@ -1,10 +1,8 @@
 # Kernel UAPI headers, from the subset of the kernel tree in src/linux
-# (make headers_install). The headers are needed while compiling only.
-pipeline toolchain
+# (make headers_install). The headers are needed while compiling only:
+# glibc's headers include them, and glibc builds with them. The toolchain
+# builds on them as on glibc, from a pos reference.
 source linux
 # fixdep, the one program the build compiles and runs, is built with
 # Fedora's compiler.
 build-requires host-gcc
-# Fedora's kernel headers stand in for these in a pos build without a
-# toolchain reference (pos/build-env/packages/host-linux-headers).
-obsoletes host-linux-headers

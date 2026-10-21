@@ -1,5 +1,8 @@
 # C library, POSIX, and core shared libraries.
 # Members of the stage archive; build order comes from packages/*/meta.
+# Kernel UAPI headers: glibc's headers include them (needed while
+# compiling only).
+linux-headers
 glibc
 zlib
 bzip2

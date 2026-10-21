@@ -9,14 +9,15 @@
 #                        info names the pos reference it was built on
 #   pos reference        a pos build: its core-libs packages, glibc and
 #                        what links it. The toolchain runs on its glibc
+#                        and builds with its kernel headers
 #
 # A toolchain build takes the compiler from a toolchain reference (or
 # Fedora's, gcc-host, without one) and glibc from a pos reference. A pos
 # build takes the toolchain from a toolchain reference and, until it has
 # built its own, core-libs from a pos reference: by default the one the
 # toolchain was built on, or a newer one. A pos build without a toolchain
-# reference is the bootstrap: glibc, by Fedora's compiler, for the first
-# pos reference.
+# reference is the bootstrap: glibc and linux-headers, by Fedora's
+# compiler, for the first pos reference.
 
 declare TOOLCHAIN_REF=none POS_REF=none
 
@@ -70,11 +71,32 @@ references_choose() {
     [[ $POS_REF != none ]] ||
       die "a toolchain build builds on the glibc of a pos reference; make one with:
   POS_TOOLCHAIN_REFERENCE=none ./build run --new glibc && ./build reference"
+    local p
+    for p in $(toolchain_needs); do
+      [[ -f $refs/$POS_REF/dest/$p/pos/lib/pos/packages/$p/meta ]] ||
+        die "pos reference $POS_REF has no $p, which the toolchain builds on; store a pos build that has (./build reference <id>)"
+    done
   elif [[ $TOOLCHAIN_REF != none ]]; then
     [[ $POS_REF != none ]] ||
       die "toolchain reference $TOOLCHAIN_REF names no pos reference; set pos-reference (POS_POS_REFERENCE)"
     pos_ref_check
   fi
+}
+
+# The pos packages the toolchain packages require, which a toolchain build
+# takes from its pos reference: glibc, linux-headers.
+# Inputs:
+#   PKGS, PIPE, REQ, PROVIDERS, KIND
+toolchain_needs() {
+  local p cap q
+  for p in "${PKGS[@]}"; do
+    [[ ${PIPE[$p]} == toolchain ]] || continue
+    for cap in ${REQ[$p]}; do
+      for q in ${PROVIDERS[$cap]:-}; do
+        [[ ${PIPE[$q]} == pos && ${KIND[$q]} == package ]] && echo "$q"
+      done
+    done
+  done | sort -u
 }
 
 # Die unless a restored reference is a build of the pipeline.
@@ -211,7 +233,8 @@ build_references() {
 # pos-ref-<kind>-<id>.tar.zst (reference_archive). The archive holds the
 # build's info and the staging trees and debug info of what it stores: a
 # complete toolchain build's toolchain packages, or a pos build's core-libs
-# packages, which must include glibc.
+# packages, which must include what the toolchain packages require of pos
+# (glibc, linux-headers).
 # Inputs:
 #   [$1]    build ID (defaults to current_id)
 cmd_reference() {
@@ -239,8 +262,11 @@ cmd_reference() {
     done
   else
     kind=pos
-    [[ -n ${BUILT[glibc]:-} ]] || die "build $id has not built glibc; a pos reference is its core-libs"
     targets_expand core-libs
+    for p in $(toolchain_needs); do
+      [[ -n ${BUILT[$p]:-} ]] ||
+        die "build $id has not built $p, which the toolchain builds on; a pos reference is its core-libs"
+    done
     for t in "${TARGETS[@]}"; do
       [[ -z ${BUILT[$t]:-} ]] || keep[$t]=1
     done

@@ -173,9 +173,9 @@ list of the stage named after the tree.
 | --- | --- |
 | `core-libs`, `system`, `sdk` | the stages: their member lists, and the packages and sources of their members |
 | `network`, `container` | the optional stages (see "Network stage", "Container stage"), as the stages above |
-| `toolchain` | the toolchain pipeline (see "Toolchain"): linux-headers, binutils, gcc with gcc-runtime, and mpc, which gcc builds in its tree |
+| `toolchain` | the toolchain pipeline (see "Toolchain"): binutils, gcc with gcc-runtime, and mpc, which gcc builds in its tree |
 | `common` | sources of packages of several trees: gnulib |
-| `build-env` | the host and profile packages builds require (host-base, host-toolchain, gcc-host, host-linux-headers, pos-link) |
+| `build-env` | the host and profile packages builds require (host-base, host-toolchain, gcc-host, pos-link) |
 
 A package lives in the tree of the stage that ships it, and one no stage
 ships by its role. The toolchain is the exception: the sdk stage (and
@@ -322,15 +322,15 @@ Requirements an output provides are not part of its own build's
 environment: gcc requires gcc-runtime, which it produces.
 
 ## Toolchain
-The toolchain is gcc (with its gcc-runtime output), binutils and the
-kernel headers (linux-headers): the packages whose meta says `pipeline
-toolchain`. It is built apart from the rest, and a build is one of two
+The toolchain is gcc (with its gcc-runtime output) and binutils: the
+packages whose meta says `pipeline toolchain`. It is built apart from the rest, and a build is one of two
 kinds (`info`: `pipeline`):
 
 * A toolchain build (`run --new --toolchain`) builds the toolchain
   packages only. Its compiler is the toolchain reference's gcc, or
   Fedora's without one; it builds on the glibc of a pos reference, a
-  stored pos build, and never builds glibc. `./build reference` stores it
+  stored pos build, with its kernel headers (linux-headers), and never
+  builds either. `./build reference` stores it
   as the toolchain reference of later builds, which records the pos
   reference it was built on.
 * A pos build (`run --new`) builds every stage with the toolchain
@@ -351,11 +351,10 @@ A build without a toolchain reference uses Fedora's compiler, the
 `gcc-host`, and a host or profile package a toolchain reference package
 obsoletes is not available, so with a toolchain reference its gcc is the
 compiler. A pos build without one is the bootstrap of the first pos
-reference: it builds packages, not stages, and its glibc is built with
-Fedora's kernel headers (`host-linux-headers`, which linux-headers
-obsoletes). From nothing, POS is built in four builds:
+reference: it builds packages, not stages: glibc, and linux-headers,
+which glibc requires. From nothing, POS is built in four builds:
 
-    $ POS_TOOLCHAIN_REFERENCE=none ./build run --new glibc        # glibc by Fedora's gcc
+    $ POS_TOOLCHAIN_REFERENCE=none ./build run --new glibc        # glibc, linux-headers by Fedora's gcc
     $ ./build reference                                           # the first pos reference
     $ POS_TOOLCHAIN_REFERENCE=none ./build run --new --toolchain  # by Fedora's gcc
     $ ./build reference
@@ -367,7 +366,7 @@ obsoletes). From nothing, POS is built in four builds:
 The second toolchain build is the one released: its gcc is built by a POS
 gcc of the same sources. The bootstrap glibc is only what the first
 toolchains run on; the pos build builds glibc again with the toolchain's
-kernel headers. A toolchain update is a toolchain build with the current
+compiler. A toolchain update is a toolchain build with the current
 references, stored as the next toolchain reference.
 
 A toolchain built on glibc N runs on glibc N or newer (symbol
@@ -455,10 +454,12 @@ kinds:
   obsoletes provides: the reference's gcc stands in for `gcc-host`), or,
   in a pos build, if no target of the run provides it. A pos build does
   not build the toolchain packages, so they are always the reference's.
-* A pos reference is a pos build's core-libs: glibc and the libraries
-  that link it. Its packages are `<name>@pos`, and provide what no package
-  of the build does in a toolchain build, which builds no pos package, or,
-  in a pos build, if no target of the run provides it. A run of a single
+* A pos reference is a pos build's core-libs: glibc, the kernel headers
+  and the libraries that link glibc. It must hold what the toolchain
+  packages require of pos (glibc, linux-headers). Its packages are
+  `<name>@pos`, and provide what no package of the build does in a
+  toolchain build, which builds no pos package, or, in a pos build, if no
+  target of the run provides it. A run of a single
   package in a new pos build builds only that package, against the pos
   reference's core-libs; what it requires outside core-libs must be among
   the targets.
@@ -468,9 +469,9 @@ recorded meta). They are met by this build's packages once built,
 otherwise by the references', targets or not: the toolchain reference's
 gcc requires glibc, and builds it, running on the pos reference's glibc
 until then. Where a package is ready with a reference's copy of a
-package the run builds, it waits while another is ready without one, so
-the toolchain build builds binutils with its own linux-headers, though
-it builds it with the reference's gcc.
+package the run builds, it waits while another is ready without one: a
+package built with the reference's gcc gets the build's glibc, which gcc
+requires, once it is built, not the pos reference's.
 
 `./build reference [<id>]` (default: the current build) stores a build in
 the reference store, the `reference-dir` setting, as
@@ -513,8 +514,8 @@ follows from what it requires, never from what is found on disk:
 `pos-link` and `gcc-host` are profiles (`kind profile`): nothing is built
 or installed, they only carry the setup and its requirements. Recipes
 build-require `gcc` and `pos-link`, which requires `gcc`. glibc requires
-only the compiler (see "Core libs stage"); linux-headers only
-`host-gcc`, for the one program its build runs.
+only the compiler and linux-headers (see "Core libs stage");
+linux-headers only `host-gcc`, for the one program its build runs.
 
 Requirements are what a build sees, but configure scripts also find what
 they were not asked to. gcc's run-time requirements (glibc, gcc-runtime,
@@ -758,9 +759,8 @@ its own `-Wl,-dynamic-linker=/pos/lib/ld-linux-x86-64.so.2`.
 
 The extra search path other packages get stays off for this build: glibc
 requires `gcc`, not `pos-link`. With `gcc-host`, in the bootstrap pos
-build, it does get `/pos` in its search; there `/pos` is empty, and the
-kernel headers glibc wants are Fedora's, in `/usr/include`
-(`host-linux-headers`).
+build, it does get `/pos` in its search; there `/pos` holds the kernel
+headers only, which glibc wants.
 `C_INCLUDE_PATH` and `LIBRARY_PATH` are not disabled by `-nostdinc` or
 `-nostdlib`, and the `/pos` link flags are not ones glibc puts on its own
 binaries. Fedora gets the header isolation from `--with-headers`, which
@@ -784,6 +784,22 @@ glibc's `localedata/SUPPORTED` are compiled into one archive,
 the legacy character sets (ISO-8859-*, EUC-*, ...) are not built. glibc
 reads compiled locales only from its own prefix, not Fedora's
 `/usr/lib/locale`.
+
+linux-headers, the kernel UAPI headers, are in this stage: glibc's
+headers include them (`errno.h` includes `<linux/errno.h>`), and glibc
+builds with them. They are needed only while compiling; nothing loads
+them at run time. The toolchain builds on them as on glibc, from a pos
+reference.
+
+linux-headers is built from `pos/core-libs/src/linux`, mainline's `master`, synced as the
+subset of the kernel tree that `make headers_install` needs: the top-level
+`Makefile`, `scripts/`, `include/uapi/`, x86's `Makefile`, `include/uapi/`
+and system call tables, and the licenses. The subset was checked by
+comparing its installed headers with those of the whole tree. The recipe
+builds out of tree (`O=`), so the source stays as committed. UAPI headers
+are compatible with older kernels, so headers from mainline work on the
+kernel a machine runs. A kernel package needs the whole tree, a source of
+its own.
 
 gmp and mpfr are in this stage. coreutils `expr` and `factor`, and gawk
 `-M`, link them at run time. gmp `--enable-cxx` needs libstdc++, from the
@@ -1177,24 +1193,13 @@ where Fedora packages install them (see "Prefix"); generators only from
 replaced.
 
 # SDK
-The sdk stage (`pos/sdk/stage`) is the compiler, the assembler and linker, and the kernel UAPI
-headers (linux-headers, binutils, gcc), plus developer tools moved out
-of the system stage (diffutils, patch, man-pages). The first three are
-the toolchain, built by toolchain builds (see "Toolchain"); a pos build
-assembles the stage with its toolchain reference's. The sdk is a component POS
-ships, so it installs under `/pos` like the base system. A base system
-image does not include it; the builds of other packages require it.
-The headers are needed only while compiling: glibc's `errno.h` includes
-`<linux/errno.h>`, and nothing loads them at run time.
-
-linux-headers is built from `pos/toolchain/src/linux`, mainline's `master`, synced as the
-subset of the kernel tree that `make headers_install` needs: the top-level
-`Makefile`, `scripts/`, `include/uapi/`, x86's `Makefile`, `include/uapi/`
-and system call tables, and the licenses. The subset was checked by
-comparing its installed headers with those of the whole tree. The recipe
-builds out of tree (`O=`), so the source stays as committed. UAPI headers
-are compatible with older kernels, so headers from mainline work on the
-kernel a machine runs.
+The sdk stage (`pos/sdk/stage`) is the compiler, the assembler and linker
+(binutils, gcc), plus developer tools moved out of the system stage
+(diffutils, patch, man-pages). The first two are the toolchain, built by
+toolchain builds (see "Toolchain"); a pos build assembles the stage with
+its toolchain reference's. The sdk is a component POS ships, so it
+installs under `/pos` like the base system. A base system image does not
+include it; the builds of other packages require it.
 
 binutils is what makes the sdk compiler self-contained. gcc execs `as` and
 `ld`; without POS copies it would run the build container's, whose ld
@@ -1227,8 +1232,7 @@ unversioned `lib*.so` names the linker looks up, `libgomp.spec` and
 `libstdc++.modules.json`. The `.la` files are deleted, as Fedora does.
 
 The compiler searches `/pos/include` as its system header directory, so gcc
-requires linux-headers even though they are not part of the core-libs
-archive.
+requires linux-headers, which core-libs ships with glibc's headers.
 
 The sdk archive ships the gcc of the toolchain reference, a toolchain build made
 with the previous toolchain. Two toolchain builds in a row from the same

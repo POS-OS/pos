@@ -4,7 +4,8 @@
 # statically, as are libstdc++ and libgcc, so it runs on glibc only and a
 # pos build can change any other library under it. The
 # build also produces gcc-runtime, which gcc requires; a build does not
-# need its own outputs to run.
+# need its own outputs to run. glibc and linux-headers are pos's: from the
+# pos reference in a toolchain build.
 pipeline toolchain
 build-requires gcc pos-link
 requires glibc gcc-runtime binutils linux-headers
