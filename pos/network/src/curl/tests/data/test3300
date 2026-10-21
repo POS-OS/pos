@@ -4,6 +4,7 @@
 <keywords>
 unittest
 threads
+may-retry-on-valgrind
 </keywords>
 </info>
 

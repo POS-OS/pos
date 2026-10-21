@@ -1731,6 +1731,7 @@ TESTCASES = \
   test1714 \
   test1715 \
   test1716 \
+  test1717 \
   test1720 \
   test1721 \
   test1722 \
@@ -2124,8 +2125,6 @@ TESTCASES = \
   test3232 \
   test3233 \
   test3234 \
-  test3235 \
-  test3236 \
   test3271 \
   test3300 \
   test3301 \
