@@ -289,7 +289,11 @@ build with the source's committed `vendor/` modules, and `pkg_cargo`
 builds with cargo from the crates prepare vendored; both offline. Their
 programs link with the environment's gcc and LDFLAGS, as C programs do:
 against `/pos/lib`, with the POS loader as interpreter, and with a build
-ID for the debug info.
+ID for the debug info. What cargo builds to run in the build, build
+scripts and proc-macros, links with the host's `cc` instead
+(`host-requires gcc`): rustc loads proc-macros into itself, on the tools
+image's glibc, which may be older than POS's. `pkg_cargo` passes an
+explicit `--target` for that, which keeps RUSTFLAGS to the target's crates.
 
 `pipeline toolchain` marks a package of the toolchain (see "Toolchain").
 `kind source` is a directory with only a prepare recipe, for a source

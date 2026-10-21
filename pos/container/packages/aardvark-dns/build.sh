@@ -3,5 +3,5 @@ pkg() {
   # other by name. Installed in /pos/libexec/podman, as netavark, which
   # starts it.
   pkg_cargo
-  install -D -m 0755 target/release/aardvark-dns "${dest_dir}${prefix}/libexec/podman/aardvark-dns"
+  install -D -m 0755 "$cargo_out"/aardvark-dns "${dest_dir}${prefix}/libexec/podman/aardvark-dns"
 }

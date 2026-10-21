@@ -1,4 +1,4 @@
 build-requires gcc pos-link
 requires glibc gcc-runtime
-host-requires rust cargo
+host-requires rust cargo gcc
 prepare-requires cargo

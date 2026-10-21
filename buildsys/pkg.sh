@@ -240,17 +240,26 @@ _pkg_rust_link_args() {
 # recipe vendored (prep_cargo_vendor in buildsys/prepare.sh). The compiler
 # is the build host's (host-requires rust cargo); programs link with the
 # environment's gcc against /pos, as C programs do, and keep their debug
-# info for _pkg_finish to split off. The programs are in
-# $build_dir/target/release; the recipe installs them.
+# info for _pkg_finish to split off. Build scripts and proc-macros run in
+# the build, proc-macros inside rustc, so they link with the host's cc
+# against the tools image's glibc: an explicit --target keeps RUSTFLAGS,
+# and the POS linker in them, to the target's crates (host-requires gcc
+# for the host's cc). The programs are in $cargo_out; the recipe installs
+# them.
 # Inputs:
 #   $@    extra arguments passed to cargo build
 #   build_dir, nproc, CFLAGS, LDFLAGS
+# Outputs:
+#   cargo_out   directory of the built programs
 pkg_cargo() {
   pkg_sync_src
   export CARGO_HOME=$build_dir/.cargo-home CARGO_TARGET_DIR=$build_dir/target
   export CARGO_PROFILE_RELEASE_DEBUG=true CARGO_PROFILE_RELEASE_STRIP=false
   export RUSTFLAGS="-C linker=${CC:-gcc} $(_pkg_rust_link_args)"
-  cargo build --release --offline --locked -j "$nproc" "$@"
+  local triple
+  triple=$(rustc -vV | sed -n 's/^host: //p')
+  cargo build --release --offline --locked -j "$nproc" --target "$triple" "$@"
+  cargo_out=$CARGO_TARGET_DIR/$triple/release
 }
 
 # Environment for Go builds: Go modules from the source's committed
