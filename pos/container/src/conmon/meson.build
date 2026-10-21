@@ -1,0 +1,83 @@
+project('conmon', 'c',
+        version : run_command('cat', files('VERSION'), check : true).stdout().strip(),
+        license : 'Apache-2.0',
+        default_options : [
+                'c_std=c99',
+                'optimization=s',
+                'warning_level=1',
+                'werror=true',
+        ],
+        meson_version : '>= 0.56',
+)
+
+git_commit = ''
+
+git = find_program('git', required : false)
+if git.found()
+        git_commit = run_command(
+                git,
+                ['--git-dir=@0@/.git'.format(meson.project_source_root()),
+                 'rev-parse', 'HEAD'],
+                check : false).stdout().strip()
+        git_dirty = run_command(
+                git,
+                ['--git-dir=@0@/.git'.format(meson.project_source_root()),
+                 'status', '--porcelain', '--untracked-files=no'],
+                check : false).stdout().strip()
+        if git_dirty != ''
+                git_commit = git_commit + '-dirty'
+        endif
+endif
+
+conf = configuration_data()
+conf.set_quoted('VERSION', meson.project_version())
+conf.set_quoted('GIT_COMMIT', git_commit)
+
+add_project_arguments('-DVERSION=' + conf.get('VERSION'),
+                      '-DGIT_COMMIT=' + conf.get('GIT_COMMIT'),
+                      language : 'c')
+
+glib = dependency('glib-2.0')
+
+sd_journal = dependency('libsystemd', required : false)
+if sd_journal.found()
+	add_project_arguments('-DUSE_JOURNALD=1', language : 'c')
+endif
+
+executable('conmon',
+           ['src/conmon.c',
+            'src/config.h',
+            'src/cmsg.c',
+            'src/cmsg.h',
+            'src/ctr_logging.c',
+            'src/ctr_logging.h',
+            'src/cgroup.c',
+            'src/cgroup.h',
+            'src/cli.c',
+            'src/cli.h',
+            'src/conn_sock.c',
+            'src/conn_sock.h',
+            'src/ctr_exit.c',
+            'src/ctr_exit.h',
+            'src/ctrl.c',
+            'src/ctrl.h',
+            'src/ctr_stdio.c',
+            'src/ctr_stdio.h',
+            'src/globals.c',
+            'src/globals.h',
+            'src/close_fds.c',
+            'src/close_fds.h',
+            'src/oom.c',
+            'src/oom.h',
+            'src/parent_pipe_fd.c',
+            'src/parent_pipe_fd.h',
+            'src/runtime_args.c',
+            'src/runtime_args.h',
+            'src/utils.c',
+            'src/utils.h',
+            'src/self_pipe.c',
+            'src/self_pipe.h'],
+           dependencies : [glib, sd_journal],
+           install : true,
+           install_dir : get_option('bindir'),
+)

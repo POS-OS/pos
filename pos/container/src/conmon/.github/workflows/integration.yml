@@ -1,0 +1,144 @@
+name: integration
+on:
+  push:
+    tags:
+      - v*
+    branches:
+      - main
+  pull_request:
+permissions: {}
+
+# Cancel a PR's older runs when it is pushed to again. github.head_ref is set
+# for pull_request events only, so pushes to main and tags fall back to the
+# unique run_id and are never cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+
+  conmon:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+          cache: false
+      # The setup script builds runc, ginkgo, critest and crictl from source,
+      # and the cri-o job builds cri-o itself; all of that is Go, and all of it
+      # recompiles the standard library and the vendored trees from scratch on
+      # every run. setup-go's own cache is keyed on a go.sum this repository
+      # does not have, hence caching GOCACHE and the module cache by hand.
+      #
+      # The key follows the dependency versions pinned in the setup script, so
+      # a bump gets a fresh cache; restore-keys then still seeds it from the
+      # previous one, which keeps that first build incremental.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ github.job }}-${{ hashFiles('hack/github-actions-setup') }}
+          restore-keys: ${{ runner.os }}-go-${{ github.job }}-
+      - run: hack/github-actions-setup
+      - name: Run conmon integration tests
+        run: |
+          sudo mkdir -p /var/run/crio
+          sudo make test-binary
+
+  cri-o:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      # Let the other job finish: these two take about half an hour each, and
+      # one of them failing is no reason to throw the other one's result away.
+      fail-fast: false
+      matrix:
+        critest: [0, 1]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+          cache: false
+      # The setup script builds runc, ginkgo, critest and crictl from source,
+      # and the cri-o job builds cri-o itself; all of that is Go, and all of it
+      # recompiles the standard library and the vendored trees from scratch on
+      # every run. setup-go's own cache is keyed on a go.sum this repository
+      # does not have, hence caching GOCACHE and the module cache by hand.
+      #
+      # The key follows the dependency versions pinned in the setup script, so
+      # a bump gets a fresh cache; restore-keys then still seeds it from the
+      # previous one, which keeps that first build incremental.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ github.job }}-${{ hashFiles('hack/github-actions-setup') }}
+          restore-keys: ${{ runner.os }}-go-${{ github.job }}-
+      - run: hack/github-actions-setup
+      - name: Run CRI-O integration tests (critest=${{ matrix.critest }})
+        run: |
+          CRIO_DIR=$(go env GOPATH)/src/github.com/cri-o/cri-o
+          make -C "$CRIO_DIR" all test-binaries
+          # These test files do not exercise conmon, so skip them: that is
+          # about a third of the suite's run time.
+          skip=(
+              # images, registries, and the artifacts served from them
+              artifact_additional_stores
+              cert
+              image
+              image_remove
+              image_volume
+              imagefsinfo
+              inspecti
+              namespaced_auth_dir
+              oci_artifacts
+              policy
+              seccomp_oci_artifacts
+              tls_config
+
+              # security profiles: handled by cri-o and the runtime, not conmon
+              apparmor
+              seccomp_notifier
+              seccomp_runtime_handler
+
+              # cri-o's own configuration, status and storage
+              annotation_migration
+              crio-check
+              crio-wipe
+              inject_gomaxprocs
+              profile
+              reload_config
+              reload_system
+              status
+              workloads
+
+              # cri-o's metrics endpoints
+              cri-metrics
+              metrics
+
+              # device and plugin plumbing
+              cdi
+              nri
+          )
+          for t in "${skip[@]}"; do
+              # No -f: a file cri-o renames must fail the job, not be skipped.
+              rm "$CRIO_DIR/test/$t.bats"
+          done
+          sudo sh -c "cd $CRIO_DIR; RUN_CRITEST=${{ matrix.critest }} ./test/test_runner.sh"
+
+  all-done:
+    needs:
+      - conmon
+      - cri-o
+    runs-on: ubuntu-24.04
+    steps:
+    - run: echo "All jobs completed"

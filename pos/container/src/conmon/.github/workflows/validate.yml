@@ -1,0 +1,105 @@
+name: validate
+on:
+  push:
+    tags:
+      - v*
+    branches:
+      - main
+      - release-*
+  pull_request:
+permissions: {}
+
+# Cancel a PR's older runs when it is pushed to again. github.head_ref is set
+# for pull_request events only, so pushes to main and tags fall back to the
+# unique run_id and are never cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+    - name: Check C code formatting
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y clang-format
+        make fmt
+        git diff --exit-code
+
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+    - name: Run clang static analyzer
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y clang libglib2.0-dev libsystemd-dev pkg-config
+        make analyze
+
+  cppcheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+    - name: Run cppcheck
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y cppcheck libglib2.0-dev pkg-config
+        make cppcheck
+
+  shfmt:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+    - name: Check shell script formatting
+      run: make shfmt
+
+  shellcheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+    - name: Lint shell scripts
+      run: make shellcheck
+
+  meson-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+    - name: Build with meson
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y meson ninja-build libglib2.0-dev libsystemd-dev pkg-config
+        meson setup --fatal-meson-warnings build
+        ninja -C build
+
+  all-done:
+    needs:
+      - analyze
+      - cppcheck
+      - lint
+      - meson-build
+      - shellcheck
+      - shfmt
+    runs-on: ubuntu-latest
+    steps:
+    - run: echo "All jobs completed"

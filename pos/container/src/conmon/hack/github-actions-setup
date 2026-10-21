@@ -1,0 +1,306 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+declare -A VERSIONS=(
+    # renovate: datasource=github-releases depName=containernetworking/plugins
+    ["cni-plugins"]=v1.9.1
+    # NOTE bats is deliberately not auto-updated: bats >= 1.14 errors out when
+    # a test suite ends up being empty, which breaks the cri-o test runner.
+    ["bats"]=v1.13.0
+    # renovate: datasource=github-releases depName=opencontainers/runc
+    ["runc"]=v1.5.1
+    # renovate: datasource=github-releases depName=containers/crun
+    ["crun"]=1.26
+)
+
+main() {
+    # None of the git clones below has a timeout of its own, and a stalled
+    # one hangs this script until the job times out. Make git give up on a
+    # connection that transfers less than 1 KiB/s for a minute.
+    export GIT_HTTP_LOW_SPEED_LIMIT=1024 GIT_HTTP_LOW_SPEED_TIME=60
+
+    step prepare_system
+
+    step install_packages
+    # NOTE this has to run after install_packages, which may install runtimes
+    # as podman dependencies.
+    step remove_runtimes
+    step install_conmon
+    step install_bats
+    step install_runc
+    step install_crun
+    step install_cni_plugins
+    step install_testdeps
+    step setup_etc_subid
+}
+
+# step runs the given function with its output folded into a collapsible
+# GitHub Actions log group [1], so that this script's very verbose output can
+# be navigated at all. Outside of GitHub Actions the markers are just a couple
+# of harmless extra lines.
+#
+# [1] https://docs.github.com/en/actions/reference/workflow-commands-for-github-actions#grouping-log-lines
+step() {
+    echo "::group::$1"
+    set -x
+    "$@"
+    { set +x; } 2>/dev/null
+    echo "::endgroup::"
+}
+
+prepare_system() {
+    sudo systemctl stop docker
+    sudo ufw disable
+
+    # enable necessary kernel modules
+    sudo ip6tables --list >/dev/null
+
+    # enable necessary sysctls
+    sudo sysctl -w net.ipv4.conf.all.route_localnet=1
+    sudo sysctl -w net.ipv4.ip_forward=1
+    # needed for crictl test
+    sudo modprobe br_netfilter
+    sudo sysctl -w net.bridge.bridge-nf-call-iptables=1
+    sudo iptables -t nat -I POSTROUTING -s 127.0.0.0/8 ! -d 127.0.0.0/8 -j MASQUERADE
+}
+
+remove_packages() {
+    sudo apt-get remove \
+        conmon \
+        containernetworking-plugins
+}
+
+# remove_runtimes removes the pre-installed OCI runtimes and podman, so they
+# can't shadow the ones we install. The runner image ships a static podman
+# bundle in /usr/local/bin (which comes first in PATH) with its own runc and
+# crun, all built without systemd support (actions/runner-images#14569): that
+# crun breaks the cri-o tests, and that podman deadlocks in "podman container
+# cleanup". Docker brings its own /usr/bin/runc.
+remove_runtimes() {
+    sudo rm -f /usr/{local/,}{s,}bin/{runc,crun}
+    # The bundled podman only: unlike the runtimes it is not reinstalled
+    # below, install_packages having already put Ubuntu's in /usr/bin.
+    sudo rm -f /usr/local/bin/podman
+    podman --version
+}
+
+APT_OPTS=(
+    -o Acquire::Retries=3
+    -o Acquire::http::Timeout=60
+    -o Acquire::https::Timeout=60
+    # Fail rather than wait for a lock a timed out run may have left behind.
+    -o DPkg::Lock::Timeout=60
+)
+
+# apt_get runs apt-get with the options above, under a timeout, retrying a few
+# times.
+#
+# The Acquire::*::Timeout settings apply to individual requests of the
+# acquisition method, and are not enough on their own: a run has been seen
+# printing a few "Get:" lines and then sitting there for 19 minutes, until the
+# job timed out. Bounding the whole command is the only thing that reliably
+# helps, and since a stalled mirror is a transient thing, retrying it is
+# usually all it takes.
+apt_get() {
+    local try timeout=180
+
+    # "install" is not just a download: it unpacks and configures a few dozen
+    # packages, and needs a good deal more time than a metadata refresh. Being
+    # killed in the middle of that leaves dpkg with a half-applied
+    # transaction, which retrying does not fix by itself -- hence the
+    # --configure below.
+    [ "$1" = "install" ] && timeout=600
+
+    for try in 1 2 3; do
+        if sudo timeout "$timeout" apt-get "${APT_OPTS[@]}" "$@"; then
+            return 0
+        fi
+        echo "apt-get $1: failed or timed out, attempt $try of 3" >&2
+        sudo dpkg --configure -a || true
+        sleep 10
+    done
+
+    return 1
+}
+
+install_packages() {
+    # shellcheck source=/dev/null
+    . /etc/os-release
+    CRIU_REPO="https://download.opensuse.org/repositories/devel:/tools:/criu/xUbuntu_$VERSION_ID"
+
+    # curl has no total timeout by default, and no retries at all.
+    curl -fSsL --retry 5 --retry-delay 3 --max-time 120 "$CRIU_REPO"/Release.key |
+        sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/criu.gpg
+    echo "deb $CRIU_REPO/ /" | sudo tee /etc/apt/sources.list.d/criu.list
+
+    apt_get update
+    apt_get install -y \
+        autoconf \
+        automake \
+        conntrack \
+        criu \
+        jq \
+        libaio-dev \
+        libapparmor-dev \
+        libbtrfs-dev \
+        libcap-dev \
+        libdevmapper-dev \
+        libfuse-dev \
+        libgpgme11-dev \
+        libglib2.0-dev \
+        libnet1-dev \
+        libnl-3-dev \
+        libprotobuf-c-dev \
+        libprotobuf-dev \
+        libseccomp-dev \
+        libsystemd-dev \
+        libtool \
+        libudev-dev \
+        libyajl-dev \
+        podman \
+        sed \
+        socat \
+        uuid-dev
+}
+
+install_conmon() {
+    # Build as ourselves, install as root: nothing here needs to be built by
+    # root, and doing so only leaves root-owned objects in the work tree.
+    make bin/conmon
+    sudo make install.bin
+    conmon --version
+}
+
+install_bats() {
+    git clone --depth 1 --branch "${VERSIONS["bats"]}" \
+        https://github.com/bats-core/bats-core
+    pushd bats-core
+    sudo ./install.sh /usr/local
+    popd
+    rm -rf bats-core
+    mkdir -p ~/.parallel
+    touch ~/.parallel/will-cite
+    # The test suites run bats under sudo, so root needs it as well.
+    sudo mkdir -p /root/.parallel
+    sudo touch /root/.parallel/will-cite
+}
+
+# install_critools installs the cri-tools version given as $1. It is called
+# from install_testdeps, as the version to use is defined by cri-o.
+install_critools() {
+    local version=$1
+    URL=https://github.com/kubernetes-sigs/cri-tools
+
+    git clone --depth 1 --branch "$version" $URL
+    pushd cri-tools
+    make critest crictl
+    # Only the install needs root. It needs our PATH as well: the Makefile
+    # asks `go env` for the directory of the binaries it is about to install,
+    # and root's secure_path may well have no go in it.
+    sudo env "PATH=$PATH" make BINDIR=/usr/bin install
+    popd
+    rm -rf cri-tools
+    sudo critest --version
+    sudo crictl --version
+}
+
+install_cni_plugins() {
+    URL=https://github.com/containernetworking/plugins/releases/download
+    TARBALL=cni-plugins-linux-amd64-${VERSIONS["cni-plugins"]}.tgz
+    CNI_DIR=/opt/cni/bin
+    sudo mkdir -p "$CNI_DIR"
+    # wget defaults to 20 tries and a 900 second read timeout; that is a lot
+    # of patience for a job that should take seconds.
+    wget --timeout=60 --tries=3 -O "$TARBALL" $URL/"${VERSIONS["cni-plugins"]}"/"$TARBALL"
+    sudo tar xf "$TARBALL" -C "$CNI_DIR"
+    rm "$TARBALL"
+    ls -lah "$CNI_DIR"
+}
+
+install_runc() {
+    check_not_installed runc
+
+    git clone --depth 1 --branch "${VERSIONS["runc"]}" https://github.com/opencontainers/runc
+    pushd runc
+    make RUNC_BUILDTAGS=-libpathrs
+    sudo install -D -m0755 runc /usr/bin/runc
+    popd
+    rm -rf runc
+
+    runc --version
+}
+
+install_crun() {
+    check_not_installed crun
+
+    git clone --depth 1 --branch "${VERSIONS["crun"]}" https://github.com/containers/crun
+    pushd crun
+    ./autogen.sh
+    ./configure --prefix=/usr
+    make -j "$(nproc)"
+    sudo make install
+    popd
+    rm -rf crun
+
+    crun --version
+}
+
+# check_not_installed makes sure $1 is not available in PATH, so that the
+# binary we're about to install is not shadowed by a pre-installed one (those
+# are removed by remove_runtimes).
+check_not_installed() {
+    local path
+    if path=$(command -v "$1"); then
+        echo "ERROR: $1 is already installed at $path, please remove it in remove_runtimes" >&2
+        return 1
+    fi
+}
+
+install_testdeps() {
+    local critools
+
+    CLONE_PATH=$(go env GOPATH)/src/github.com/cri-o
+    mkdir -p "$CLONE_PATH"
+    pushd "$CLONE_PATH"
+
+    URL=https://github.com/cri-o/cri-o
+    # Only the default branch's tree is used (scripts/versions, the test
+    # suites, and the vendored ginkgo), so there is no need to fetch the
+    # history of a repository this size.
+    git clone --depth 1 $URL
+    pushd cri-o
+    make "$(pwd)"/build/bin/ginkgo
+    sudo cp build/bin/ginkgo /usr/bin
+    ginkgo version
+
+    sudo mkdir -p /etc/containers/registries.d
+    sudo cp test/policy.json /etc/containers
+    sudo cp test/redhat_sigstore.yaml /etc/containers/registries.d/registry.access.redhat.com.yaml
+    sudo cp test/registries.conf /etc/containers/registries.conf
+
+    # Remove the container configuration files shipped by the runner image, so
+    # cri-o uses its own defaults rather than the ones tailored for the
+    # pre-installed rootless podman. Same as cri-o's install_files does.
+    sudo rm -f /usr/share/containers/containers.conf /etc/containers/storage.conf
+
+    # critest has to match the cri-o version we test against, otherwise it
+    # runs conformance tests for features cri-o does not implement yet, and
+    # those fail. Use the very same version cri-o itself is tested with.
+    critools=$(sed -n 's/^[[:space:]]*\["cri-tools"\]=\(.*\)$/\1/p' scripts/versions)
+    if [ -z "$critools" ]; then
+        echo "ERROR: can't get cri-tools version from cri-o's scripts/versions" >&2
+        return 1
+    fi
+    popd
+    popd
+
+    install_critools "$critools"
+}
+
+setup_etc_subid() {
+    echo "containers:200000:65536" | sudo tee -a /etc/subuid
+    echo "containers:200000:65536" | sudo tee -a /etc/subgid
+
+}
+
+main "$@"

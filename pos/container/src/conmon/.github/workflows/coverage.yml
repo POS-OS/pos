@@ -1,0 +1,41 @@
+name: coverage
+on:
+  push:
+    tags:
+      - v*
+    branches:
+      - main
+  pull_request:
+permissions: {}
+
+# Cancel a PR's older runs when it is pushed to again. github.head_ref is set
+# for pull_request events only, so pushes to main and tags fall back to the
+# unique run_id and are never cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+
+  coverage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcovr libglib2.0-dev libsystemd-dev pkg-config bats socat
+      - name: Run coverage
+        run: |
+          sudo mkdir -p /var/run/crio
+          sudo make test-coverage
+
+  all-done:
+    needs:
+      - coverage
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "All jobs completed"
