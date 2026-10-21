@@ -47,7 +47,14 @@ pkg() {
   grep -q "^ENV_SUPATH.*${prefix}/sbin" "$defs" && grep -q "^ENV_PATH.*${prefix}/bin" "$defs" ||
     { echo "shadow: $defs has no ENV_SUPATH/ENV_PATH to set" >&2; exit 1; }
 
+  # useradd gives a user subordinate ids (SUB_UID_MIN.. in login.defs) only
+  # where /etc/subuid and /etc/subgid exist, as Fedora's setup package ships
+  # them: empty, through the factory tree. Rootless containers map their
+  # users into them with newuidmap and newgidmap.
+  install -m 0644 /dev/null "${dest_dir}${sysconfdir}/subuid"
+  install -m 0644 /dev/null "${dest_dir}${sysconfdir}/subgid"
+
   # expiry(1) was removed upstream; chage -l covers it.
   pkg_setuid "${prefix}/bin/passwd" "${prefix}/bin/chage" "${prefix}/bin/gpasswd" \
-             "${prefix}/bin/newgrp"
+             "${prefix}/bin/newgrp" "${prefix}/bin/newuidmap" "${prefix}/bin/newgidmap"
 }

@@ -1,0 +1,4 @@
+# The configuration podman reads, and its man pages: data from the
+# container-libs tree (synced as a subset), with POS's settings.
+source container-libs
+host-requires golang-github-cpuguy83-md2man

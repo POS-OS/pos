@@ -172,7 +172,7 @@ list of the stage named after the tree.
 | Tree | What it holds |
 | --- | --- |
 | `core-libs`, `system`, `sdk` | the stages: their member lists, and the packages and sources of their members |
-| `network` | the optional network stage (see "Network stage"), as the stages above |
+| `network`, `container` | the optional stages (see "Network stage", "Container stage"), as the stages above |
 | `toolchain` | the toolchain pipeline (see "Toolchain"): linux-headers, binutils, gcc with gcc-runtime, and mpc, which gcc builds in its tree |
 | `common` | sources of packages of several trees: gnulib |
 | `build-env` | the host and profile packages builds require (host-base, host-toolchain, gcc-host, host-linux-headers, pos-link) |
@@ -207,7 +207,8 @@ the release preparation itself. A source goes through three steps:
    the committed source, with helpers from `buildsys/prepare.sh`:
    `prep_pull` runs gnulib bootstrap's pull phase or `autopull.sh`
    (translations, submodule hooks), `prep_gen` generates the build system,
-   `prep_version` writes `.tarball-version`. Files gnulib-tool links to
+   `prep_version` writes `.tarball-version`, `prep_cargo_vendor` vendors
+   a Rust source's crates (`cargo vendor`). Files gnulib-tool links to
    gnulib (`pos/common/src/gnulib`) are copied, so the prepared tree stands
    alone. Prepare runs in a build container with network access, which has
    the recipes, the committed source, gnulib and the tree to prepare, into which the package's
@@ -280,6 +281,15 @@ what is required, the one the other obsoletes is not used. `host-requires`
 are Fedora packages, in the build's tools image (see "Build containers");
 `host-base` (`pos/build-env/packages/host-base`) lists the tools every
 build gets.
+
+Go and Rust packages (the container stage's) build with Fedora's
+compilers, from the tools image (`host-requires golang`, `rust cargo`):
+POS builds neither yet. `pkg_go_env` (`buildsys/pkg.sh`) sets up a Go
+build with the source's committed `vendor/` modules, and `pkg_cargo`
+builds with cargo from the crates prepare vendored; both offline. Their
+programs link with the environment's gcc and LDFLAGS, as C programs do:
+against `/pos/lib`, with the POS loader as interpreter, and with a build
+ID for the debug info.
 
 `pipeline toolchain` marks a package of the toolchain (see "Toolchain").
 `kind source` is a directory with only a prepare recipe, for a source
@@ -803,7 +813,7 @@ rpm-pos-sdk and rpm-pos-fedora; fedora-toolbox from container-fs-dnf).
 | output | requires | makes |
 | --- | --- | --- |
 | `container-fs` | core-libs, system, sdk | `pos-container-fs-<stem>.tar.zst` |
-| `stage-images` | system, network | `pos-network-<stem>.raw` |
+| `stage-images` | core-libs, system, network, container | `pos-<stage>-<stem>.raw` and `.requires` of network and container |
 | `vm-disk` | core-libs, system, stage-images | `pos-vm-disk-<stem>.qcow2` |
 | `rpm-pos` | core-libs, system | `rpm/pos`, `rpm/pos-debuginfo` |
 | `rpm-pos-sdk` | sdk | `rpm/pos-sdk`, `rpm/pos-sdk-debuginfo` |
@@ -986,7 +996,7 @@ prompt on tty1, the QEMU guest agent, network and dnf, the PAM services
 and sudo. Its status is the number of failed checks. `disk_check` runs it in `output_host()` (see "Build numbers").
 
 ## Stage images
-An optional stage (network) ships with an installed system without being
+An optional stage (network, container) ships with an installed system without being
 part of its `/pos`: as a system extension image in the system's library
 of stage images, which `pos-stage` enables. The stage arrives built, from
 the same build as the rest, and nothing is downloaded or integrated on
@@ -996,18 +1006,26 @@ the machine; enabling it runs only what a first boot runs for its files.
   (`buildsys/output-plugins.d/sysext.sh`): `pos-<stage>-<stem>.raw`, an
   EROFS file system (lz4hc) of the stage's `/pos`, with
   `/usr/lib/extension-release.d/extension-release.pos-<stage>`. Its `ID`
-  and `SYSEXT_LEVEL` are those of the system stage's os-release, where
-  assemble.sh writes the build's identifier as `SYSEXT_LEVEL`: systemd-sysext
-  merges an image only onto the build it was made with.
+  and `SYSEXT_LEVEL` are those of the base stages' os-release (system's),
+  where assemble.sh writes the build's identifier as `SYSEXT_LEVEL`:
+  systemd-sysext merges an image only onto the build it was made with.
+* Stages depend on stages, not on packages. `sysext_stage` writes the
+  stages an image needs besides the base, `pos-<stage>-<stem>.requires`:
+  those whose member lists name a run-time requirement of the stage's
+  packages (their installed meta). The container stage requires network
+  (netavark requires nftables); nothing is declared twice.
 * `fs_stage_images` (fs.sh) puts the images into an image's library,
-  `/pos/lib/pos/stages/pos-<stage>.raw`. vm-disk has one, so it is made
-  once the network stage is assembled too.
+  `/pos/lib/pos/stages/pos-<stage>.raw` with `pos-<stage>.requires`.
+  vm-disk has one, so it is made once the optional stages are assembled
+  too.
 * `pos-stage` (`/pos/sbin`, pos-integration) enables a stage: it links the
-  image into `/etc/extensions`, runs `systemd-sysext refresh`, which merges
+  image into `/etc/extensions`, and the images of the stages it requires
+  first, runs `systemd-sysext refresh`, which merges
   the enabled images over `/pos` read-only and reloads systemd, then
   `systemd-sysusers`, `systemd-tmpfiles --create` (the stage's factory
   files) and `ldconfig`. `pos-stage disable` removes the link and merges
-  again; `pos-stage list` shows the library. systemd-sysext.service merges
+  again, unless an enabled stage requires the stage; `pos-stage list`
+  shows the library, with what each stage requires. systemd-sysext.service merges
   the enabled images at every boot, before tmpfiles runs; the stage's
   users were made when it was enabled and stay in `/etc/passwd`.
   Services a stage brings are not enabled: that is left to the
@@ -1022,7 +1040,7 @@ the machine; enabling it runs only what a first boot runs for its files.
 * An update replaces the library with the base, so an enabled stage stays
   the build's: the link in `/etc/extensions` names the library's path.
   smoke.sh enables the network stage and runs its tools where the library
-  is.
+  is, then the container stage, and runs containers.
 
 ## Images made with podman
 `podman_build` makes an image with podman from the output's
@@ -1334,8 +1352,10 @@ systemd-resolved configure the network without it.
   defaults (`net.ipv4.ping_group_range`) allow every group; arping and
   clockdiff need root.
 * ethtool, with netlink (libmnl). nftables with libnftnl and libmnl,
-  readline for `nft -i`, without JSON or iptables compatibility;
-  nftables.service loads `/etc/nftables/rules/main.nft` where there is one.
+  readline for `nft -i` and JSON (jansson) for `nft -j`, which netavark
+  writes its rules with (see "Container stage"); no iptables
+  compatibility. nftables.service loads `/etc/nftables/rules/main.nft`
+  where there is one.
 * curl and libcurl: OpenSSL with OpenSSL's trust store (`/etc/ssl/cert.pem`,
   ca-certificates), HTTP/2 with nghttp2 (its library only), zlib and zstd.
   Not built for lack of the libraries: brotli, IDN (libidn2), libpsl,
@@ -1360,3 +1380,43 @@ systemd-resolved configure the network without it.
 Wi-Fi (iwd, iw, wireless-regdb) and the packet capture tools are not in
 the stage yet. RPM systems have no package of the stage: their network
 tools are Fedora's (see "RPM packages").
+
+# Container stage
+The container stage (`pos/container/stage`) is podman and what it runs
+containers with, optional as the network stage, which it requires (see
+"Stage images"). podman is Go, netavark and aardvark-dns are Rust, built
+with Fedora's compilers (see "Packages").
+
+* podman, with rootlessport and quadlet (its systemd generators, in
+  `/pos/lib/systemd`), its units, man pages and completions. Build tags as
+  Fedora's, set by the recipe: seccomp, systemd (journald, sd-notify),
+  sqlite (POS's, its database), libsubid (shadow's), Go's OpenPGP for
+  signatures (no GPGME); no btrfs or AppArmor. The `/usr/share/containers`
+  of podman's libraries, where vendor configuration is read, is
+  `/pos/share/containers` (`configfile.systemConfigPath` at link time);
+  `/etc/containers` stays the machine's. No podman-remote or docker
+  compatibility script.
+* containers-common, the configuration Fedora's package of that name has,
+  from the container-libs tree (synced as a subset): the defaults of
+  containers.conf, storage.conf, registries.conf, policy.json,
+  seccomp.json, with their man pages. POS's settings are `00-pos.conf`
+  drop-ins next to them: podman's helpers in `/pos` (`helper_binaries_dir`,
+  conmon, catatonit, crun), the journald log driver, netavark, the overlay
+  driver (rootless too, without fuse-overlayfs), and docker.io for short
+  names. `/etc/containers` has its empty drop-in directories.
+* crun (with json-c; its libocispec submodule generates C from the OCI
+  schemas with Python): cgroup v2 through systemd, eBPF device rules,
+  seccomp, capabilities; no CRIU, Wasm or libkrun. conmon (glib,
+  libsystemd), catatonit.
+* Networks: pasta (passt) for rootless containers, podman's default.
+  netavark for rootful bridges, with nftables rules written through
+  `nft -j` and its DHCP proxy for macvlan; aardvark-dns resolves container
+  names on podman's networks. Both in `/pos/libexec/podman`.
+* Rootless containers need subordinate ids: shadow ships empty
+  `/etc/subuid` and `/etc/subgid` (factory), so `useradd` gives every new
+  user a range, and newuidmap and newgidmap are set-uid. A user made
+  before needs `usermod --add-subuids --add-subgids`.
+
+Not in the stage: buildah and skopeo (podman build and podman image cover
+most of their use), toolbox, podman-remote, slirp4netns, fuse-overlayfs
+and iptables, which podman's current defaults do without.

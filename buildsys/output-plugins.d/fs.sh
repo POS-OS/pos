@@ -24,7 +24,8 @@ fs_stages() {
 
 # Put stage images into the tree's library of stage images,
 # /pos/lib/pos/stages/pos-<stage>.raw, which pos-stage enables them from
-# (BUILD.md "Stage images"). The images are what stage-images made.
+# (BUILD.md "Stage images"), each with pos-<stage>.requires, the other
+# stages it needs. The images are what stage-images made.
 # Inputs:
 #   $@    the stages
 #   bdir, stem, work, output
@@ -33,8 +34,10 @@ fs_stage_images() {
   mkdir -p "$lib"
   for s in "$@"; do
     img=$bdir/pos-$s-$stem.raw
-    [[ -f $img ]] || die "$output: stage $s has no image in $bdir (output stage-images)"
+    [[ -f $img && -f ${img%.raw}.requires ]] ||
+      die "$output: stage $s has no image in $bdir (output stage-images)"
     install -m 0644 "$img" "$lib/pos-$s.raw"
+    install -m 0644 "${img%.raw}.requires" "$lib/pos-$s.requires"
   done
 }
 

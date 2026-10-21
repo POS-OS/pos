@@ -223,6 +223,54 @@ pkg_meson() {
   DESTDIR="$dest_dir" meson install -C "$build_dir"
 }
 
+# The linker flags of C programs (LDFLAGS: the POS loader, /pos/lib, the
+# hardening and build ID flags) as rustc arguments, for cargo builds.
+# Inputs:
+#   LDFLAGS
+# Outputs:
+#   the arguments, one -C link-arg=<flag> per flag, on stdout
+_pkg_rust_link_args() {
+  local f
+  for f in $LDFLAGS; do
+    printf -- '-C link-arg=%s ' "$f"
+  done
+}
+
+# Build a Rust package with cargo, offline, from the crates its prepare
+# recipe vendored (prep_cargo_vendor in buildsys/prepare.sh). The compiler
+# is the build host's (host-requires rust cargo); programs link with the
+# environment's gcc against /pos, as C programs do, and keep their debug
+# info for _pkg_finish to split off. The programs are in
+# $build_dir/target/release; the recipe installs them.
+# Inputs:
+#   $@    extra arguments passed to cargo build
+#   build_dir, nproc, CFLAGS, LDFLAGS
+pkg_cargo() {
+  pkg_sync_src
+  export CARGO_HOME=$build_dir/.cargo-home CARGO_TARGET_DIR=$build_dir/target
+  export CARGO_PROFILE_RELEASE_DEBUG=true CARGO_PROFILE_RELEASE_STRIP=false
+  export RUSTFLAGS="-C linker=${CC:-gcc} $(_pkg_rust_link_args)"
+  cargo build --release --offline --locked -j "$nproc" "$@"
+}
+
+# Environment for Go builds: Go modules from the source's committed
+# vendor directory, no network and no other Go toolchain than the build
+# host's (host-requires golang). cgo compiles with CFLAGS and links with
+# the environment's gcc and LDFLAGS (the POS loader, /pos/lib): external
+# linking, which programs that use cgo get, and which -linkmode=external
+# asks for where a recipe passes its own -ldflags.
+# Inputs:
+#   build_dir, CFLAGS, LDFLAGS
+# Outputs (exported):
+#   GOPATH, GOCACHE, GOFLAGS, GOTOOLCHAIN, GOPROXY, CGO_ENABLED, CGO_CFLAGS,
+#   CGO_LDFLAGS
+pkg_go_env() {
+  export GOPATH=$build_dir/.gopath GOCACHE=$build_dir/.gocache
+  export GOFLAGS="-mod=vendor -trimpath -ldflags=-linkmode=external"
+  export GOTOOLCHAIN=local GOPROXY=off
+  export CGO_ENABLED=1 CGO_CFLAGS=$CFLAGS CGO_LDFLAGS=$LDFLAGS
+}
+
 # Mark programs that must run set-uid root. The staging tree is written by an
 # unprivileged user, so ownership is applied when the archive is extracted as
 # root (assemble.sh records owner 0:0); only the mode bit is set here.

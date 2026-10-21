@@ -1,0 +1,17 @@
+# Container tools: an optional stage, shipped as a system extension image
+# and enabled with pos-stage (BUILD.md "Container stage"). It requires the
+# network stage: netavark writes its firewall rules with nft.
+# The OCI runtime (crun, with json-c), the container monitor (conmon) and
+# the init of pods and --init (catatonit).
+json-c
+crun
+conmon
+catatonit
+# Networks: rootless containers through pasta (passt), rootful bridges with
+# netavark, name resolution with aardvark-dns.
+passt
+netavark
+aardvark-dns
+# podman and the configuration it reads.
+containers-common
+podman

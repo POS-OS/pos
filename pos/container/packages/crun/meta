@@ -1,0 +1,4 @@
+build-requires gcc pos-link
+requires glibc libcap libseccomp systemd json-c
+# libocispec generates its C sources from the OCI JSON schemas with Python.
+host-requires python3

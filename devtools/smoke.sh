@@ -77,5 +77,16 @@ if [[ -f /pos/lib/pos/stages/pos-network.raw ]]; then
   check "network stage tools" bash -c 'ip -br link && ping -c 1 127.0.0.1 &&
     curl --version && ssh -V && nft --version && rsync --version'
 fi
+# The container stage enables the network stage it requires; podman runs
+# a container from Docker Hub on its default network and on a network of
+# its own (netavark's nftables rules), where aardvark-dns resolves the
+# container's name.
+if [[ -f /pos/lib/pos/stages/pos-container.raw ]]; then
+  check "pos-stage enable container" bash -c 'pos-stage enable container &&
+    pos-stage list | grep -q "^container enabled" || { systemd-sysext status; false; }'
+  check "podman run" podman run --rm docker.io/library/alpine true
+  check "podman network" bash -c 'podman network create smoke &&
+    podman run --rm --network smoke --name smoke-dns docker.io/library/alpine nslookup smoke-dns'
+fi
 
 exit "$failed"

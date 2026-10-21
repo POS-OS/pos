@@ -1,13 +1,14 @@
 #!/pos/bin/bash
 # Enable and disable the optional stages of the installed build. Each is
-# an image in the library, /pos/lib/pos/stages/pos-<stage>.raw; an enabled
-# one is linked from /etc/extensions, and systemd-sysext merges it over
-# /pos, now and at every boot (systemd-sysext.service). An image only
-# merges onto the build it was made with (SYSEXT_LEVEL in os-release).
+# an image in the library, /pos/lib/pos/stages/pos-<stage>.raw, with
+# pos-<stage>.requires, the other stages it needs; an enabled one is
+# linked from /etc/extensions, and systemd-sysext merges it over /pos, now
+# and at every boot (systemd-sysext.service). An image only merges onto
+# the build it was made with (SYSEXT_LEVEL in os-release).
 #
 #   pos-stage list
-#   pos-stage enable <stage>...
-#   pos-stage disable <stage>...
+#   pos-stage enable <stage>...    and the stages they require
+#   pos-stage disable <stage>...   unless an enabled stage requires them
 set -euo pipefail
 
 library=/pos/lib/pos/stages
@@ -21,19 +22,77 @@ usage() {
   exit 2
 }
 
-# The stages in the library, one per line: <stage> enabled|disabled.
-list() {
+die() {
+  echo "pos-stage: $*" >&2
+  exit 1
+}
+
+# The stages in the library, one per line.
+stages() {
   local img stage
   for img in "$library"/pos-*.raw; do
     [[ -f $img ]] || continue
     stage=${img##*/pos-}
-    stage=${stage%.raw}
-    if [[ $(readlink "$links/pos-$stage.raw" 2>/dev/null) == "$img" ]]; then
-      echo "$stage enabled"
-    else
-      echo "$stage disabled"
-    fi
+    echo "${stage%.raw}"
   done
+}
+
+# Inputs:
+#   $1    stage name
+# Outputs:
+#   status 0 when the stage is enabled
+enabled() {
+  [[ $(readlink "$links/pos-$1.raw" 2>/dev/null) == "$library/pos-$1.raw" ]]
+}
+
+# The stages a stage requires, one per line.
+# Inputs:
+#   $1    stage name
+requires() {
+  [[ ! -f $library/pos-$1.requires ]] || cat "$library/pos-$1.requires"
+}
+
+# The stages in the library: <stage> enabled|disabled, and what it requires.
+list() {
+  local stage state req
+  for stage in $(stages); do
+    state=disabled
+    enabled "$stage" && state=enabled
+    req=$(requires "$stage" | paste -sd ' ')
+    echo "$stage $state${req:+ (requires $req)}"
+  done
+}
+
+# Link a stage and, first, the stages it requires.
+# Inputs:
+#   $1    stage name
+link_stage() {
+  local req
+  [[ -f $library/pos-$1.raw ]] || die "no stage $1 in $library"
+  enabled "$1" && return 0
+  for req in $(requires "$1"); do
+    link_stage "$req"
+  done
+  mkdir -p "$links"
+  ln -sfn "$library/pos-$1.raw" "$links/pos-$1.raw"
+  echo "enabled $1"
+}
+
+# Remove a stage's link, unless an enabled stage that stays requires it.
+# Inputs:
+#   $1      stage name
+#   ${@:2}  the stages being disabled with it
+unlink_stage() {
+  local stage=$1 other
+  shift
+  [[ -f $library/pos-$stage.raw ]] || die "no stage $stage in $library"
+  for other in $(stages); do
+    [[ $other != "$stage" && " $* " != *" $other "* ]] || continue
+    enabled "$other" && requires "$other" | grep -qxF "$stage" &&
+      die "$other requires $stage; disable it too"
+  done
+  rm -f "$links/pos-$stage.raw"
+  echo "disabled $stage"
 }
 
 # What a first boot does with a stage's files, for the stages merged now:
@@ -46,30 +105,28 @@ activate() {
   ldconfig
 }
 
-# Inputs:
-#   $1    enable or disable
-#   $@    stage names
-change() {
-  local action=$1 stage img
-  shift
-  (($#)) || usage
-  for stage in "$@"; do
-    img=$library/pos-$stage.raw
-    [[ -f $img ]] || { echo "pos-stage: no stage $stage in $library" >&2; exit 1; }
-    if [[ $action == enable ]]; then
-      mkdir -p "$links"
-      ln -sfn "$img" "$links/pos-$stage.raw"
-    else
-      rm -f "$links/pos-$stage.raw"
-    fi
-  done
-  # Merges the enabled images again, then reloads systemd's units.
-  systemd-sysext refresh
-  [[ $action == disable ]] || activate
-}
-
 case ${1:-} in
-  list) (($# == 1)) || usage; list ;;
-  enable | disable) change "$@" ;;
+  list)
+    (($# == 1)) || usage
+    list
+    ;;
+  enable)
+    shift
+    (($#)) || usage
+    for stage in "$@"; do
+      link_stage "$stage"
+    done
+    # Merges the enabled images again, then reloads systemd's units.
+    systemd-sysext refresh
+    activate
+    ;;
+  disable)
+    shift
+    (($#)) || usage
+    for stage in "$@"; do
+      unlink_stage "$stage" "$@"
+    done
+    systemd-sysext refresh
+    ;;
   *) usage ;;
 esac

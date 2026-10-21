@@ -4,7 +4,7 @@
 # and the network; vm-disk-dnf uses it and repart.d too.
 output() {
   fs_stages
-  fs_stage_images network
+  fs_stage_images network container
   fs_layout "$(output_dir)/layout"
   fs_copy "$(output_dir)/root"
   fs_factory

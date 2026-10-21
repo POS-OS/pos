@@ -1,0 +1,9 @@
+build-requires gcc pos-link
+# cgo: libseccomp, libsystemd (journald, sd-notify), sqlite (its database),
+# libsubid (shadow's subordinate ids for rootless users). The helpers it
+# runs: crun, conmon, catatonit, netavark, aardvark-dns, pasta, and their
+# configuration (containers-common). newuidmap and newgidmap are shadow's.
+requires glibc libseccomp systemd sqlite shadow
+requires containers-common crun conmon catatonit netavark aardvark-dns passt
+# go-md2man makes the man pages; the Markdown is preprocessed with Python.
+host-requires golang golang-github-cpuguy83-md2man python3

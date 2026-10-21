@@ -11,7 +11,8 @@ iproute2
 iputils
 # Wired device settings: link speed, offloads.
 ethtool
-# Packet filtering.
+# Packet filtering; jansson for its JSON mode.
+jansson
 nftables
 # Transfer: curl and libcurl (HTTP/2 with nghttp2), wget2, rsync.
 nghttp2

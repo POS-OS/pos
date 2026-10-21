@@ -1,0 +1,7 @@
+build-requires gcc pos-link
+# It writes firewall rules with nft -j (the network stage's nftables, with
+# JSON).
+requires glibc gcc-runtime nftables
+# protoc compiles the DHCP proxy's gRPC protocol.
+host-requires rust cargo protobuf-compiler golang-github-cpuguy83-md2man
+prepare-requires cargo

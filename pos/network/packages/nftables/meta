@@ -1,4 +1,4 @@
 build-requires gcc pos-link
-requires glibc libmnl libnftnl gmp readline
+requires glibc libmnl libnftnl gmp readline jansson
 # a2x makes the man pages.
 host-requires asciidoc

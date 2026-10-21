@@ -109,6 +109,18 @@ prep_gen() {
   fi
 }
 
+# Vendor a Rust source's crates, as cargo's release tarballs of
+# applications do: cargo vendor downloads the crates Cargo.lock names into
+# vendor/, and .cargo/config.toml points cargo at them, so the build
+# (pkg_cargo in buildsys/pkg.sh) runs offline. prepare-requires cargo.
+# Inputs:
+#   prep_dir
+prep_cargo_vendor() {
+  mkdir -p .cargo
+  CARGO_HOME=$prep_dir/.cargo-home cargo vendor --locked --versioned-dirs vendor >.cargo/config.toml
+  rm -rf .cargo-home
+}
+
 # The prepared tree has to stand alone, as a release tarball does. Some
 # packages have gnulib-tool link imported files to gnulib whatever
 # bootstrap is told (coreutils: --symlink in bootstrap.conf); those links
