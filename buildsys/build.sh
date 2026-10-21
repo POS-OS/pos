@@ -23,7 +23,7 @@
 # for it and mounted read-only.
 #
 # A build is a toolchain build or a pos build (resolve.sh). The toolchain
-# (gcc, binutils, the kernel headers) is built by toolchain builds, with
+# (gcc, binutils) is built by toolchain builds, with
 # the toolchain of a toolchain reference, a stored toolchain build
 # (work/references/<ref>, restored from the reference store), or Fedora's
 # without one, on the glibc of a pos reference, a stored pos build
