@@ -9,6 +9,10 @@ pkg() {
   # libraries, is /pos/share/containers (containers-common); /etc/containers
   # stays the machine's. The units and the quadlet generators go to
   # /pos/lib/systemd, where POS's systemd reads them.
+  #
+  # The man pages are made with Fedora's go-md2man; -o skips
+  # .install.md2man, which builds podman's copy from test/tools, not in the
+  # synced source.
   pkg_sync_src
   pkg_go_env
   local -a vars=(
@@ -18,6 +22,7 @@ pkg() {
     LIBEXECDIR="${prefix}/libexec"
     HELPER_BINARIES_DIR="${prefix}/libexec/podman"
     GOMD2MAN=go-md2man
+    -o .install.md2man
     SELINUXOPT=
     BUILDTAGS="grpcnotrace seccomp systemd libsqlite3 libsubid containers_image_openpgp exclude_graphdriver_btrfs"
     EXTRA_LDFLAGS="-linkmode=external -X go.podman.io/storage/pkg/configfile.systemConfigPath=${prefix}/share/containers -X go.podman.io/common/pkg/subscriptions.DefaultMountsFile=${prefix}/share/containers/mounts.conf"
