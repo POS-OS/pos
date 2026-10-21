@@ -6,4 +6,5 @@ build-requires gcc pos-link
 requires glibc libseccomp systemd sqlite shadow
 requires containers-common crun conmon catatonit netavark aardvark-dns passt
 # go-md2man makes the man pages; the Markdown is preprocessed with Python.
-host-requires golang golang-github-cpuguy83-md2man python3
+# man-db: each page is rendered with man -l to check for broken tables.
+host-requires golang golang-github-cpuguy83-md2man python3 man-db
