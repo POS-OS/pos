@@ -85,8 +85,11 @@ if [[ -f /pos/lib/pos/stages/pos-container.raw ]]; then
   check "pos-stage enable container" bash -c 'pos-stage enable container &&
     pos-stage list | grep -q "^container enabled" || { systemd-sysext status; false; }'
   check "podman run" podman run --rm docker.io/library/alpine true
+  # getent, not busybox nslookup: the container's resolv.conf has
+  # resolved's "search .", and nslookup sends a malformed query for it
+  # (write: Message too large) where getent, musl's resolver, skips it.
   check "podman network" bash -c 'podman network create smoke &&
-    podman run --rm --network smoke --name smoke-dns docker.io/library/alpine nslookup smoke-dns'
+    podman run --rm --network smoke --name smoke-dns docker.io/library/alpine getent hosts smoke-dns'
 fi
 
 exit "$failed"
