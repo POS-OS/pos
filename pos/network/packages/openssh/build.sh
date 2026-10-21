@@ -12,8 +12,8 @@ pkg() {
     --with-privsep-user=sshd \
     --with-pid-dir=/run \
     --with-pam \
-    --with-default-path="/usr/local/bin:/usr/bin:/bin:${prefix}/bin" \
-    --with-superuser-path="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${prefix}/sbin:${prefix}/bin" \
+    --with-default-path="/usr/local/bin:/usr/bin:/bin:${prefix}/bin:${sdk_prefix}/bin" \
+    --with-superuser-path="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${prefix}/sbin:${prefix}/bin:${sdk_prefix}/bin" \
     --with-mantype=man \
     --without-kerberos5 \
     --without-libedit \

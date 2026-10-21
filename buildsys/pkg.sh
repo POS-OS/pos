@@ -56,7 +56,8 @@ _require_container() {
 #   POS_DEST_DIR, POS_DEBUG_DIR, POS_OUTPUTS, POS_ENV_SCRIPTS
 # Outputs (shell variables set for pkg()):
 #   base, recipe_dir, src_dir, build_dir, dest_dir, debug_dir, prefix (/pos),
-#   sysconfdir (/etc), localstatedir (/var), nproc, CFLAGS, CXXFLAGS, LDFLAGS
+#   sdk_prefix (/pos/sdk), sysconfdir (/etc), localstatedir (/var), nproc,
+#   CFLAGS, CXXFLAGS, LDFLAGS
 _pkg_setup() {
   _require_container
   base=${POS_BASE:?}
@@ -65,6 +66,9 @@ _pkg_setup() {
   build_dir=${POS_BUILD_DIR:?}
   dest_dir=${POS_DEST_DIR:?}
   prefix=/pos
+  # The sdk (the toolchain) is one directory in the prefix, which can be
+  # left out of an image or mounted on its own (BUILD.md "Prefix").
+  sdk_prefix=${prefix}/sdk
   # Configuration is read from the machine's /etc, never from inside the
   # prefix. Variable data is /var. Files a package installs under either
   # are shipped defaults; _pkg_finish moves them to /pos/share/factory

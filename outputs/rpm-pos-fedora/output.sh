@@ -87,12 +87,13 @@ output() {
     awk '{p = substr($0, 3)} $1 == "c" {c[p] = 1; next} {u[p] = 1}
          END {for (p in u) if (!c[p]) print p}' | sort -u >"$work/fedora.taken"
 
-  # The links: programs into /usr/bin (Fedora's /usr/sbin is a link to it),
-  # libraries and the loader into /usr/lib64 (/lib64 is a link to it). The
-  # loader link is what makes Fedora's binaries, which request
-  # /lib64/ld-linux-x86-64.so.2, run on POS glibc.
+  # The links: programs, the sdk's too, into /usr/bin (Fedora's /usr/sbin
+  # is a link to it), libraries and the loader into /usr/lib64 (/lib64 is a
+  # link to it). The loader link is what makes Fedora's binaries, which
+  # request /lib64/ld-linux-x86-64.so.2, run on POS glibc.
   awk '$1 != "d" {print $2}' "$work/paths" | awk -F/ '
     ($3 == "bin" || $3 == "sbin") && NF == 4 {print "/usr/bin/" $4, "../../pos/" $3 "/" $4}
+    $3 == "sdk" && $4 == "bin" && NF == 5 {print "/usr/bin/" $5, "../../pos/sdk/bin/" $5}
     $3 == "lib" && NF == 4 && ($4 ~ /\.so\./ || $4 ~ /^ld-linux/) {print "/usr/lib64/" $4, "../../pos/lib/" $4}
   ' | sort -u -k1,1 | join -v1 - "$work/fedora.taken" >"$work/links"
 

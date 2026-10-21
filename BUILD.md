@@ -380,8 +380,9 @@ toolchain build.
 The toolchain runs on glibc only. gcc builds gmp, mpfr and mpc in its tree
 (`with-sources`) and links them statically, as it does libstdc++ and libgcc
 (`--with-static-standard-libraries`); gcc and binutils use their bundled
-zlib and no zstd. The gcc recipe fails if a compiler program needs another
-library. So a pos build can change any library but glibc, whose ABI is
+zlib and no zstd, and binutils links its own libraries (libbfd,
+libopcodes, libctf, libsframe) statically. The gcc recipe fails if a
+compiler program needs another library. So a pos build can change any library but glibc, whose ABI is
 backward compatible, under the toolchain it builds with: the toolchain
 reference's gcc runs on the pos build's glibc as soon as that is built. gmp and mpfr
 are also pos packages, built from the same sources for coreutils and
@@ -389,7 +390,13 @@ gawk; mpc is only built in gcc's tree (`kind source`).
 
 gcc-runtime (libstdc++, libgcc_s) ships in core-libs but is an output of
 the gcc build, so the C++ headers a program is compiled with and the
-libstdc++ it runs on always come from the same gcc.
+libstdc++ it runs on always come from the same gcc. gcc installs in
+`/pos/sdk`; its recipe moves the runtime's libraries to `/pos/lib` and
+points the names the linker looks up (`/pos/sdk/lib/libstdc++.so`) at
+them. gcc's other target libraries (the sanitizers, libitm, libquadmath,
+libssp) stay in `/pos/sdk/lib`, where the loader does not look: a program
+using them runs with `LD_LIBRARY_PATH=/pos/sdk/lib` or links them
+statically (`-static-libasan`).
 
 `util-linux-bootstrap` breaks a cycle with a bootstrap package: it is
 util-linux without libsystemd; systemd requires it, and
@@ -506,7 +513,10 @@ others are built has an `env.sh`, and `pkg_setup` sources the `env.sh` of
 every package in the resolved requirements. What a build gets therefore
 follows from what it requires, never from what is found on disk:
 
-* `gcc/env.sh`: the POS compiler, `/pos/bin/gcc`, `g++` and `ld`.
+* `gcc/env.sh`: the POS compiler, `/pos/sdk/bin/gcc`, `g++` and `ld`. A
+  toolchain reference from before the sdk prefix has them in `/pos/bin`;
+  in a toolchain build on one, `COMPILER_PATH` points that gcc at the
+  build's binutils in `/pos/sdk/bin`.
 * `host-toolchain/env.sh` and `gcc-host/env.sh`: the Fedora compiler,
   searching `/pos` ahead of `/usr` (`gcc-host`, standing in for gcc).
 * `pos-link/env.sh`: link against `/pos` with the build's compiler.
@@ -586,6 +596,21 @@ dependencies outside the prefix.
 
 Third-party applications install in separate hierarchy. A machine can keep `/usr` for that, or any other prefix.
 
+The sdk, the toolchain (see "SDK"), is one directory of the prefix,
+`/pos/sdk` (`$sdk_prefix` in `buildsys/pkg.sh`), with its own `bin`,
+`lib`, `libexec`, `include` and `share`. `/pos/bin` and `/pos/lib` are the
+system's; what the sdk installs elsewhere in `/pos` is pos's: gcc-runtime
+in core-libs, and the sdk stage's other tools. So an image can leave the
+sdk out, or have it as one more layer: a stage image merged over `/pos`,
+or a filesystem mounted on `/pos/sdk` when `/pos` itself is read-only.
+The root layouts of `container-fs` and `vm-disk` make an empty `/pos/sdk`
+for that (a package cannot ship an empty directory). Nothing in `/pos/sdk`
+is written at run time. The loader does not search `/pos/sdk/lib`: the
+sdk's programs link only glibc and gcc-runtime, and link anything else
+statically. `/pos/sdk/bin` follows POS's other bin directories in the
+search paths below, in an imported image's `PATH`, and as `/usr/bin` links
+on pos-fedora.
+
 Configuration and mutable data stay outside the prefix:
 
 * `/etc` is local configuration.
@@ -649,8 +674,9 @@ outside `/pos` (`buildsys/build.sh` warns on it).
   `sysctl.d/50-kmod.conf` sets `kernel.modprobe` to `/pos/sbin/modprobe`.
 * systemd: programs a unit names without a path, and the `PATH` of
   services and user sessions, are looked up in `/usr/local` and `/usr`, with
-  `/pos/sbin:/pos/bin` appended (`-Dextra-exec-search-path`). sudo's
-  `secure_path` is the same list.
+  `/pos/sbin:/pos/bin:/pos/sdk/bin` appended (`-Dextra-exec-search-path`).
+  sudo's `secure_path`, login's (shadow's `login.defs`) and sshd's are the
+  same list.
 * util-linux: `--enable-fs-paths-default=/pos/sbin` for mount helpers.
 * shadow: `--enable-vendordir=/pos/share/factory/etc`, so login.defs is found
   before `/etc/login.defs` has been created. pam's vendordir
@@ -713,8 +739,8 @@ installs the tree has to preserve modes (`tar -x` as root, or `cp -a`, not
 # Core libs stage
 Each package stages into `work/builds/<id>/dest/<name>` with `--prefix=/pos`.
 
-With the sdk compiler, packages use `/pos/bin/gcc`, `/pos/bin/g++`, and
-`/pos/bin/ld`, whose defaults already search `/pos/include` and `/pos/lib`,
+With the sdk compiler, packages use `/pos/sdk/bin/gcc`, `/pos/sdk/bin/g++`,
+and `/pos/sdk/bin/ld`, whose defaults already search `/pos/include` and `/pos/lib`,
 and `pos-link` adds only
 `-L/pos/lib` and `PKG_CONFIG_LIBDIR`. No rpath: the POS loader finds
 `/pos/lib` through its own cache or its default search path (below).
@@ -883,11 +909,12 @@ pick up from the build directory, is removed except on sticky directories.
 
 `container-fs` is core-libs, system and the sdk, for `podman import` or
 `docker import`. It has no `/etc/pos/ld.so.cache`; the loader searches
-`/pos/lib`. Programs are in `/pos/bin` and `/pos/sbin`, which are not in a
-container engine's default `PATH`, so the import sets it:
+`/pos/lib`. Programs are in `/pos/bin`, `/pos/sbin` and `/pos/sdk/bin`,
+which are not in a container engine's default `PATH`, so the import sets
+it:
 
     $ podman import \
-        --change 'ENV PATH=/pos/bin:/pos/sbin:/usr/local/bin:/usr/bin' \
+        --change 'ENV PATH=/pos/bin:/pos/sbin:/pos/sdk/bin:/usr/local/bin:/usr/bin' \
         --change 'CMD ["/bin/bash"]' \
         work/builds/<id>/pos-container-fs-<stem>.tar.zst pos:<id>
 
@@ -1198,14 +1225,15 @@ The sdk stage (`pos/sdk/stage`) is the compiler, the assembler and linker
 (diffutils, patch, man-pages). The first two are the toolchain, built by
 toolchain builds (see "Toolchain"); a pos build assembles the stage with
 its toolchain reference's. The sdk is a component POS ships, so it
-installs under `/pos` like the base system. A base system image does not
+installs under `/pos` like the base system, the toolchain in its own
+directory, `/pos/sdk` (see "Prefix"). A base system image does not
 include it; the builds of other packages require it.
 
 binutils is what makes the sdk compiler self-contained. gcc execs `as` and
 `ld`; without POS copies it would run the build container's, whose ld
 searches `/usr/lib64` on its own. binutils is configured
 `--with-lib-path=/pos/lib` so ld searches only `/pos/lib`, and gcc is given
-`--with-as=/pos/bin/as --with-ld=/pos/bin/ld`.
+`--with-as=/pos/sdk/bin/as --with-ld=/pos/sdk/bin/ld`.
 
 The compiler's own programs (cc1, cc1plus, lto1) are ordinary `/pos`
 binaries, built without gcc's own staged bootstrap (`--disable-bootstrap`)

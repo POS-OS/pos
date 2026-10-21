@@ -42,8 +42,8 @@ pkg() {
   # directories after them, as systemd's search path (pos/system/packages/systemd)
   # and sudo's secure_path.
   defs=${dest_dir}${sysconfdir}/login.defs
-  sed -i -e "s|^ENV_SUPATH\t.*|ENV_SUPATH\tPATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${prefix}/sbin:${prefix}/bin|" \
-         -e "s|^ENV_PATH\t.*|ENV_PATH\tPATH=/usr/local/bin:/usr/bin:/bin:${prefix}/bin|" "$defs"
+  sed -i -e "s|^ENV_SUPATH\t.*|ENV_SUPATH\tPATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${prefix}/sbin:${prefix}/bin:${sdk_prefix}/bin|" \
+         -e "s|^ENV_PATH\t.*|ENV_PATH\tPATH=/usr/local/bin:/usr/bin:/bin:${prefix}/bin:${sdk_prefix}/bin|" "$defs"
   grep -q "^ENV_SUPATH.*${prefix}/sbin" "$defs" && grep -q "^ENV_PATH.*${prefix}/bin" "$defs" ||
     { echo "shadow: $defs has no ENV_SUPATH/ENV_PATH to set" >&2; exit 1; }
 

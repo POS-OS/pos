@@ -44,6 +44,9 @@ EOF2
   # What the compiler runs on is glibc only: gmp, mpfr and mpc from the tree,
   # gcc's bundled zlib, no zstd (LTO streams are zlib-compressed), and
   # libstdc++ and libgcc linked statically.
+  # The compiler is in the sdk prefix and targets pos: its headers and
+  # libraries are /pos/include and /pos/lib, libgcc_s goes to /pos/lib
+  # (--with-slibdir), and the loader is /pos/lib's (linux64.h above).
   # --with-as/--with-ld bake the POS binutils paths into the driver.
   # --without-isl pins the Graphite check so a change to the tools image
   # cannot change the result. libcc1 installs into the building compiler's
@@ -52,7 +55,9 @@ EOF2
   mkdir build
   cd build
   pkg_autotools ../configure \
-    --libexecdir=/pos/libexec \
+    --prefix="$sdk_prefix" \
+    --libdir="${sdk_prefix}/lib" \
+    --libexecdir="${sdk_prefix}/libexec" \
     --with-slibdir=/pos/lib \
     --with-local-prefix=/pos \
     --with-native-system-header-dir=/pos/include \
@@ -68,31 +73,57 @@ EOF2
     --disable-libcc1 \
     --with-static-standard-libraries \
     --without-zstd \
-    --with-as=/pos/bin/as \
-    --with-ld=/pos/bin/ld \
+    --with-as="${sdk_prefix}/bin/as" \
+    --with-ld="${sdk_prefix}/bin/ld" \
     --without-isl
 
   # gcc-runtime: libgcc_s, libstdc++, libatomic and libgomp, split as Fedora
   # splits them. The output keeps what programs load at run time (lib*.so.N)
-  # and the libstdc++ gdb pretty-printers. Everything used only when
-  # compiling or linking stays with gcc: headers, the compiler's own
-  # directory (lib/gcc: crt files, libgcc.a, unwind.h, omp.h), static
-  # libraries, the unversioned lib*.so names the linker looks up,
-  # libgomp.spec and libstdc++.modules.json. _pkg_finish removes what the
-  # output holds from gcc.
+  # and the libstdc++ gdb pretty-printers, in /pos: they are pos's, not the
+  # sdk's. Everything used only when compiling or linking stays with gcc,
+  # in the sdk prefix: headers, the compiler's own directory (lib/gcc: crt
+  # files, libgcc.a, unwind.h, omp.h), static libraries, the unversioned
+  # lib*.so names the linker looks up, libgomp.spec and
+  # libstdc++.modules.json.
   runtime=$(pkg_output gcc-runtime)
   make DESTDIR="$runtime" install-target-libgcc install-target-libatomic \
        install-target-libstdc++-v3 install-target-libgomp
-  rm -rf "${runtime}${prefix}/include" "${runtime}${prefix}/lib/gcc"
-  find "${runtime}${prefix}/lib" -maxdepth 1 ! -type d ! -name 'lib*.so.*' -delete
+  rm -rf "${runtime}${sdk_prefix}/include" "${runtime}${sdk_prefix}/lib/gcc"
+  find "${runtime}${sdk_prefix}/lib" "${runtime}${prefix}/lib" -maxdepth 1 ! -type d ! -name 'lib*.so.*' -delete
+  mv "${runtime}${sdk_prefix}"/lib/lib*.so.* "${runtime}${prefix}/lib/"
+  mkdir -p "${runtime}${prefix}/share"
+  cp -a "${runtime}${sdk_prefix}/share/." "${runtime}${prefix}/share/"
+  rm -rf "${runtime}${sdk_prefix}"
+  # The pretty-printers' loader finds them from the paths it was installed
+  # with.
+  sed -i "s|'${sdk_prefix}/|'${prefix}/|" "${runtime}${prefix}"/lib/libstdc++.so.*-gdb.py
+  grep -q "^pythondir = '${prefix}/share/" "${runtime}${prefix}"/lib/libstdc++.so.*-gdb.py ||
+    { echo "gcc: libstdc++ gdb script not moved to ${prefix}" >&2; exit 1; }
+
+  # gcc keeps none of it, at either path (_pkg_finish removes the files at
+  # the output's paths), and the linker names of the libraries moved, and
+  # of libgcc_s, are in the sdk prefix, pointing at /pos/lib.
+  (cd "${runtime}${prefix}" && find . ! -type d -print0) |
+    while IFS= read -r -d '' f; do
+      rm -f "${dest_dir}${sdk_prefix}/${f#./}"
+    done
+  mv "${dest_dir}${prefix}"/lib/libgcc_s.so "${dest_dir}${prefix}"/lib/libgcc_s_asneeded.so \
+     "${dest_dir}${sdk_prefix}/lib/"
+  for f in "${dest_dir}${sdk_prefix}"/lib/lib*.so; do
+    [[ -L $f && ! -e $f ]] || continue
+    t=$(readlink "$f")
+    [[ -e ${runtime}${prefix}/lib/$t ]] ||
+      { echo "gcc: $(basename "$f") points at $t, which is in neither prefix" >&2; exit 1; }
+    ln -sfn "../../lib/$t" "$f"
+  done
   # libtool archives: not needed to link against the shared libraries, and
   # Fedora does not ship them.
-  find "${dest_dir}${prefix}/lib" -maxdepth 1 -name '*.la' -delete
+  find "${dest_dir}${sdk_prefix}/lib" -maxdepth 1 -name '*.la' -delete
 
   # The compiler's programs must run on glibc alone (see configure above).
   # A configure check that quietly fell back to a shared library would tie
   # the toolchain to a pos build's copy of it.
-  bad=$(find "${dest_dir}${prefix}/bin" "${dest_dir}${prefix}/libexec/gcc" -type f -perm -u+x \
+  bad=$(find "${dest_dir}${sdk_prefix}/bin" "${dest_dir}${sdk_prefix}/libexec/gcc" -type f -perm -u+x \
           -exec readelf -d {} + 2>/dev/null |
         awk '/NEEDED/ {print $NF}' | tr -d '[]' | sort -u |
         grep -v -E '^(libc|libm|ld-linux-x86-64)\.so' || true)
