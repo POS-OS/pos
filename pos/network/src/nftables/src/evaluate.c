@@ -5826,6 +5826,21 @@ static int ct_expect_evaluate(struct eval_ctx *ctx, struct obj *obj)
 	return 0;
 }
 
+static int timeout_not_found(struct eval_ctx *ctx, const struct location *loc,
+			     uint16_t l4proto, const char *state_name)
+{
+	const char *suggestion;
+
+	suggestion = timeout_lookup_fuzzy(l4proto, state_name);
+	if (suggestion == NULL)
+		return cmd_error(ctx, loc, "invalid state '%s' for this protocol",
+				 state_name);
+
+	return cmd_error(ctx, loc,
+			 "invalid state '%s' for this protocol; did you mean '%s'?",
+			 state_name, suggestion);
+}
+
 static int ct_timeout_evaluate(struct eval_ctx *ctx, struct obj *obj)
 {
 	struct ct_timeout *ct = &obj->ct_timeout;
@@ -5837,8 +5852,8 @@ static int ct_timeout_evaluate(struct eval_ctx *ctx, struct obj *obj)
 
 	list_for_each_entry_safe(ts, next, &ct->timeout_list, head) {
 		if (timeout_str2num(ct->l4proto, ts) < 0)
-			return __stmt_binary_error(ctx, &ts->location, NULL,
-						   "invalid state for this protocol");
+			return timeout_not_found(ctx, &ts->location,
+						 ct->l4proto, ts->timeout_str);
 
 		ct->timeout[ts->timeout_index] = ts->timeout_value;
 		list_del(&ts->head);

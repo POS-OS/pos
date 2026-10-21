@@ -3,6 +3,9 @@
 # Defines ct timeout policies (1s) and verifies they expire for matching flows
 # while non matching flow stay alive >2s
 
+# NFT_TEST_REQUIRES(NFT_TEST_HAVE_socat)
+# NFT_TEST_REQUIRES(NFT_TEST_HAVE_conntrack)
+
 . "$NFT_TEST_LIBRARY_FILE"
 
 ip link set lo up

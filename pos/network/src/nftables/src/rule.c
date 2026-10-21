@@ -89,6 +89,25 @@ struct timeout_protocol timeout_protocol[UINT8_MAX + 1] = {
 	},
 };
 
+const char *timeout_lookup_fuzzy(uint16_t l4proto, const char *name)
+{
+	struct string_misspell_state st;
+	unsigned int i;
+
+	if (!name)
+		return NULL;
+
+	string_misspell_init(&st);
+
+	for (i = 0; i < timeout_protocol[l4proto].array_size; i++)
+		string_misspell_update(timeout_protocol[l4proto].state_to_name[i],
+				       name,
+				       (void *)timeout_protocol[l4proto].state_to_name[i],
+				       &st);
+
+	return st.obj;
+}
+
 int timeout_str2num(uint16_t l4proto, struct timeout_state *ts)
 {
 	unsigned int i;

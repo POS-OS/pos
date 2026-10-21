@@ -882,5 +882,6 @@ struct timeout_protocol {
 
 extern struct timeout_protocol timeout_protocol[UINT8_MAX + 1];
 extern int timeout_str2num(uint16_t l4proto, struct timeout_state *ts);
+extern const char *timeout_lookup_fuzzy(uint16_t l4proto, const char *name);
 
 #endif /* NFTABLES_RULE_H */

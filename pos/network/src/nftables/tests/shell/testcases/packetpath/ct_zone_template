@@ -3,6 +3,8 @@
 # Check 'ct zone set 1' actually works, i.e. conntrack is created in
 # the assigned zone.
 
+# NFT_TEST_REQUIRES(NFT_TEST_HAVE_conntrack)
+
 . $NFT_TEST_LIBRARY_FILE
 
 set -e
