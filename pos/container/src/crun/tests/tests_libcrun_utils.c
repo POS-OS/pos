@@ -1,0 +1,1423 @@
+/*
+ * crun - OCI runtime written in C
+ *
+ * Copyright (C) 2017, 2018, 2019 Giuseppe Scrivano <giuseppe@scrivano.org>
+ * crun is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License as published by
+ * the Free Software Foundation; either version 2.1 of the License, or
+ * (at your option) any later version.
+ *
+ * crun is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License
+ * along with crun.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+#define _GNU_SOURCE
+
+#include <libcrun/error.h>
+#include <libcrun/utils.h>
+#include <libcrun/cgroup.h>
+#include <libcrun/cgroup-systemd.h>
+#include <sys/types.h>
+#include <sys/epoll.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
+#include <sys/ptrace.h>
+#include <sys/prctl.h>
+#include <errno.h>
+#include <signal.h>
+#include <unistd.h>
+#include <string.h>
+#include <fcntl.h>
+#include <limits.h>
+#include <stdlib.h>
+
+#include "tap.h"
+
+extern int cpuset_string_to_bitmask (const char *str, char **out, size_t *out_size, libcrun_error_t *err);
+
+static int
+make_temp_dir (char *path, size_t size)
+{
+  if (snprintf (path, size, "%s/crun-test-XXXXXX",
+                getenv ("TMPDIR") ? getenv ("TMPDIR") : "/tmp")
+      >= (int) size)
+    return -1;
+
+  if (mkdtemp (path) == NULL)
+    return -1;
+
+  return 0;
+}
+
+static int
+test_socket_pair ()
+{
+  libcrun_error_t err = NULL;
+  int fds[2];
+  __attribute__ ((unused)) cleanup_close int fd0 = -1;
+  __attribute__ ((unused)) cleanup_close int fd1 = -1;
+  char buffer[256];
+  int ret = create_socket_pair (fds, &err);
+  if (ret < 0)
+    return -1;
+
+  fd0 = fds[0];
+  fd1 = fds[1];
+
+  if (err != NULL)
+    return -1;
+
+  ret = write (fds[0], "HELLO", 6);
+  if (ret != 6)
+    return -1;
+
+  ret = read (fds[1], buffer, sizeof (buffer));
+  if (ret != 6)
+    return -1;
+  if (strcmp (buffer, "HELLO") != 0)
+    return -1;
+
+  ret = write (fds[1], "WORLD", 6);
+  if (ret != 6)
+    return -1;
+
+  ret = read (fds[0], buffer, sizeof (buffer));
+  if (ret != 6)
+    return -1;
+
+  if (strcmp (buffer, "WORLD") != 0)
+    return -1;
+
+  return 0;
+}
+
+static int
+test_send_receive_fd ()
+{
+  libcrun_error_t err = NULL;
+  int fds[2], pipes[2];
+  cleanup_close int fd0 = -1;
+  cleanup_close int fd1 = -1;
+  pid_t pid;
+  int ret = create_socket_pair (fds, &err);
+  if (ret < 0)
+    return -1;
+
+  fd0 = fds[0];
+  fd1 = fds[1];
+
+  if (err != NULL)
+    return -1;
+
+  pid = fork ();
+  if (pid < 0)
+    return -1;
+
+  if (pid)
+    {
+      cleanup_close int pipefd0 = -1;
+      cleanup_close int pipefd1 = -1;
+      char buffer[256];
+      const char *test_string = "TEST STRING";
+      int result = -1;
+      int status;
+
+      if (pipe (pipes) < 0)
+        goto reap_child;
+
+      pipefd0 = pipes[0];
+      pipefd1 = pipes[1];
+
+      close (fd0);
+      fd0 = -1;
+
+      if (send_fd_to_socket (fd1, pipefd0, &err) < 0)
+        goto reap_child;
+
+      if (write (pipefd1, test_string, strlen (test_string) + 1) < 0)
+        goto reap_child;
+
+      ret = read (fd1, buffer, sizeof (buffer));
+      if (ret != (int) strlen (test_string) + 1)
+        goto reap_child;
+
+      result = strcmp (buffer, test_string);
+
+    reap_child:
+      /* The child is either done or stuck waiting for data that is not
+         going to arrive.  */
+      kill (pid, SIGKILL);
+      while (waitpid (pid, &status, 0) < 0 && errno == EINTR)
+        ;
+      return result;
+    }
+  else
+    {
+      char buffer[256];
+      int ret, fd = receive_fd_from_socket (fd0, &err);
+      if (fd < 0)
+        _exit (1);
+
+      close (fd1);
+      fd1 = -1;
+
+      ret = read (fd, buffer, sizeof (buffer));
+      if (ret <= 0)
+        _exit (1);
+      if (write (fd0, buffer, ret) < 0)
+        _exit (1);
+
+      _exit (0);
+    }
+  return 0;
+}
+
+static int
+test_run_process ()
+{
+  libcrun_error_t err = NULL;
+  {
+    char *args[] = { "/bin/true", NULL };
+    if (run_process (args, &err) != 0)
+      return -1;
+  }
+
+  {
+    char *args[] = { "/bin/false", NULL };
+    if (run_process (args, &err) <= 0)
+      return -1;
+    if (err != NULL)
+      return -1;
+  }
+
+  {
+    char *args[] = { "/does/not/exist", NULL };
+    int r = run_process (args, &err);
+    if (r <= 0)
+      return -1;
+    if (err != NULL)
+      return -1;
+  }
+
+  return 0;
+}
+
+static int
+test_dir_p ()
+{
+  libcrun_error_t err = NULL;
+  if (crun_dir_p ("/usr", false, &err) <= 0)
+    return -1;
+  if (crun_dir_p ("/dev/zero", false, &err) != 0)
+    return -1;
+  if (crun_dir_p ("/hopefully/does/not/really/exist", false, &err) >= 0)
+    return -1;
+  crun_error_release (&err);
+  return 0;
+}
+
+static int
+test_write_read_file ()
+{
+  libcrun_error_t err = NULL;
+  cleanup_free char *name = NULL;
+  char dir[PATH_MAX];
+  size_t len;
+  size_t i;
+  int ret, failed = 0;
+  size_t max = 1 << 10;
+  cleanup_free char *written = xmalloc (max);
+
+  if (make_temp_dir (dir, sizeof (dir)) < 0)
+    return 77;
+
+  xasprintf (&name, "%s/write-file", dir);
+
+  for (i = 0; i < max; i++)
+    written[i] = i;
+
+  for (i = 1; i <= max; i *= 2)
+    {
+      cleanup_free char *read_buf = NULL;
+
+      ret = write_file (name, written, i, &err);
+      if (ret < 0)
+        {
+          failed = 1;
+          break;
+        }
+
+      ret = read_all_file (name, &read_buf, &len, &err);
+      if (ret < 0)
+        {
+          failed = 1;
+          break;
+        }
+
+      if (len != i)
+        {
+          failed = 1;
+          break;
+        }
+
+      if (memcmp (read_buf, written, len) != 0)
+        {
+          failed = 1;
+          break;
+        }
+    }
+
+  unlink (name);
+  rmdir (dir);
+  return failed ? -1 : 0;
+}
+
+static int
+read_with_max_size (int fd, size_t max, size_t expected_len, libcrun_error_t *err)
+{
+  cleanup_free char *buf = NULL;
+  size_t len;
+  int ret;
+
+  ret = read_all_fd_with_max_size (fd, "test", &buf, &len, max, err);
+  if (ret < 0)
+    return ret;
+
+  return len == expected_len ? 0 : -1;
+}
+
+static int
+test_read_all_fd_with_max_size ()
+{
+  libcrun_error_t err = NULL;
+  cleanup_free char *name = NULL;
+  char data[1025];
+  char dir[PATH_MAX];
+  size_t max = 1024;
+  int failed = 0;
+  int ret;
+
+  if (make_temp_dir (dir, sizeof (dir)) < 0)
+    return 77;
+
+  xasprintf (&name, "%s/file", dir);
+  memset (data, 'x', sizeof (data));
+
+  /* Regular file: the size is known from fstat.  */
+  for (size_t size = max; size <= max + 1; size++)
+    {
+      cleanup_close int fd = -1;
+
+      ret = write_file (name, data, size, &err);
+      if (ret < 0)
+        {
+          crun_error_release (&err);
+          failed = 1;
+          break;
+        }
+
+      fd = open (name, O_RDONLY | O_CLOEXEC);
+      if (fd < 0)
+        {
+          failed = 1;
+          break;
+        }
+
+      ret = read_with_max_size (fd, max, size, &err);
+      if (size <= max && ret != 0)
+        failed = 1;
+      if (size > max && (ret >= 0 || crun_error_get_errno (&err) != EFBIG))
+        failed = 1;
+      if (ret < 0)
+        crun_error_release (&err);
+    }
+
+  /* Pipe: fstat reports no size, the limit must be enforced while reading.  */
+  for (size_t size = max; size <= max + 1; size++)
+    {
+      cleanup_close int rfd = -1;
+      cleanup_close int wfd = -1;
+      int fds[2];
+
+      if (pipe2 (fds, O_CLOEXEC) < 0)
+        {
+          failed = 1;
+          break;
+        }
+      rfd = fds[0];
+      wfd = fds[1];
+
+      if (write (wfd, data, size) != (ssize_t) size)
+        {
+          failed = 1;
+          break;
+        }
+      close_and_reset (&wfd);
+
+      ret = read_with_max_size (rfd, max, size, &err);
+      if (size <= max && ret != 0)
+        failed = 1;
+      if (size > max && (ret >= 0 || crun_error_get_errno (&err) != EFBIG))
+        failed = 1;
+      if (ret < 0)
+        crun_error_release (&err);
+    }
+
+  unlink (name);
+  rmdir (dir);
+  return failed ? -1 : 0;
+}
+
+static int
+test_crun_path_exists ()
+{
+
+  libcrun_error_t err = NULL;
+  if (crun_path_exists ("/dev/null", &err) <= 0)
+    return -1;
+  if (crun_path_exists ("/usr/foo/bin/ls", &err) != 0)
+    return -1;
+  if (crun_path_exists ("/proc/sysrq-trigger", &err) != 1)
+    return -1;
+  return 0;
+}
+
+static int
+test_path_is_slash_dev ()
+{
+  if (! path_is_slash_dev ("/dev"))
+    return -1;
+  if (! path_is_slash_dev ("/dev//"))
+    return -1;
+  if (! path_is_slash_dev ("///dev///"))
+    return -1;
+  if (! path_is_slash_dev ("/dev/"))
+    return -1;
+  if (! path_is_slash_dev ("dev"))
+    return -1;
+  if (! path_is_slash_dev ("dev////"))
+    return -1;
+  if (path_is_slash_dev ("dev////foo"))
+    return -1;
+  if (path_is_slash_dev ("/dev/foo"))
+    return -1;
+  if (path_is_slash_dev ("/dev/foo/"))
+    return -1;
+  if (path_is_slash_dev ("/dev/foo/bar"))
+    return -1;
+  if (path_is_slash_dev ("///dev/foo//bar"))
+    return -1;
+  if (path_is_slash_dev ("///dev/foo/////"))
+    return -1;
+  return 0;
+}
+
+static int
+test_append_paths ()
+{
+#define PROLOGUE()               \
+  cleanup_free char *out = NULL; \
+  libcrun_error_t err = NULL;    \
+  int ret;
+
+#define EXPECT_STRING(exp)         \
+  {                                \
+    if (ret < 0)                   \
+      {                            \
+        crun_error_release (&err); \
+        return ret;                \
+      }                            \
+    if (out == NULL)               \
+      return -1;                   \
+    if (strcmp (out, exp))         \
+      return -1;                   \
+  }
+  {
+    PROLOGUE ();
+    ret = append_paths (&out, &err, "/sys/fs/cgroup/", "memory", "some/path", NULL);
+    EXPECT_STRING ("/sys/fs/cgroup/memory/some/path");
+  }
+  {
+    PROLOGUE ();
+    ret = append_paths (&out, &err, "/sys/fs/cgroup", "memory", "some/path", NULL);
+    EXPECT_STRING ("/sys/fs/cgroup/memory/some/path");
+  }
+  {
+    PROLOGUE ();
+    ret = append_paths (&out, &err, "/sys/fs/cgroup////////", "memory////////", "some/path//////", NULL);
+    EXPECT_STRING ("/sys/fs/cgroup/memory/some/path");
+  }
+  {
+    PROLOGUE ();
+    ret = append_paths (&out, &err, "/sys/fs/cgroup////////", "memory////////", "///////some/path//////", NULL);
+    EXPECT_STRING ("/sys/fs/cgroup/memory/some/path");
+  }
+  {
+    PROLOGUE ();
+    ret = append_paths (&out, &err, "", "//", "", "", "", NULL);
+    EXPECT_STRING ("/");
+  }
+  {
+    PROLOGUE ();
+    ret = append_paths (&out, &err, "///", "/", "", "///", "a", NULL);
+    EXPECT_STRING ("/a");
+  }
+  {
+    PROLOGUE ();
+    ret = append_paths (&out, &err, "////", "/////", "///", "", "", NULL);
+    EXPECT_STRING ("/");
+  }
+  {
+    PROLOGUE ();
+    ret = append_paths (&out, &err, "", "", "", "", "", NULL);
+    EXPECT_STRING ("");
+  }
+  {
+    PROLOGUE ();
+    ret = append_paths (&out, &err, "", "///sys/fs/cgroup////////", "", "some/path", NULL);
+    EXPECT_STRING ("/sys/fs/cgroup/some/path");
+  }
+  {
+    PROLOGUE ();
+    ret = append_paths (&out, &err, "a", "b", "c", "d", "a", "b", "c", "d", "a", "b", "c", "d",
+                        "a", "b", "c", "d", "a", "b", "c", "d", "a", "b", "c", "d",
+                        "a", "b", "c", "d", "a", "b", "c", "d", "a", "b", "c", "d", NULL);
+    if (ret == 0)
+      return -1;
+    crun_error_release (&err);
+  }
+  return 0;
+}
+
+#ifdef HAVE_SYSTEMD
+static int
+test_parse_sd_array ()
+{
+  char *out, *next;
+  libcrun_error_t err = NULL;
+  {
+    cleanup_free char *s = xstrdup ("       'firewalld.service'    ");
+    if (parse_sd_array (s, &out, &next, &err) < 0)
+      {
+        crun_error_release (&err);
+        return -1;
+      }
+    if (strcmp (out, "firewalld.service"))
+      return -1;
+    if (next != NULL)
+      return -1;
+  }
+  {
+    cleanup_free char *s = xstrdup ("'fir\\ewalld.ser\\vi\\ce']");
+    if (parse_sd_array (s, &out, &next, &err) < 0)
+      {
+        crun_error_release (&err);
+        return -1;
+      }
+    if (strcmp (out, "firewalld.service"))
+      return -1;
+    if (next != NULL)
+      return -1;
+  }
+  {
+    cleanup_free char *s = xstrdup ("'fi\\rew\\alld.s\\erv\\ice', 'foo.service']");
+    if (parse_sd_array (s, &out, &next, &err) < 0)
+      {
+        crun_error_release (&err);
+        return -1;
+      }
+    if (strcmp (out, "firewalld.service"))
+      return -1;
+    if (strcmp (next, " 'foo.service']"))
+      return -1;
+  }
+  return 0;
+}
+
+static int
+test_get_scope_path ()
+{
+#  define CHECK(x, y)                                      \
+    {                                                      \
+      cleanup_free char *r = x;                            \
+      if (strcmp (r, y))                                   \
+        {                                                  \
+          fprintf (stderr, "expected %s, got %s\n", y, r); \
+          return -1;                                       \
+        }                                                  \
+    }
+
+  CHECK (get_cgroup_scope_path ("foo.scope", "foo.scope"), "foo.scope");
+  CHECK (get_cgroup_scope_path ("/foo/bar/user.slice/foo.scope/a/b/c", "foo.scope"), "/foo/bar/user.slice/foo.scope");
+  CHECK (get_cgroup_scope_path ("/foo/bar-foo.scope/user.slice/foo.scope/a/b/c", "foo.scope"), "/foo/bar-foo.scope/user.slice/foo.scope");
+  CHECK (get_cgroup_scope_path ("/foo/foo.scope-bar/user.slice/foo.scope/a/b/c", "foo.scope"), "/foo/foo.scope-bar/user.slice/foo.scope");
+  CHECK (get_cgroup_scope_path ("////foo.scope", "foo.scope"), "////foo.scope");
+
+#  undef CHECK
+  return 0;
+}
+
+static int
+test_cpuset_string_to_bitmask ()
+{
+  libcrun_error_t err = NULL;
+  cleanup_free char *mask = NULL;
+  size_t mask_size;
+
+  if (cpuset_string_to_bitmask ("0", &mask, &mask_size, &err) < 0)
+    return -1;
+  if (mask_size != 1 || mask[0] != 0x01)
+    return -1;
+
+  free (mask);
+  mask = NULL;
+
+  if (cpuset_string_to_bitmask ("0-1", &mask, &mask_size, &err) < 0)
+    return -1;
+  if (mask_size != 1 || mask[0] != 0x03)
+    return -1;
+
+  free (mask);
+  mask = NULL;
+
+  if (cpuset_string_to_bitmask ("0,2", &mask, &mask_size, &err) < 0)
+    return -1;
+  if (mask_size != 1 || mask[0] != 0x05)
+    return -1;
+
+  free (mask);
+  mask = NULL;
+
+  if (cpuset_string_to_bitmask ("0-2", &mask, &mask_size, &err) < 0)
+    return -1;
+  if (mask_size != 1 || mask[0] != 0x07)
+    return -1;
+
+  free (mask);
+  mask = NULL;
+
+  if (cpuset_string_to_bitmask ("0,8", &mask, &mask_size, &err) < 0)
+    return -1;
+  if (mask_size != 2 || mask[0] != 0x01 || mask[1] != 0x01)
+    return -1;
+
+  free (mask);
+  mask = NULL;
+
+  if (cpuset_string_to_bitmask ("a", &mask, &mask_size, &err) == 0)
+    return -1;
+  crun_error_release (&err);
+
+  if (cpuset_string_to_bitmask ("-1", &mask, &mask_size, &err) == 0)
+    return -1;
+  crun_error_release (&err);
+
+  if (cpuset_string_to_bitmask ("0-", &mask, &mask_size, &err) == 0)
+    return -1;
+  crun_error_release (&err);
+
+  if (cpuset_string_to_bitmask ("0-2,4-6", &mask, &mask_size, &err) < 0)
+    return -1;
+  if (mask_size != 1 || mask[0] != 0x77)
+    return -1;
+
+  free (mask);
+  mask = NULL;
+
+  return 0;
+}
+#endif
+
+static int
+test_has_prefix ()
+{
+  if (! has_prefix ("hello world", "hello"))
+    return -1;
+  if (! has_prefix ("hello", "hello"))
+    return -1;
+  if (! has_prefix ("hello", ""))
+    return -1;
+  if (has_prefix ("hello", "world"))
+    return -1;
+  if (has_prefix ("hello", "hello world"))
+    return -1;
+  if (has_prefix ("", "hello"))
+    return -1;
+  return 0;
+}
+
+static int
+test_has_suffix ()
+{
+  if (! has_suffix ("hello world", "world"))
+    return -1;
+  if (! has_suffix ("world", "world"))
+    return -1;
+  if (! has_suffix ("hello", ""))
+    return -1;
+  if (has_suffix ("hello", "world"))
+    return -1;
+  if (has_suffix ("world", "hello world"))
+    return -1;
+  if (has_suffix ("", "hello"))
+    return -1;
+  return 0;
+}
+
+static int
+test_str_join_array ()
+{
+  {
+    char *array[] = { "a", "b", "c", NULL };
+    cleanup_free char *result = str_join_array (0, 3, array, ",");
+    if (result == NULL)
+      return -1;
+    if (strcmp (result, "a,b,c") != 0)
+      return -1;
+  }
+  {
+    char *array[] = { "hello", "world", NULL };
+    cleanup_free char *result = str_join_array (0, 2, array, " ");
+    if (result == NULL)
+      return -1;
+    if (strcmp (result, "hello world") != 0)
+      return -1;
+  }
+  {
+    char *array[] = { "single", NULL };
+    cleanup_free char *result = str_join_array (0, 1, array, ",");
+    if (result == NULL)
+      return -1;
+    if (strcmp (result, "single") != 0)
+      return -1;
+  }
+  {
+    /* Test with offset - size is the end index (exclusive) */
+    char *array[] = { "skip", "a", "b", NULL };
+    cleanup_free char *result = str_join_array (1, 3, array, "-");
+    if (result == NULL)
+      return -1;
+    if (strcmp (result, "a-b") != 0)
+      return -1;
+  }
+  return 0;
+}
+
+static int
+decode_b64 (const char *in, char *out, size_t *nbytes)
+{
+  size_t len = strlen (in);
+  int consumed;
+
+  consumed = base64_decode (in, len, out, len, nbytes);
+  return consumed == (int) len ? 0 : -1;
+}
+
+static int
+test_base64_decode ()
+{
+  struct
+  {
+    const char *in;
+    const char *out;
+  } valid[] = {
+    { "", "" },
+    { "Zg==", "f" },
+    { "Zm8=", "fo" }, /* codespell:ignore */
+    { "Zm9v", "foo" },
+    { "Zm9vYg==", "foob" },
+    { "Zm9vYmE=", "fooba" },
+    { "Zm9vYmFy", "foobar" },
+    { "Zm9v\nYmFy", "foobar" },
+  };
+  const char *invalid[] = {
+    "====",
+    "A===",
+    "Zg===",
+    "Zg=v",
+    "Zg==Zm9v",
+    "Zg======",
+    "Zm9",
+  };
+  char buf[32];
+  size_t nbytes;
+  size_t i;
+
+  for (i = 0; i < sizeof (valid) / sizeof (valid[0]); i++)
+    {
+      if (decode_b64 (valid[i].in, buf, &nbytes) < 0)
+        return -1;
+      if (nbytes != strlen (valid[i].out) || memcmp (buf, valid[i].out, nbytes) != 0)
+        return -1;
+    }
+
+  for (i = 0; i < sizeof (invalid) / sizeof (invalid[0]); i++)
+    {
+      if (decode_b64 (invalid[i], buf, &nbytes) == 0)
+        return -1;
+    }
+
+  return 0;
+}
+
+static int
+test_get_current_timestamp ()
+{
+  char buf[64];
+
+  get_current_timestamp (buf, sizeof (buf));
+
+  /* Check that timestamp is not empty */
+  if (buf[0] == '\0')
+    return -1;
+
+  /* Check that timestamp has expected format: starts with year (4 digits) */
+  if (buf[0] != '2') /* Year should start with 2 for 2xxx */
+    return -1;
+
+  /* Check that timestamp contains T separator (ISO 8601 format) */
+  if (strchr (buf, 'T') == NULL && strchr (buf, '-') == NULL)
+    return -1;
+
+  return 0;
+}
+
+static int
+test_crun_ensure_directory ()
+{
+  libcrun_error_t err = NULL;
+  cleanup_free char *path = NULL;
+  char dir[PATH_MAX];
+  int ret;
+
+  if (make_temp_dir (dir, sizeof (dir)) < 0)
+    return 77;
+
+  xasprintf (&path, "%s/subdir", dir);
+
+  /* Create directory */
+  ret = crun_ensure_directory (path, 0755, false, &err);
+  if (ret < 0)
+    {
+      crun_error_release (&err);
+      rmdir (dir);
+      return -1;
+    }
+
+  /* Verify it's a directory */
+  ret = crun_dir_p (path, false, &err);
+  if (ret <= 0)
+    {
+      rmdir (path);
+      rmdir (dir);
+      crun_error_release (&err);
+      return -1;
+    }
+
+  /* Creating again should succeed (already exists) */
+  ret = crun_ensure_directory (path, 0755, false, &err);
+  if (ret < 0)
+    {
+      rmdir (path);
+      rmdir (dir);
+      crun_error_release (&err);
+      return -1;
+    }
+
+  /* Cleanup */
+  rmdir (path);
+  rmdir (dir);
+  return 0;
+}
+
+static int
+test_channel_fd_pair_no_busy_loop_on_blocked_output ()
+{
+  /* When the output pipe is blocked, channel_fd_pair_process must not register
+     EPOLLIN on the input fd.  Verify by writing new data to the input AFTER
+     processing and checking that epoll_wait does not fire.  */
+  libcrun_error_t err = NULL;
+  cleanup_close int infd0 = -1, infd1 = -1, outfd0 = -1, outfd1 = -1;
+  cleanup_close int epollfd = -1;
+  cleanup_channel_fd_pair struct channel_fd_pair *channel = NULL;
+  struct epoll_event ev;
+  char buf[4096];
+  int input_pipe[2], output_pipe[2];
+  int ret;
+
+  if (pipe (input_pipe) < 0 || pipe (output_pipe) < 0)
+    return -1;
+
+  infd0 = input_pipe[0];
+  infd1 = input_pipe[1];
+  outfd0 = output_pipe[0];
+  outfd1 = output_pipe[1];
+
+  fcntl (input_pipe[0], F_SETFL, O_NONBLOCK);
+  fcntl (input_pipe[1], F_SETFL, O_NONBLOCK);
+  fcntl (output_pipe[0], F_SETFL, O_NONBLOCK);
+  fcntl (output_pipe[1], F_SETFL, O_NONBLOCK);
+
+  /* Fill the output pipe so writes return EAGAIN.  */
+  memset (buf, 'X', sizeof (buf));
+  while (write (output_pipe[1], buf, sizeof (buf)) > 0)
+    ;
+
+  /* Seed some input data so channel_fd_pair_process has work to do.  */
+  if (write (input_pipe[1], "A", 1) != 1)
+    return -1;
+
+  epollfd = epoll_create1 (EPOLL_CLOEXEC);
+  if (epollfd < 0)
+    return -1;
+
+  channel = channel_fd_pair_new (input_pipe[0], output_pipe[1], 4096);
+
+  ret = channel_fd_pair_process (channel, epollfd, &err);
+  if (ret < 0)
+    {
+      crun_error_release (&err);
+      return -1;
+    }
+
+  /* Write new data so that an edge-triggered EPOLLIN (if registered) fires.  */
+  if (write (input_pipe[1], "B", 1) != 1)
+    return -1;
+
+  /* With the fix EPOLLIN is not registered, so epoll_wait must time out.
+     Without the fix EPOLLIN|EPOLLET is registered and the new data triggers
+     an immediate wake-up.  */
+  ret = epoll_wait (epollfd, &ev, 1, 0);
+  if (ret > 0 && ev.data.fd == input_pipe[0])
+    {
+      fprintf (stderr, "epoll fired on input fd while output is blocked\n");
+      return -1;
+    }
+
+  return 0;
+}
+
+static int
+test_waitpid_ignore_stopped_no_busy_loop_on_traced_child ()
+{
+  /* A traced child reports its stops to the tracer even without WUNTRACED.
+     Once the stop is consumed, waitpid_ignore_stopped with WNOHANG must
+     return 0 instead of retrying waitpid with the stale status forever.  */
+  pid_t tester;
+  int status, ret = 0;
+  int i;
+
+  tester = fork ();
+  if (tester < 0)
+    return -1;
+  if (tester == 0)
+    {
+      siginfo_t info;
+      pid_t pid;
+
+      pid = fork ();
+      if (pid < 0)
+        _exit (1);
+      if (pid == 0)
+        {
+          prctl (PR_SET_PDEATHSIG, SIGKILL);
+          if (ptrace (PTRACE_TRACEME, 0, NULL, NULL) < 0)
+            _exit (77);
+          raise (SIGSTOP);
+          _exit (0);
+        }
+
+      /* Wait for the stop to be reported without consuming it.  */
+      if (waitid (P_PID, pid, &info, WEXITED | WSTOPPED | WNOWAIT) < 0)
+        _exit (1);
+      if (info.si_code == CLD_EXITED)
+        _exit (info.si_status == 77 ? 77 : 1);
+      if (info.si_code != CLD_TRAPPED)
+        _exit (1);
+
+      ret = waitpid_ignore_stopped (pid, &status, WNOHANG);
+
+      kill (pid, SIGKILL);
+      while (waitpid (pid, NULL, 0) < 0 && errno == EINTR)
+        ;
+      _exit (ret == 0 ? 0 : 1);
+    }
+
+  for (i = 0; i < 100; i++)
+    {
+      ret = waitpid (tester, &status, WNOHANG);
+      if (ret != 0)
+        break;
+      usleep (50000);
+    }
+  if (ret != tester)
+    {
+      fprintf (stderr, "waitpid_ignore_stopped busy loops on a traced child\n");
+      kill (tester, SIGKILL);
+      while (waitpid (tester, NULL, 0) < 0 && errno == EINTR)
+        ;
+      return -1;
+    }
+
+  if (! WIFEXITED (status))
+    return -1;
+  if (WEXITSTATUS (status) == 77)
+    return 77;
+  return WEXITSTATUS (status) == 0 ? 0 : -1;
+}
+
+static int
+test_channel_fd_pair_no_busy_loop_on_terminal_hangup ()
+{
+  /* Once every slave is closed, the pty master reports EPOLLHUP, which cannot
+     be masked, and reads fail with EIO.  channel_fd_pair_process must not
+     leave it registered level-triggered, or epoll_wait never blocks again.  */
+  libcrun_error_t err = NULL;
+  cleanup_close int master = -1, slave = -1, outfd0 = -1, outfd1 = -1;
+  cleanup_close int epollfd = -1;
+  cleanup_channel_fd_pair struct channel_fd_pair *channel = NULL;
+  struct epoll_event ev;
+  int output_pipe[2], in_fds[2];
+  char buf[16];
+  int i, ret;
+
+  master = posix_openpt (O_RDWR | O_NOCTTY | O_NONBLOCK);
+  if (master < 0)
+    return 77;
+  if (grantpt (master) < 0 || unlockpt (master) < 0)
+    return 77;
+  slave = open (ptsname (master), O_RDWR | O_NOCTTY);
+  if (slave < 0)
+    return 77;
+
+  if (pipe2 (output_pipe, O_NONBLOCK) < 0)
+    return -1;
+  outfd0 = output_pipe[0];
+  outfd1 = output_pipe[1];
+
+  /* Register the master level-triggered, as wait_for_process does.  */
+  in_fds[0] = master;
+  in_fds[1] = -1;
+  epollfd = epoll_helper (in_fds, NULL, NULL, NULL, &err);
+  if (epollfd < 0)
+    {
+      crun_error_release (&err);
+      return -1;
+    }
+
+  channel = channel_fd_pair_new (master, outfd1, 4096);
+
+  close_and_reset (&slave);
+
+  for (i = 0; i < 10; i++)
+    {
+      ret = epoll_wait (epollfd, &ev, 1, 0);
+      if (ret <= 0)
+        break;
+
+      ret = channel_fd_pair_process (channel, epollfd, &err);
+      if (ret < 0)
+        {
+          crun_error_release (&err);
+          return -1;
+        }
+    }
+  if (i == 10)
+    {
+      fprintf (stderr, "epoll keeps firing on a terminal that was hung up\n");
+      return -1;
+    }
+
+  /* The terminal can be opened again and its output must still be forwarded.  */
+  slave = open (ptsname (master), O_RDWR | O_NOCTTY);
+  if (slave < 0)
+    return -1;
+  if (write (slave, "A", 1) != 1)
+    return -1;
+
+  ret = epoll_wait (epollfd, &ev, 1, 1000);
+  if (ret != 1 || ev.data.fd != master)
+    {
+      fprintf (stderr, "epoll did not fire on a terminal that was opened again\n");
+      return -1;
+    }
+
+  ret = channel_fd_pair_process (channel, epollfd, &err);
+  if (ret < 0)
+    {
+      crun_error_release (&err);
+      return -1;
+    }
+
+  if (read (outfd0, buf, sizeof (buf)) != 1 || buf[0] != 'A')
+    return -1;
+
+  return 0;
+}
+
+static int
+test_format_default_id_mapping ()
+{
+  libcrun_error_t err = NULL;
+  cleanup_free char *out = NULL;
+  int ret;
+  uid_t host_uid = getuid ();
+
+  /* container_id=0: single-line or no mapping depending on subuid availability.  */
+  ret = format_default_id_mapping (&out, 0, host_uid, host_uid, 1, &err);
+  if (ret < 0)
+    {
+      crun_error_release (&err);
+      return -1;
+    }
+  if (ret == 0 && out == NULL)
+    return 77; /* SKIP: no subordinate UID range configured for this user.  */
+
+  if (out == NULL || ret == 0)
+    return -1;
+
+  free (out);
+  out = NULL;
+
+  /* container_id > 0: triggers multi-line mapping (the path fixed by P3-002).  */
+  ret = format_default_id_mapping (&out, 1000, host_uid, host_uid, 1, &err);
+  if (ret < 0)
+    {
+      crun_error_release (&err);
+      return -1;
+    }
+  if (ret == 0 && out == NULL)
+    return 77;
+
+  if (out == NULL || ret == 0)
+    return -1;
+
+  /* The buffer must contain 3 newlines (three mapping lines).  */
+  {
+    int newlines = 0;
+    const char *p;
+    for (p = out; *p; p++)
+      if (*p == '\n')
+        newlines++;
+    if (newlines != 3)
+      return -1;
+  }
+
+  /* The returned length must match the actual string length.  */
+  if (ret != (int) strlen (out))
+    return -1;
+
+  /* The first mapping line must start with "0 " (UIDs 0..container_id-1).
+     The bug at utils.c:1610 caused this line to be overwritten.  */
+  if (strncmp (out, "0 ", 2) != 0)
+    return -1;
+
+  /* Verify the mapping string contains the container_id (1000).  */
+  if (strstr (out, "1000 ") == NULL)
+    return -1;
+
+  return 0;
+}
+
+/* safe_openat must work when the rootfs is "/", both through openat2 and
+   through the fallback used when openat2 is not available.  */
+static int
+test_safe_openat_root ()
+{
+  libcrun_error_t err = NULL;
+  int rootfd, fd;
+
+  rootfd = open ("/", O_PATH | O_CLOEXEC);
+  if (rootfd < 0)
+    return -1;
+
+  fd = safe_openat (rootfd, "/", "proc/self/status", O_RDONLY | O_CLOEXEC, 0, &err);
+  close (rootfd);
+  if (fd < 0)
+    {
+      crun_error_release (&err);
+      return -1;
+    }
+  close (fd);
+
+  return 0;
+}
+
+/* A NULL rootfs is used for containers without a rootfs of their own.  */
+static int
+test_safe_openat_null_rootfs ()
+{
+  libcrun_error_t err = NULL;
+  int rootfd, fd;
+
+  rootfd = open ("/", O_PATH | O_CLOEXEC);
+  if (rootfd < 0)
+    return -1;
+
+  fd = safe_openat (rootfd, NULL, "proc/self/status", O_RDONLY | O_CLOEXEC, 0, &err);
+  close (rootfd);
+  if (fd < 0)
+    {
+      crun_error_release (&err);
+      return -1;
+    }
+  close (fd);
+
+  return 0;
+}
+
+static int
+check_safe_create_through_symlink (int rootfd, const char *root, bool dir, const char *path, const char *expected)
+{
+  libcrun_error_t err = NULL;
+  struct stat st_fd, st_expected;
+  int fd, ret;
+
+  fd = crun_safe_create_and_open_ref_at (dir, rootfd, root, path, 0755, &err);
+  if (fd < 0)
+    {
+      crun_error_release (&err);
+      return -1;
+    }
+
+  ret = fstat (fd, &st_fd);
+  close (fd);
+  if (ret < 0)
+    return -1;
+
+  if (fstatat (rootfd, expected, &st_expected, AT_SYMLINK_NOFOLLOW) < 0)
+    return -1;
+
+  if (st_fd.st_dev != st_expected.st_dev || st_fd.st_ino != st_expected.st_ino)
+    return -1;
+
+  if (dir != S_ISDIR (st_expected.st_mode))
+    return -1;
+
+  return 0;
+}
+
+/* When creating a mount target, dangling symlinks on the way are resolved
+   within the root, and their targets are created, a relative target relative
+   to the symlink.  */
+static int
+test_safe_create_through_dangling_symlinks ()
+{
+  char dir[PATH_MAX];
+  int rootfd, ret = -1;
+
+  if (make_temp_dir (dir, sizeof (dir)) < 0)
+    return 77;
+
+  rootfd = open (dir, O_PATH | O_DIRECTORY | O_CLOEXEC);
+  if (rootfd < 0)
+    goto out;
+
+  if (mkdirat (rootfd, "etc", 0755) < 0
+      || symlinkat ("/abs/x", rootfd, "jump") < 0
+      || symlinkat ("/jump/y/file", rootfd, "etc/abs") < 0
+      || symlinkat ("sub/file", rootfd, "etc/rel") < 0
+      || symlinkat ("../up/dir", rootfd, "etc/up") < 0)
+    goto out;
+
+  if (check_safe_create_through_symlink (rootfd, dir, false, "/etc/abs", "abs/x/y/file") < 0
+      || check_safe_create_through_symlink (rootfd, dir, false, "/etc/rel", "etc/sub/file") < 0
+      || check_safe_create_through_symlink (rootfd, dir, true, "/etc/up", "up/dir") < 0)
+    goto out;
+
+  /* This is not done for the working directory.  */
+  if (symlinkat ("/cwd/dir", rootfd, "etc/cwd") < 0)
+    goto out;
+  {
+    libcrun_error_t err = NULL;
+
+    if (crun_safe_ensure_directory_at (rootfd, dir, "/etc/cwd", 0755, &err) == 0)
+      goto out;
+    crun_error_release (&err);
+    if (faccessat (rootfd, "cwd", F_OK, AT_SYMLINK_NOFOLLOW) == 0)
+      goto out;
+  }
+
+  ret = 0;
+
+out:
+  if (rootfd >= 0)
+    close (rootfd);
+  {
+    char *args[] = { "/bin/rm", "-rf", dir, NULL };
+    libcrun_error_t err = NULL;
+
+    if (run_process (args, &err) != 0)
+      crun_error_release (&err);
+  }
+  return ret;
+}
+
+/* A symlink as the last component of a file mount target must be resolved
+   inside the root: if that fails, the lookup must not fall back to resolving
+   it from the process root.  */
+static int
+test_safe_create_symlink_not_followed_from_host ()
+{
+  libcrun_error_t err = NULL;
+  cleanup_free char *outside = NULL;
+  cleanup_free char *root = NULL;
+  cleanup_free char *first = NULL;
+  char dir[PATH_MAX];
+  int rootfd = -1, fd, ret = -1;
+  char *slash;
+
+  if (make_temp_dir (dir, sizeof (dir)) < 0)
+    return 77;
+
+  xasprintf (&outside, "%s/outside", dir);
+  xasprintf (&root, "%s/root", dir);
+  if (write_file (outside, "x", 1, &err) < 0 || mkdir (root, 0755) < 0)
+    goto out;
+
+  rootfd = open (root, O_PATH | O_DIRECTORY | O_CLOEXEC);
+  if (rootfd < 0)
+    goto out;
+
+  /* Make the first component of OUTSIDE a file in the root, so that the
+     symlink cannot be resolved there.  */
+  first = xstrdup (outside + 1);
+  slash = strchr (first, '/');
+  if (slash)
+    *slash = '\0';
+  fd = openat (rootfd, first, O_CREAT | O_WRONLY | O_CLOEXEC, 0644);
+  if (fd < 0)
+    goto out;
+  close (fd);
+
+  if (symlinkat (outside, rootfd, "target") < 0)
+    goto out;
+
+  fd = crun_safe_create_and_open_ref_at (false, rootfd, root, "/target", 0755, &err);
+  if (fd >= 0)
+    {
+      close (fd);
+      goto out;
+    }
+  crun_error_release (&err);
+
+  ret = 0;
+
+out:
+  if (err)
+    crun_error_release (&err);
+  if (rootfd >= 0)
+    close (rootfd);
+  {
+    char *args[] = { "/bin/rm", "-rf", dir, NULL };
+
+    if (run_process (args, &err) != 0)
+      crun_error_release (&err);
+  }
+  return ret;
+}
+
+/* The content of the root is not trusted: an existing FIFO, either on the
+   way to the target or in its place, must be rejected or accepted at once
+   instead of blocking the open until a peer shows up.  */
+static int
+test_safe_ensure_does_not_block_on_fifo ()
+{
+  libcrun_error_t err = NULL;
+  char dir[PATH_MAX];
+  int rootfd = -1, fd, ret = -1;
+
+  if (make_temp_dir (dir, sizeof (dir)) < 0)
+    return 77;
+
+  /* Fail instead of hanging.  */
+  alarm (30);
+
+  rootfd = open (dir, O_PATH | O_DIRECTORY | O_CLOEXEC);
+  if (rootfd < 0)
+    goto out;
+
+  if (mkfifoat (rootfd, "fifo", 0700) < 0)
+    goto out;
+
+  /* The FIFO is in place of a parent directory.  */
+  fd = crun_safe_create_and_open_ref_at (false, rootfd, dir, "/fifo/file", 0755, &err);
+  if (fd >= 0)
+    {
+      close (fd);
+      goto out;
+    }
+  if (crun_error_get_errno (&err) != ENOTDIR)
+    goto out;
+  crun_error_release (&err);
+
+  if (crun_safe_ensure_directory_at (rootfd, dir, "/fifo/dir", 0755, &err) == 0)
+    goto out;
+  if (crun_error_get_errno (&err) != ENOTDIR)
+    goto out;
+  crun_error_release (&err);
+
+  /* The FIFO is in place of the file.  */
+  if (crun_safe_ensure_file_at (rootfd, dir, "/fifo", 0755, &err) < 0)
+    goto out;
+
+  if (create_file_if_missing_at (rootfd, "fifo", 0700, &err) == 0)
+    goto out;
+  crun_error_release (&err);
+
+  ret = 0;
+
+out:
+  alarm (0);
+  crun_error_release (&err);
+  if (rootfd >= 0)
+    close (rootfd);
+  {
+    char *args[] = { "/bin/rm", "-rf", dir, NULL };
+
+    if (run_process (args, &err) != 0)
+      crun_error_release (&err);
+  }
+  return ret;
+}
+
+int
+main ()
+{
+  RUN_TEST (test_crun_path_exists);
+  RUN_TEST (test_write_read_file);
+  RUN_TEST (test_read_all_fd_with_max_size);
+  RUN_TEST (test_run_process);
+  RUN_TEST (test_dir_p);
+  RUN_TEST (test_socket_pair);
+  RUN_TEST (test_send_receive_fd);
+  RUN_TEST (test_append_paths);
+  RUN_TEST (test_path_is_slash_dev);
+  RUN_TEST (test_has_prefix);
+  RUN_TEST (test_has_suffix);
+  RUN_TEST (test_str_join_array);
+  RUN_TEST (test_base64_decode);
+  RUN_TEST (test_get_current_timestamp);
+  RUN_TEST (test_crun_ensure_directory);
+  RUN_TEST (test_safe_create_through_dangling_symlinks);
+  RUN_TEST (test_safe_ensure_does_not_block_on_fifo);
+  RUN_TEST (test_safe_create_symlink_not_followed_from_host);
+  RUN_TEST (test_channel_fd_pair_no_busy_loop_on_blocked_output);
+  RUN_TEST (test_waitpid_ignore_stopped_no_busy_loop_on_traced_child);
+  RUN_TEST (test_channel_fd_pair_no_busy_loop_on_terminal_hangup);
+  RUN_TEST (test_format_default_id_mapping);
+  RUN_TEST (test_safe_openat_root);
+  RUN_TEST (test_safe_openat_null_rootfs);
+#ifdef HAVE_SYSTEMD
+  RUN_TEST (test_parse_sd_array);
+  RUN_TEST (test_get_scope_path);
+  RUN_TEST (test_cpuset_string_to_bitmask);
+#endif
+  print_tap_plan ();
+  return 0;
+}
