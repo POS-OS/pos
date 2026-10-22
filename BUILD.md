@@ -393,10 +393,10 @@ the gcc build, so the C++ headers a program is compiled with and the
 libstdc++ it runs on always come from the same gcc. gcc installs in
 `/pos/sdk`; its recipe moves the runtime's libraries to `/pos/lib` and
 points the names the linker looks up (`/pos/sdk/lib/libstdc++.so`) at
-them. gcc's other target libraries (the sanitizers, libitm, libquadmath,
-libssp) stay in `/pos/sdk/lib`, where the loader does not look: a program
-using them runs with `LD_LIBRARY_PATH=/pos/sdk/lib` or links them
-statically (`-static-libasan`).
+them. gcc-runtime also has the run-time libraries of gcc's other target
+libraries (the sanitizers, libitm, libquadmath, libssp), as Arch's
+gcc-libs: in `/pos/sdk/lib` the loader would not find them, and a program
+built with `-fsanitize=address` would not run.
 
 `util-linux-bootstrap` breaks a cycle with a bootstrap package: it is
 util-linux without libsystemd; systemd requires it, and

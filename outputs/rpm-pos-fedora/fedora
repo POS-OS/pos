@@ -40,7 +40,7 @@ ncurses ncurses ncurses-base
 readline readline
 sqlite sqlite sqlite-libs
 libunistring libunistring
-gcc-runtime libgcc libstdc++ libatomic libgomp
+gcc-runtime libgcc libstdc++ libatomic libgomp libquadmath
 gmp gmp gmp-c++
 mpfr mpfr
 # Not icu: POS has ICU 79, Fedora libicu 77.

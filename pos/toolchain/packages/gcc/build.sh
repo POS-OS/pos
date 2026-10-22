@@ -78,16 +78,22 @@ EOF2
     --without-isl
 
   # gcc-runtime: libgcc_s, libstdc++, libatomic and libgomp, split as Fedora
-  # splits them. The output keeps what programs load at run time (lib*.so.N)
+  # splits them, and the target libraries Fedora packages on their own, as
+  # Arch's gcc-libs has them: the sanitizers (asan, hwasan, lsan, tsan,
+  # ubsan), libitm, libquadmath and libssp. The loader does not search
+  # /pos/sdk/lib, so a program built with them runs only where they are in
+  # /pos/lib. The output keeps what programs load at run time (lib*.so.N)
   # and the libstdc++ gdb pretty-printers, in /pos: they are pos's, not the
   # sdk's. Everything used only when compiling or linking stays with gcc,
   # in the sdk prefix: headers, the compiler's own directory (lib/gcc: crt
   # files, libgcc.a, unwind.h, omp.h), static libraries, the unversioned
-  # lib*.so names the linker looks up, libgomp.spec and
-  # libstdc++.modules.json.
+  # lib*.so names the linker looks up, the .spec files, the sanitizers'
+  # preinit objects and libstdc++.modules.json.
   runtime=$(pkg_output gcc-runtime)
   make DESTDIR="$runtime" install-target-libgcc install-target-libatomic \
-       install-target-libstdc++-v3 install-target-libgomp
+       install-target-libstdc++-v3 install-target-libgomp \
+       install-target-libsanitizer install-target-libitm \
+       install-target-libquadmath install-target-libssp
   rm -rf "${runtime}${sdk_prefix}/include" "${runtime}${sdk_prefix}/lib/gcc"
   find "${runtime}${sdk_prefix}/lib" "${runtime}${prefix}/lib" -maxdepth 1 ! -type d ! -name 'lib*.so.*' -delete
   mv "${runtime}${sdk_prefix}"/lib/lib*.so.* "${runtime}${prefix}/lib/"
