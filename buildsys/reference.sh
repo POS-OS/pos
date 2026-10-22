@@ -276,11 +276,13 @@ cmd_reference() {
     trees+=("dest/$p")
     [[ ! -d $bdir/debug/$p ]] || debug+=("debug/$p")
   done
+  # Written again when it is there: what a build stores follows the
+  # checkout's stages, which may have changed since. A copy restored from
+  # the archive before goes, so the next build restores this one.
   out=$store/$(reference_archive "$id" "$kind")
-  if [[ ! -f $out ]]; then
-    tar --zstd -cf "$out.tmp" -C "$bdir" info "${trees[@]}" "${debug[@]}"
-    mv "$out.tmp" "$out"
-  fi
+  tar --zstd -cf "$out.tmp" -C "$bdir" info "${trees[@]}" "${debug[@]}"
+  mv "$out.tmp" "$out"
+  rm -rf "${refs:?}/$id"
   echo "$id" >"$store/default-$kind"
   echo "$out (${#trees[@]} packages), the default $kind reference"
 }
