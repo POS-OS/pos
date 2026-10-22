@@ -628,7 +628,9 @@ flags have to be passed explicitly. Files a package installs into `etc/` or
 `systemd-tmpfiles` copies a file into place where it is missing, at every
 boot and when an image is made (`fs_factory`). glibc's nss_db helper is one of them: it
 is installed as `/var/db/Makefile` and generates the `.db` files there from
-`/etc`. Packages that have a separate vendor directory (pam's `vendordir`)
+`/etc`. A path the package's own tmpfiles.d files already create
+(systemd's `credstore.conf` and `20-systemd-*.conf` links) gets no line,
+as tmpfiles would warn about the duplicate. Packages that have a separate vendor directory (pam's `vendordir`)
 ship their defaults there instead. `DESTDIR` is only the staging directory
 under `work/` used at install time. It is not part of the running system.
 

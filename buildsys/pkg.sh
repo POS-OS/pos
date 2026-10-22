@@ -311,13 +311,18 @@ _pkg_cleanup() {
 # Move shipped /etc and /var files into the factory tree. Reject anything a
 # package tried to put in ${prefix}/etc or ${prefix}/var. A tmpfiles.d file
 # of the package (factory-<package>.conf) copies each into place where it
-# is missing (C lines), at boot and when an image is made.
+# is missing (C lines), at boot and when an image is made. A path one of
+# the package's own tmpfiles.d lines already creates (systemd's
+# 20-systemd-*.conf, credstore.conf) gets no line: tmpfiles would read both
+# and warn about the duplicate. Lines that only adjust a path (z, a, h)
+# leave it in.
 # Inputs:
 #   [$1]    staging directory to process (defaults to $dest_dir)
 _pkg_factory() {
-  local dest=${1:-$dest_dir} kind f
+  local dest=${1:-$dest_dir} kind f path
   local factory=${dest}${prefix}/share/factory
   local conf=${dest}${prefix}/lib/tmpfiles.d/factory-$(basename "$dest").conf
+  local -A named=()
   rm -f "$conf"
   for kind in etc var; do
     if [[ -d ${dest}${prefix}/${kind} ]]; then
@@ -332,16 +337,24 @@ _pkg_factory() {
   done
   [[ -d $factory ]] || return 0
   mkdir -p "$(dirname "$conf")"
+  for f in "$(dirname "$conf")"/*.conf; do
+    [[ -f $f ]] || continue
+    while read -r type path _; do
+      [[ ${type//[^[:alpha:]]/} != [fFdDvqQpLcbC] ]] || named[$path]=1
+    done < <(grep -v -E '^[[:space:]]*(#|$)' "$f")
+  done
   # Files and links are copied; an empty directory (sudoers.d) is made
   # with its mode, as the factory tree loses it with the empty ones. Group
   # write is dropped unless sticky, as outputs do (output-plugins.d: fs.sh,
   # rpm.sh).
   (cd "$factory" && find . \( -type f -o -type l \) -printf '%P\n' | sort) |
     while read -r f; do
+      [[ -z ${named[/$f]:-} ]] || continue
       echo "C /$f - - - - ${prefix}/share/factory/$f"
     done >"$conf"
   (cd "$factory" && find . -mindepth 1 -type d -empty -printf '%m %P\n' | sort -k2) |
     while read -r m f; do
+      [[ -z ${named[/$f]:-} ]] || continue
       ((8#$m & 01000)) || m=$(printf '%o' $((8#$m & ~020)))
       echo "d /$f $m - - -"
     done >>"$conf"
