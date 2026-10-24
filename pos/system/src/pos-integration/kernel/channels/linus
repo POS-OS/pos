@@ -1,0 +1,24 @@
+# Linus Torvalds' mainline tree, the release kernel.org names mainline
+# (release candidates included), built on this machine: the fedora
+# channel's configuration, with the modules seen loaded built in
+# (localyesconfig) and the rest left out.
+description Mainline kernel built on this machine
+format build
+releases https://www.kernel.org/releases.json
+moniker mainline
+localversion -local
+config-from fedora
+# No BTF (needs pahole), no debug info, no module signing (no key to sign
+# with that the machine enrolls).
+config --disable DEBUG_INFO_BTF
+config --enable DEBUG_INFO_NONE --disable DEBUG_INFO_DWARF_TOOLCHAIN_DEFAULT --disable DEBUG_INFO_DWARF4 --disable DEBUG_INFO_DWARF5
+config --disable MODULE_SIG
+# New compilers bring new warnings: they do not stop the build.
+config --disable WERROR --disable DRM_WERROR
+# Directories whose modules stay modules (LMC_KEEP), loaded or not: a
+# driver that loads firmware when it starts, such as amdgpu's, finds it
+# on the root as a module; built in, it starts before the root is there.
+#keep drivers/gpu
+# POS's compiler and linker (the sdk), not others a system has in its PATH.
+make CC=/pos/sdk/bin/gcc HOSTCC=/pos/sdk/bin/gcc LD=/pos/sdk/bin/ld
+requires /pos/sdk/bin/gcc /pos/sdk/bin/ld make flex bison bc perl

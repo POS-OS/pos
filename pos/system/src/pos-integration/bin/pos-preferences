@@ -1,0 +1,94 @@
+#!/pos/bin/bash
+# The global system preferences: settings of POS's own tools, such as the
+# kernel channels of pos-kernel. A key is a name with a dot after the tool
+# it belongs to (kernel.channels); its value is the rest of the line. POS's
+# defaults are in /pos/lib/pos/preferences; /etc/pos/preferences holds
+# what the administrator chose, and a key there replaces POS's default.
+# Lines are "<key> <value>", # starts a comment.
+#
+#   pos-preferences list                   every key: <key> <value>
+#   pos-preferences get <key>              the value of a key
+#   pos-preferences set <key> [<value>...] choose a value (in /etc)
+#   pos-preferences unset <key>            back to POS's default
+set -euo pipefail
+
+defaults=/pos/lib/pos/preferences
+chosen=/etc/pos/preferences
+
+usage() {
+  echo "usage: pos-preferences list | get <key> | set <key> [<value>...] | unset <key>" >&2
+  exit 2
+}
+
+die() {
+  echo "pos-preferences: $*" >&2
+  exit 1
+}
+
+# The keys and values of a file without comments and blank lines.
+# Inputs:
+#   $1    file (may be missing)
+# Outputs:
+#   "<key> <value>" lines
+entries() {
+  [[ -f $1 ]] || return 0
+  sed -e 's/#.*//' -e 's/[[:space:]]*$//' -e '/^[[:space:]]*$/d' "$1"
+}
+
+# Every key, the chosen value before POS's default.
+# Outputs:
+#   "<key> <value>" lines, one per key
+list() {
+  { entries "$chosen"; entries "$defaults"; } | awk '!seen[$1]++'
+}
+
+# Inputs:
+#   $1    key
+# Outputs:
+#   the key's value; status 1 when the key is not set anywhere
+get() {
+  list | awk -v key="$1" '
+    $1 == key { found = 1; sub(/^[^[:space:]]+[[:space:]]*/, ""); print }
+    END { exit !found }'
+}
+
+# Write /etc/pos/preferences without a key's line, then, for set, with
+# its new one. Comments and the other keys stay as they are.
+# Inputs:
+#   $1      set or unset
+#   $2      key
+#   ${@:3}  value for set (none: an empty value)
+write() {
+  local how=$1 key=$2 tmp
+  shift 2
+  mkdir -p "${chosen%/*}"
+  tmp=$chosen.tmp
+  if [[ -f $chosen ]]; then
+    awk -v key="$key" '$1 != key' "$chosen" >"$tmp"
+  else
+    echo "# Global system preferences (pos-preferences); POS's defaults are in $defaults." >"$tmp"
+  fi
+  [[ $how == unset ]] || echo "$key${*:+ $*}" >>"$tmp"
+  mv "$tmp" "$chosen"
+}
+
+case ${1:-} in
+  list)
+    (($# == 1)) || usage
+    list
+    ;;
+  get)
+    (($# == 2)) || usage
+    get "$2" || die "no preference $2"
+    ;;
+  set)
+    (($# >= 2)) || usage
+    [[ $2 == *.* && $2 != *[[:space:]#]* ]] || die "not a key: $2 (<tool>.<name>)"
+    write set "${@:2}"
+    ;;
+  unset)
+    (($# == 2)) || usage
+    write unset "$2"
+    ;;
+  *) usage ;;
+esac

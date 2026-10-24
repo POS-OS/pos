@@ -1,0 +1,7 @@
+# The newest stable kernel series of kernel.org, built with Fedora's
+# configuration by Fedora's kernel-vanilla project (COPR
+# @kernel-vanilla/stable, https://fedoraproject.org/wiki/Kernel_Vanilla_Repositories).
+description Stable kernel
+format rpm
+repo https://download.copr.fedorainfracloud.org/results/@kernel-vanilla/stable/fedora-44-x86_64
+packages kernel-core kernel-modules-core kernel-modules

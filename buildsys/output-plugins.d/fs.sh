@@ -156,43 +156,36 @@ fs_dnf() {
   rpm --root "$root" -qa --qf '%{name}-%{evr}.%{arch}\n' | sort >"$(output_file packages)"
 }
 
-# Install a hosted kernel into a tree without rpm: the Fedora packages are
-# downloaded and unpacked into it, then POS's kernel-install adds the
-# kernel, as Fedora's scriptlet does on an RPM system: its plugins run
-# depmod, dracut (the initramfs) and write the boot loader entry into
-# /boot (configured by /etc/kernel). The packages' /lib/modules is the
-# tree's link to /usr/lib/modules, where POS's kmod looks, which tar does
-# not write through: they are unpacked next to the tree and merged into
-# it. /proc, /sys, /dev and /boot are mounted as for fs_dnf.
+# Install a hosted kernel into a tree without rpm, as the system's
+# pos-kernel does: the channel's packages are downloaded from Fedora's
+# repositories (dnf, on the host) and the tree's pos-kernel imports them
+# into its archive and adds their boot entry with POS's kernel-install:
+# its plugins run depmod, dracut (the initramfs) and write the entry into
+# /boot (configured by /etc/kernel). /proc, /sys, /dev and /boot are
+# mounted as for fs_dnf.
 # Inputs:
-#   $@    Fedora kernel package names
+#   $1    kernel channel (pos-kernel's), one the tree's preferences enable
+#   ${@:2}  its packages, Fedora package names
 #   work
 fs_kernel() {
-  local root=$work/root rpms=$work/kernel-rpms f kver
-  local -a kvers
-  rm -rf "$rpms" "$work/boot"
-  mkdir -p "$rpms/tree" "$work/boot"
-  dnf -q download --releasever="$(rpm -E %fedora)" --destdir="$rpms" "$@"
-  for f in "$rpms"/*.rpm; do
-    rpm2archive - <"$f" | tar -xzf - -C "$rpms/tree"
-  done
-  rsync -a --keep-dirlinks "$rpms/tree/" "$root/"
-  rm -rf "$rpms"
-  mapfile -t kvers < <(ls "$root/usr/lib/modules")
-  ((${#kvers[@]} == 1)) || die "$output: expected one kernel, found: ${kvers[*]}"
-  kver=${kvers[0]}
-  export root kver
+  local root=$work/root channel=$1 rpms=var/tmp/kernel-rpms
+  shift
+  rm -rf "$root/$rpms" "$work/boot"
+  mkdir -p "$root/$rpms" "$work/boot"
+  dnf -q download --releasever="$(rpm -E %fedora)" --destdir="$root/$rpms" "$@"
+  export root channel rpms
   unshare -m bash -euo pipefail -c '
   mount -t proc proc "$root/proc"
   mount --rbind /sys "$root/sys"
   mount --rbind /dev "$root/dev"
   mount -t tmpfs -o mode=0755 tmpfs "$root/boot"
+  files=("$root/$rpms"/*.rpm)
   chroot "$root" env PATH=/pos/bin:/pos/sbin \
-    kernel-install add "$kver" "/usr/lib/modules/$kver/vmlinuz"
+    pos-kernel import "$channel" "${files[@]#"$root"}"
   cp -a "$root/boot/." "$1/"
   ' fs_kernel "$work/boot"
   cp -a "$work/boot/." "$root/boot/"
-  rm -rf "$work/boot" "$root/var/tmp/"*
+  rm -rf "$work/boot" "$root/var/tmp/"* "$root/var/cache/pos"
 }
 
 # Archive the tree as pos-<output>-<stem>.tar.zst. Owners are kept as

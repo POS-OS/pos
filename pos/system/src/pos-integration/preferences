@@ -1,0 +1,9 @@
+# POS's defaults of the global system preferences (pos-preferences).
+# /etc/pos/preferences replaces a key; this file is part of /pos.
+
+# pos-kernel: the kernel channels a system boots, the channel whose newest
+# kernel is booted by default, and how many kernels of a channel the
+# archive keeps.
+kernel.channels fedora
+kernel.default fedora
+kernel.keep 3

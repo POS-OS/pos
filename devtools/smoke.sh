@@ -57,6 +57,15 @@ check "QEMU guest agent" bash -c 'systemctl is-active qemu-guest-agent &&
   [[ $(systemctl show -P NRestarts qemu-guest-agent) == 0 ]] ||
   { systemctl status --no-pager qemu-guest-agent; false; }'
 check "modprobe" bash -c 'modprobe vfat && grep -q "^vfat " /proc/modules'
+# The modules are out of /usr: /usr/lib/modules links to pos-kernel's
+# directory, where vm-disk's kernel is a link into the archive and
+# vm-disk-dnf's the kernel package's files.
+check "kernel modules in /var/lib/pos/kernel" bash -c '
+  [[ $(readlink -f /usr/lib/modules/$(uname -r)) == /var/lib/pos/kernel/* ]] || { ls -l /usr/lib/modules; false; }'
+if [[ ! -x /usr/bin/dnf ]]; then
+  check "pos-kernel boots the fedora channel" bash -c 'pos-kernel list | grep -x "fedora $(uname -r) default running" ||
+    { pos-kernel list; false; }'
+fi
 check "network link routable" bash -c 'networkctl list --no-legend | grep -q routable || { networkctl list; false; }'
 # On an RPM system (vm-dnf): Fedora packages install on top of POS.
 if [[ -x /usr/bin/dnf ]]; then

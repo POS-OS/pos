@@ -667,9 +667,10 @@ outside `/pos` (`buildsys/build.sh` warns on it).
   Its prepare recipe adds `/pos/lib` before `/usr/lib`, as units have the
   prefix before `/usr/lib`, so packages outside POS (Fedora's on a
   `pos-fedora` system, a kernel) are still read.
-* kmod: `-Ddistconfdir=/pos/lib` for `modprobe.d`/`depmod.d`. Modules stay
-  in `/usr/lib/modules`, where kernel packages install them: POS boots
-  kernels other projects build. The kernel loads modules on demand with
+* kmod: `-Ddistconfdir=/pos/lib` for `modprobe.d`/`depmod.d`. Modules are
+  found in `/usr/lib/modules`, where kernel packages install them: POS boots
+  kernels other projects build. A disk's `/usr/lib/modules` links to
+  `/var/lib/pos/kernel/modules` (see "Kernels"). The kernel loads modules on demand with
   the modprobe its build names (`/usr/bin/modprobe` in Fedora's); kmod's
   `sysctl.d/50-kmod.conf` sets `kernel.modprobe` to `/pos/sbin/modprobe`.
 * systemd: programs a unit names without a path, and the `PATH` of
@@ -928,13 +929,14 @@ only sets the version tag.
 
 `vm-disk` is a bootable POS system without an RPM layer: core-libs and
 system, Fedora's kernel and a disk (see "Disks"). `fs_kernel` installs
-Fedora kernel packages into a tree without rpm: it downloads them from
-Fedora's repositories, unpacks them into the tree and runs POS's
-kernel-install there, as Fedora's scriptlet does in vm-disk-dnf: its
-plugins run depmod, POS's dracut, which makes the initramfs, and write the
-boot loader entry (`root/etc/kernel`). The modules are in
-`/usr/lib/modules`, with `/lib/modules` a link to it, the path kernel
-packages and dracut use.
+the kernel of a pos-kernel channel (`fedora`) as a running system would
+(see "Kernels"): it downloads the channel's packages from Fedora's
+repositories with dnf, and the tree's `pos-kernel import` unpacks them
+into its archive and adds the boot entry with POS's kernel-install, whose
+plugins run depmod, POS's dracut, which makes the initramfs, and write
+the entry (`root/etc/kernel`). `/lib/modules` links to `/usr/lib/modules`,
+the path kernel packages and dracut use, and that to
+`/var/lib/pos/kernel/modules`.
 
 ## Images made with dnf
 `fs_dnf` makes the tree with `dnf --installroot`: POS as the base of an
@@ -977,7 +979,10 @@ scriptlet runs POS's kernel-install (vm-disk's `root/etc/kernel`: Type #1
 boot loader entries, the kernel command line), whose plugins are POS's
 (depmod, the loader entry, and dracut's, which makes the initramfs from
 POS's systemd, udev and libraries). The kernel, initramfs and entry are in
-`/boot`.
+`/boot`. The root has `/usr/lib/modules` as a link to
+`/var/lib/pos/kernel/modules` before dnf installs (its `layout`): rpm keeps
+a link where a package has a directory, so the kernel package's modules
+go there, out of `/usr`, and `rpm -V` is clean.
 
 ## Disks
 `disk_make` makes the tree a disk, `pos-<output>-<stem>.qcow2`: the
@@ -1042,8 +1047,80 @@ units, module loading in the initrd and after, unit file modes, the login
 prompt on tty1, the QEMU guest agent, network and dnf, the PAM services
 and sudo. Its status is the number of failed checks. `disk_check` runs it in `output_host()` (see "Build numbers").
 
+## Kernels
+POS boots kernels other projects build. `pos-kernel` (`/pos/sbin`,
+pos-integration) installs and updates them on a running system, from
+kernel channels: `fedora` (Fedora's kernel, the updates of the Fedora
+release POS's build is made with), `mainline` and `stable` (kernel.org's
+trees built with Fedora's configuration by Fedora's kernel-vanilla
+project, COPR `@kernel-vanilla`, Thorsten Leemhuis'), and `linus`,
+kernel.org's mainline release built on the machine. README.md has the
+commands.
+
+* A channel is a file in `/pos/lib/pos/kernel/channels`
+  (`/etc/pos/kernel/channels` replaces one): `description`, `format`,
+  and the format's keys. The format is a plugin in
+  `/pos/lib/pos/kernel/formats` with `format_available` (the kernel
+  versions the channel has), `format_download` and `format_unpack`.
+  `rpm` reads rpm-md repositories (`repo` base URLs, `metalink` URLs of
+  Fedora's mirror lists, the first https mirror that answers) for the
+  channel's `packages`, checks each package against the repository's
+  SHA-256, and unpacks it without rpm: the payload follows the lead and
+  two headers whose sizes are in the file, and is a compressed cpio
+  archive (xz, zstd or gzip). Only the packages' `/lib/modules/<kver>`
+  is kept (vmlinuz, config, System.map, modules); no scriptlet runs.
+  Signatures are not checked: trust is the repository's https.
+* `build` builds a kernel on the machine from kernel.org's tarball of a
+  release (`releases.json`, `moniker`): the configuration of the newest
+  kernel of the `config-from` channel (or the running kernel's), the
+  channel's `config` lines (`scripts/config`: no BTF, no debug info, no
+  module signing, no `-Werror`), `localversion` (`-local`), then
+  `localyesconfig` with the modules seen loaded: they are built in, other
+  modules left out, except under `keep` (`LMC_KEEP`, all of a directory's
+  modules: a driver that loads firmware when it starts needs to be a
+  module, started once the root with the firmware is there; none by
+  default). `make` names POS's compiler (`CC=/pos/sdk/bin/gcc`), not
+  another in the `PATH`. The modules seen loaded are a list,
+  `/var/lib/pos/kernel/modules-seen`, that `pos-kernel record-modules`
+  adds `/proc/modules` to, at every boot and shutdown
+  (`pos-kernel-modules.service`, enabled by POS's preset), and before
+  every update: it holds what the machine used while it ran a hosted
+  kernel. With no list, the configuration is built whole.
+* A channel's `requires` are the commands its format runs. pos-kernel
+  checks them before it enables or updates the channel, and names the
+  missing ones; when the compiler is, it says to enable the sdk
+  (`pos-stage enable sdk`, or the pos-sdk package where the system has no
+  sdk image). `linus` needs the sdk and make, flex, bison, bc and perl,
+  which POS does not package yet.
+* The archive, `/var/lib/pos/kernel/archive/<channel>/<kver>`, holds each
+  kernel's modules directory. For each channel the system boots, its
+  newest kernel has a boot entry and the one before it a fallback entry;
+  the running kernel keeps its entry. A kernel with an entry is linked
+  from `/var/lib/pos/kernel/modules/<kver>`, which kmod, the kernel's
+  module loading and dracut find as `/usr/lib/modules/<kver>`: the disk's
+  layout links `/usr/lib/modules` there, so modules are out of `/usr`.
+  kernel-install adds and removes the entries (depmod writes into the
+  archive). The archive keeps `kernel.keep` kernels of a channel (3).
+  A disabled channel keeps its kernels without entries until it is
+  removed.
+* The global system preferences (`pos-preferences`, pos-integration):
+  `<tool>.<name> <value>` lines, POS's defaults in
+  `/pos/lib/pos/preferences`, the administrator's in `/etc/pos/preferences`.
+  pos-kernel's are `kernel.channels` (the channels the system boots, at
+  least one; `fedora`), `kernel.default` (the channel whose newest kernel
+  boots by default; `fedora`) and `kernel.keep`.
+* The default entry is `default <entry>` in `/boot/loader/loader.conf`,
+  rewritten on each change; without one systemd-boot boots the newest
+  entry. bootctl's `install` keeps an existing loader.conf.
+* Downloading needs curl, which is in the network stage
+  (`pos-stage enable network`). Unpacking needs only the system stage, as
+  in `fs_kernel`, which imports packages dnf downloaded.
+* On vm-disk-dnf, Fedora's kernel package is dnf's: its modules are real
+  directories in `/var/lib/pos/kernel/modules`, which `pos-kernel list`
+  shows as `package` and leaves alone.
+
 ## Stage images
-An optional stage (network, container) ships with an installed system without being
+An optional stage (network, container, sdk) ships with an installed system without being
 part of its `/pos`: as a system extension image in the system's library
 of stage images, which `pos-stage` enables. The stage arrives built, from
 the same build as the rest, and nothing is downloaded or integrated on

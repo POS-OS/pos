@@ -5,7 +5,10 @@
 # pos-fedora). The presets are POS's, ahead of systemd's. The udev rules
 # start services for devices (the QEMU guest agent for its port).
 # pos-stage enables the optional stages, which systemd-sysext merges over
-# /pos (its drop-in).
+# /pos (its drop-in). pos-preferences keeps the global system preferences,
+# POS's defaults in /pos/lib/pos/preferences. pos-kernel installs kernels
+# from the channels in /pos/lib/pos/kernel, its archive's directories are
+# made by tmpfiles.
 
 pkg() {
   install -d "$dest_dir$prefix/share/pam/pam.d"
@@ -16,6 +19,15 @@ pkg() {
   install -d "$dest_dir$prefix/lib/udev/rules.d"
   install -m 0644 "$src_dir"/udev/*.rules "$dest_dir$prefix/lib/udev/rules.d/"
   install -D -m 0755 "$src_dir/bin/pos-stage" "$dest_dir$prefix/sbin/pos-stage"
+  install -D -m 0755 "$src_dir/bin/pos-preferences" "$dest_dir$prefix/sbin/pos-preferences"
+  install -D -m 0644 "$src_dir/preferences" "$dest_dir$prefix/lib/pos/preferences"
+  install -D -m 0755 "$src_dir/bin/pos-kernel" "$dest_dir$prefix/sbin/pos-kernel"
+  install -d "$dest_dir$prefix/lib/pos/kernel/channels" "$dest_dir$prefix/lib/pos/kernel/formats"
+  install -m 0644 "$src_dir"/kernel/channels/* "$dest_dir$prefix/lib/pos/kernel/channels/"
+  install -m 0644 "$src_dir"/kernel/formats/* "$dest_dir$prefix/lib/pos/kernel/formats/"
+  install -D -m 0644 "$src_dir/tmpfiles/pos-kernel.conf" "$dest_dir$prefix/lib/tmpfiles.d/pos-kernel.conf"
+  install -D -m 0644 "$src_dir/systemd/pos-kernel-modules.service" \
+    "$dest_dir$prefix/lib/systemd/system/pos-kernel-modules.service"
   install -D -m 0644 "$src_dir/systemd/systemd-sysext.service.d/pos.conf" \
     "$dest_dir$prefix/lib/systemd/system/systemd-sysext.service.d/pos.conf"
 }

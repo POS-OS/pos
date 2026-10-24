@@ -4,13 +4,13 @@
 # and the network; vm-disk-dnf uses it and repart.d too.
 output() {
   fs_stages
-  fs_stage_images network container
+  fs_stage_images network container sdk
   fs_layout "$(output_dir)/layout"
   fs_copy "$(output_dir)/root"
   fs_factory
   fs_sysusers
-  # POS boots kernels other projects build.
-  fs_kernel kernel-core kernel-modules-core kernel-modules
+  # POS boots kernels other projects build: the fedora channel's.
+  fs_kernel fedora kernel-core kernel-modules-core kernel-modules
   disk_make "$(output_dir)/repart.d"
 }
 

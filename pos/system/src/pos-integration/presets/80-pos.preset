@@ -6,3 +6,5 @@ enable systemd-networkd-wait-online.service
 enable systemd-resolved.service
 # Merges the stages pos-stage enabled at boot.
 enable systemd-sysext.service
+# Records the loaded modules for the kernels pos-kernel builds.
+enable pos-kernel-modules.service

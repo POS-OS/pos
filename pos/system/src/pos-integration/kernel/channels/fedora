@@ -1,0 +1,7 @@
+# Fedora's kernel, as Fedora 44 ships it: its updates, and the release's
+# kernel until there is one.
+description Fedora kernel
+format rpm
+metalink https://mirrors.fedoraproject.org/metalink?repo=updates-released-f44&arch=x86_64
+metalink https://mirrors.fedoraproject.org/metalink?repo=fedora-44&arch=x86_64
+packages kernel-core kernel-modules-core kernel-modules

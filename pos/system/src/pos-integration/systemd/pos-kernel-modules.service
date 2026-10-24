@@ -1,0 +1,15 @@
+# Records the modules loaded at boot and at shutdown (pos-kernel
+# record-modules), for the kernels pos-kernel builds on the machine.
+[Unit]
+Description=Record the loaded kernel modules
+After=systemd-modules-load.service
+ConditionPathExists=/pos/sbin/pos-kernel
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/pos/sbin/pos-kernel record-modules
+ExecStop=/pos/sbin/pos-kernel record-modules
+
+[Install]
+WantedBy=multi-user.target

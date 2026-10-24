@@ -36,6 +36,10 @@ link /usr/lib/os-release ../../pos/lib/os-release
 link /etc/os-release ../usr/lib/os-release
 # Kernel modules are in /usr/lib/modules, where kernel packages install
 # them and kmod looks (BUILD.md "System stage"); dracut and the packages'
-# own paths say /lib/modules.
-dir /usr/lib/modules 0755
+# own paths say /lib/modules. /usr/lib/modules links out of /usr to
+# pos-kernel's modules directory (BUILD.md "Kernels").
+dir /var/lib/pos 0755
+dir /var/lib/pos/kernel 0755
+dir /var/lib/pos/kernel/modules 0755
+link /usr/lib/modules ../../var/lib/pos/kernel/modules
 link /lib/modules ../usr/lib/modules

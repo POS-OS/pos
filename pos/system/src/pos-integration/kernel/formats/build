@@ -1,0 +1,105 @@
+# pos-kernel's format plugin for kernels built on this machine from
+# kernel.org's source tarballs. Sourced by pos-kernel, which defines
+# download, die, base_config, modules_seen and the channel's settings,
+# conf[<key>] (one value per line of the channel file):
+#   releases   URL of kernel.org's releases.json
+#   moniker    the release it names to build: mainline, stable, ...
+#   localversion  suffix of the kernel's version (CONFIG_LOCALVERSION),
+#              which tells this channel's kernels from others'
+#   config     scripts/config arguments applied to the base configuration
+#              before localyesconfig (--disable DEBUG_INFO_BTF), one per line
+#   keep       LMC_KEEP: directories whose modules stay modules
+#              (drivers/gpu:...), so their firmware loads from the root
+#   make       variables for every make (the compiler: CC=/pos/sdk/bin/gcc)
+# The base configuration is a hosted kernel's (base_config). The modules
+# seen loaded (modules_seen) are built in with localyesconfig, and the
+# other modules are left out, unless none were recorded yet: then the base
+# configuration is built whole. Building needs the sdk's compiler and
+# make, flex, bison, bc and perl (the channel's requires).
+
+# The release the channel builds, from releases.json.
+# Inputs:
+#   cache, conf
+# Outputs:
+#   "<version> <source URL>"
+release() {
+  download "${conf[releases]}" "$cache/releases.json" || die "cannot download ${conf[releases]}"
+  awk -v moniker="${conf[moniker]}" -F'"' '
+    $2 == "moniker" { m = $4 }
+    $2 == "version" && m == moniker { v = $4 }
+    $2 == "source" && m == moniker && v != "" { print v, $4; exit }' "$cache/releases.json"
+}
+
+# The kernel version a release builds as (make kernelrelease): three
+# numbers, the -rc after them, then the channel's localversion.
+# Inputs:
+#   $1    release version: 7.3, 7.4-rc1, 7.2.12
+kver_of() {
+  local v=${1%%-*} rc=
+  [[ $1 != *-* ]] || rc=-${1#*-}
+  [[ $v == *.*.* ]] || v=$v.0
+  echo "$v$rc${conf[localversion]}"
+}
+
+# Outputs:
+#   the kernel version of the channel's release
+format_available() {
+  local version url
+  read -r version url < <(release) || die "no ${conf[moniker]} release in ${conf[releases]}"
+  kver_of "$version"
+}
+
+# Download the release's source tarball.
+# Inputs:
+#   $1    kernel version, the one format_available printed
+#   $2    directory for the tarball
+format_download() {
+  local version url
+  read -r version url < <(release)
+  [[ $(kver_of "$version") == "$1" ]] || die "kernel.org's ${conf[moniker]} changed while downloading"
+  download "$url" "$2/${url##*/}" || die "cannot download $url"
+}
+
+# Build the kernel of a source tarball: configure, compile, and install
+# its modules and image as a modules directory, <dir>/<kver>.
+# Inputs:
+#   $1    directory, empty
+#   $2    source tarball (linux-<version>.tar.xz)
+format_unpack() {
+  local dir=$1 src=$1/.src kver arg config lsmod
+  local -a args mk
+  read -r -a mk <<<"${conf[make]:-}"
+  config=$(base_config) || die "no kernel configuration to start from: install a kernel of a hosted channel"
+  mkdir -p "$src"
+  echo "unpacking ${2##*/}"
+  tar -xf "$2" -C "$src" --strip-components=1 --warning=no-empty-transform || die "cannot unpack $2"
+  cp "$config" "$src/.config"
+  args=(--set-str LOCALVERSION "${conf[localversion]}" --disable LOCALVERSION_AUTO)
+  while read -r -a arg; do
+    args+=("${arg[@]}")
+  done <<<"${conf[config]:-}"
+  (cd "$src" && scripts/config "${args[@]}" && make -s "${mk[@]}" olddefconfig) || die "cannot configure from $config"
+  lsmod=$(modules_seen)
+  if [[ -s $lsmod ]]; then
+    echo "building in the $(wc -l <"$lsmod") modules seen loaded"
+    # New symbols the configuration does not set get their defaults; the
+    # questions go to the log.
+    (cd "$src" && make -s "${mk[@]}" LSMOD="$lsmod" LMC_KEEP="${conf[keep]:-}" localyesconfig \
+      </dev/null >"$dir/config.log" 2>&1 && make -s "${mk[@]}" olddefconfig) ||
+      { tail -n 20 "$dir/config.log" >&2; die "localyesconfig failed"; }
+  else
+    echo "no modules recorded yet: building the configuration of $config whole"
+  fi
+  kver=$(make -s -C "$src" "${mk[@]}" kernelrelease)
+  echo "building $kver with $(nproc) jobs"
+  make -s -C "$src" "${mk[@]}" -j"$(nproc)" bzImage modules >"$dir/build.log" 2>&1 ||
+    { tail -n 30 "$dir/build.log" >&2; die "the build failed (log: $dir/build.log)"; }
+  make -s -C "$src" "${mk[@]}" INSTALL_MOD_PATH="$dir/.tree" INSTALL_MOD_STRIP=1 DEPMOD=true modules_install ||
+    die "cannot install the modules"
+  mv "$dir/.tree/lib/modules/$kver" "$dir/$kver"
+  install -m 0644 "$src/arch/x86/boot/bzImage" "$dir/$kver/vmlinuz"
+  install -m 0644 "$src/.config" "$dir/$kver/config"
+  install -m 0644 "$src/System.map" "$dir/$kver/System.map"
+  rm -f "$dir/$kver/build" "$dir/$kver/source"
+  rm -rf "$src" "$dir/.tree" "$dir/build.log" "$dir/config.log"
+}

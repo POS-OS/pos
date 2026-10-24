@@ -28,3 +28,22 @@ bin/pos-stage  Enables and disables the optional stages: links an image of
 
 systemd/  Drop-ins for systemd's units: systemd-sysext.service merges
         over /pos (SYSTEMD_SYSEXT_HIERARCHIES), where the stages go.
+
+bin/pos-preferences  The global system preferences: settings of POS's
+        tools, "<tool>.<name> <value>" lines. POS's defaults are
+        preferences, installed as /pos/lib/pos/preferences; what the
+        administrator sets goes to /etc/pos/preferences. Installed as
+        /pos/sbin/pos-preferences.
+
+bin/pos-kernel  Installs and updates kernels from kernel channels
+        (kernel/channels: fedora, mainline, stable, linus), unpacked into
+        an archive in /var/lib/pos/kernel, and keeps a boot entry for each
+        channel's newest kernel and its fallback through kernel-install.
+        A channel's format is a plugin in kernel/formats (rpm: rpm-md
+        repositories, RPM packages unpacked without rpm; build: kernel.org
+        tarballs built on the machine with localyesconfig).
+        systemd/pos-kernel-modules.service records the modules loaded at
+        boot and shutdown for it. Installed as
+        /pos/sbin/pos-kernel, the channels and formats in
+        /pos/lib/pos/kernel; tmpfiles/pos-kernel.conf makes its
+        directories.

@@ -1,5 +1,7 @@
 # POS's own system integration (src/pos-integration): data, and the
 # pos-stage script. Its PAM stack uses pam's modules, systemd's pam_systemd
 # and util-linux's login; pos-stage bash, coreutils, systemd and glibc's
-# ldconfig.
-requires pam systemd util-linux bash coreutils glibc
+# ldconfig; pos-kernel kernel-install (systemd) and its dracut plugin,
+# cpio, xz, zstd, gzip, gawk, sed, grep and util-linux's flock (curl, which it
+# downloads with, is in the network stage).
+requires pam systemd util-linux bash coreutils glibc dracut cpio xz zstd gzip gawk sed grep

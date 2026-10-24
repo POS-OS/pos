@@ -1,0 +1,7 @@
+# Linus Torvalds' mainline tree, release candidates included, built with
+# Fedora's configuration by Fedora's kernel-vanilla project (COPR
+# @kernel-vanilla/mainline, https://fedoraproject.org/wiki/Kernel_Vanilla_Repositories).
+description Mainline kernel
+format rpm
+repo https://download.copr.fedorainfracloud.org/results/@kernel-vanilla/mainline/fedora-44-x86_64
+packages kernel-core kernel-modules-core kernel-modules

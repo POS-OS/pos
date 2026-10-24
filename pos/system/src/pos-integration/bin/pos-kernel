@@ -1,0 +1,490 @@
+#!/pos/bin/bash
+# Kernels of the installed system, from kernel channels: builds that other
+# projects make (POS boots hosted kernels). A channel is defined in
+# /pos/lib/pos/kernel/channels/<channel> (/etc/pos/kernel/channels
+# replaces one): where its kernels come from and their format, a plugin
+# in /pos/lib/pos/kernel/formats that finds, downloads and unpacks them.
+# The global system preferences (pos-preferences) say which channels the
+# system boots (kernel.channels), whose kernel is the default
+# (kernel.default) and how many kernels of a channel are kept
+# (kernel.keep).
+#
+# The kernels are unpacked into an archive,
+# /var/lib/pos/kernel/archive/<channel>/<kver>: what a kernel package has
+# in /usr/lib/modules/<kver> (vmlinuz, config, modules). Each channel the
+# system boots has a boot entry for its newest kernel and one for the
+# kernel before it, the fallback; the running kernel keeps its entry
+# too. A kernel with a boot entry is linked from
+# /var/lib/pos/kernel/modules, where /usr/lib/modules links to: kmod, the
+# kernel and dracut find its modules there, and kernel-install adds and
+# removes the entry (depmod, dracut's initramfs, the Type #1 entry). The
+# default entry is the default channel's newest kernel (loader.conf).
+# Directories in /usr/lib/modules that are not links (a package manager's
+# kernel) are left alone.
+#
+#   pos-kernel list                   the kernels of the archive by channel
+#   pos-kernel channels               the channels and which are enabled
+#   pos-kernel update [<channel>...]  get the channels' newest kernels
+#   pos-kernel enable <channel>...    boot a channel's kernels (and update it)
+#   pos-kernel disable <channel>...   remove its boot entries, keep its kernels
+#   pos-kernel remove <channel>...    disable it and remove its kernels
+#   pos-kernel default <channel>      boot the channel's newest kernel by default
+#   pos-kernel import <channel> <file>...  add kernels from package files
+#   pos-kernel sync                   make boot entries match the archive
+#   pos-kernel record-modules         add the loaded modules to the record
+#
+# A channel can also build its kernels on the machine (format build: the
+# linus channel). Its kernels start from a hosted kernel's configuration
+# and have the modules seen loaded built in: record-modules keeps a list
+# of them in /var/lib/pos/kernel/modules-seen, at every boot and shutdown
+# (pos-kernel-modules.service), so it covers what the machine used while
+# it ran a hosted kernel.
+set -euo pipefail
+
+lib=/pos/lib/pos/kernel
+local_conf=/etc/pos/kernel
+state=/var/lib/pos/kernel
+archive=$state/archive
+modules=$state/modules
+seen=$state/modules-seen
+caches=/var/cache/pos/kernel
+
+usage() {
+  sed -n 's/^#   pos-kernel /  pos-kernel /p' "$0" >&2
+  exit 2
+}
+
+die() {
+  echo "pos-kernel: $*" >&2
+  exit 1
+}
+
+# Download a URL to a file (format plugins use it). curl is in the network
+# stage.
+# Inputs:
+#   $1    URL
+#   $2    file
+# Outputs:
+#   status 0 when downloaded; curl's error otherwise
+download() {
+  command -v curl >/dev/null || die "downloading needs curl: pos-stage enable network"
+  curl -fsSL --retry 2 -o "$2" "$1"
+}
+
+# Inputs:
+#   $1    preference key (kernel.<name>)
+# Outputs:
+#   its value, empty when not set
+pref() {
+  pos-preferences get "$1" 2>/dev/null || true
+}
+
+# Add the modules loaded now to the record of modules seen loaded (format
+# plugins read it with modules_seen).
+record_modules() {
+  mkdir -p "$state"
+  { cut -d ' ' -f 1 /proc/modules; [[ ! -f $seen ]] || cat "$seen"; } | sort -u >"$seen.tmp"
+  mv "$seen.tmp" "$seen"
+}
+
+# Outputs:
+#   the file listing the modules seen loaded, one name per line
+modules_seen() {
+  echo "$seen"
+}
+
+# The configuration a built kernel starts from: that of the newest kernel
+# of the channel's config-from channel, or else the running kernel's.
+# Outputs:
+#   the configuration file; status 1 when there is none
+base_config() {
+  local from=${conf[config-from]:-} kver='' dir
+  [[ -z $from ]] || kver=$(versions "$from" | tail -n 1)
+  dir=$archive/$from/$kver
+  [[ -n $kver ]] || dir=$modules/$(uname -r)
+  [[ -f $dir/config ]] || return 1
+  echo "$dir/config"
+}
+
+# Check that the commands a channel's format runs are there (requires).
+# The compiler and linker are POS's sdk.
+# Inputs:
+#   conf
+check_requires() {
+  local cmd hint
+  local -a missing=()
+  for cmd in ${conf[requires]:-}; do
+    command -v "$cmd" >/dev/null || missing+=("$cmd")
+  done
+  ((${#missing[@]})) || return 0
+  if [[ " ${missing[*]} " == *" /pos/sdk/bin/gcc "* || " ${missing[*]} " == *" /pos/sdk/bin/ld "* ]]; then
+    if pos-stage list 2>/dev/null | grep -q '^sdk '; then
+      hint="; the compiler is POS's sdk: pos-stage enable sdk"
+    else
+      hint="; the compiler is POS's sdk: install pos-sdk"
+    fi
+  fi
+  die "channel $channel needs ${missing[*]}${hint:-}"
+}
+
+# The channels the system boots, one per line.
+enabled_channels() {
+  local channel
+  for channel in $(pref kernel.channels); do
+    echo "$channel"
+  done
+}
+
+# Inputs:
+#   $1    channel
+# Outputs:
+#   status 0 when the system boots the channel
+is_enabled() {
+  enabled_channels | grep -qxF "$1"
+}
+
+# The defined channels, one per line.
+channels() {
+  local f
+  for f in "$lib"/channels/* "$local_conf"/channels/*; do
+    [[ -f $f ]] && echo "${f##*/}"
+  done | sort -u
+}
+
+# Inputs:
+#   $1    channel
+# Outputs:
+#   its definition file
+channel_file() {
+  if [[ -f $local_conf/channels/$1 ]]; then
+    echo "$local_conf/channels/$1"
+  elif [[ -f $lib/channels/$1 ]]; then
+    echo "$lib/channels/$1"
+  else
+    die "no channel $1 (pos-kernel channels)"
+  fi
+}
+
+# Read a channel's definition and its format plugin: conf[<key>] holds the
+# values of a key's lines, one per line, and the plugin's format_*
+# functions are defined.
+# Inputs:
+#   $1    channel
+# Outputs:
+#   channel, conf, cache (the channel's cache directory, made)
+load_channel() {
+  local key value
+  channel=$1
+  declare -gA conf=()
+  while read -r key value; do
+    conf[$key]+=${conf[$key]:+$'\n'}$value
+  done < <(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' "$(channel_file "$1")")
+  [[ -f $lib/formats/${conf[format]:-} ]] || die "channel $1: no format ${conf[format]:-}"
+  # shellcheck source=/dev/null
+  source "$lib/formats/${conf[format]}"
+  cache=$caches/$1
+  mkdir -p "$cache"
+}
+
+# The channels with kernels in the archive, one per line.
+archived_channels() {
+  local d
+  for d in "$archive"/*/; do
+    [[ -d $d ]] && basename "$d"
+  done
+  return 0
+}
+
+# The kernels of a channel in the archive, oldest first.
+# Inputs:
+#   $1    channel
+versions() {
+  local d
+  for d in "$archive/$1"/*/; do
+    [[ -d $d ]] && basename "$d"
+  done | sort -V
+  return 0
+}
+
+# Where kernel-install puts boot entries: BOOT_ROOT and ENTRY_TOKEN, read
+# once from kernel-install inspect.
+boot_paths() {
+  [[ -z ${boot_root:-} ]] || return 0
+  local json
+  json=$(kernel-install inspect --json=short)
+  boot_root=$(sed -n 's/.*"BootRoot":"\([^"]*\)".*/\1/p' <<<"$json")
+  entry_token=$(sed -n 's/.*"EntryToken":"\([^"]*\)".*/\1/p' <<<"$json")
+  [[ -n $boot_root && -n $entry_token ]] || die "kernel-install inspect: no boot root or entry token"
+}
+
+# Inputs:
+#   $1    kernel version
+# Outputs:
+#   its boot entry's id (the entry's file name)
+entry_id() {
+  boot_paths
+  echo "$entry_token-$1.conf"
+}
+
+# Inputs:
+#   $1    kernel version
+# Outputs:
+#   status 0 when the kernel has a boot entry
+has_entry() {
+  boot_paths
+  [[ -f $boot_root/loader/entries/$(entry_id "$1") ]]
+}
+
+# Link a kernel's modules and add its boot entry, unless it has them.
+# Inputs:
+#   $1    channel
+#   $2    kernel version
+activate() {
+  local dir=$archive/$1/$2
+  [[ -L $modules/$2 ]] || ln -sfn "../archive/$1/$2" "$modules/$2"
+  has_entry "$2" && return 0
+  echo "adding $1 $2"
+  kernel-install add "$2" "$dir/vmlinuz"
+}
+
+# Remove a kernel's boot entry, then its modules' link. Not for the
+# running kernel.
+# Inputs:
+#   $1    channel
+#   $2    kernel version
+deactivate() {
+  [[ -L $modules/$2 ]] || has_entry "$2" || return 0
+  echo "removing $1 $2 from the boot loader"
+  kernel-install remove "$2"
+  rm -f "$modules/$2"
+}
+
+# Set the boot loader's default entry: the default channel's newest
+# kernel. Without one (no kernel.default, or a channel without kernels),
+# systemd-boot boots the newest entry. bootctl set-default, an EFI
+# variable, overrides it.
+set_default() {
+  local channel kver conf
+  channel=$(pref kernel.default)
+  [[ -n $channel ]] && is_enabled "$channel" && kver=$(versions "$channel" | tail -n 1)
+  boot_paths
+  conf=$boot_root/loader/loader.conf
+  mkdir -p "${conf%/*}"
+  { [[ ! -f $conf ]] || grep -v '^default[[:space:]]' "$conf" || true
+    [[ -z ${kver:-} ]] || echo "default $(entry_id "$kver")"; } >"$conf.tmp"
+  mv "$conf.tmp" "$conf"
+}
+
+# Make the boot entries and the archive match the preferences: for each
+# enabled channel, its two newest kernels have boot entries (primary and
+# fallback) and the archive keeps kernel.keep of them; a disabled
+# channel's kernels have no entries and stay in the archive. The running
+# kernel keeps its entry and its files.
+sync() {
+  local channel kver keep running i
+  local -a kvers
+  keep=$(pref kernel.keep)
+  ((keep >= 2)) || keep=2
+  running=$(uname -r)
+  mkdir -p "$archive" "$modules"
+  for channel in $(archived_channels); do
+    mapfile -t kvers < <(versions "$channel")
+    for i in "${!kvers[@]}"; do
+      kver=${kvers[i]}
+      if [[ $kver == "$running" ]]; then
+        activate "$channel" "$kver"
+      elif is_enabled "$channel" && ((i >= ${#kvers[@]} - 2)); then
+        activate "$channel" "$kver"
+      else
+        deactivate "$channel" "$kver"
+        if is_enabled "$channel" && ((i < ${#kvers[@]} - keep)); then
+          echo "removing $channel $kver from the archive"
+          rm -rf "${archive:?}/$channel/$kver"
+        fi
+      fi
+    done
+  done
+  set_default
+}
+
+# Add unpacked kernels to a channel's archive.
+# Inputs:
+#   $1    channel
+#   $2    directory with the kernels, <kver>/ each (format_unpack)
+store() {
+  local d kver
+  mkdir -p "$archive/$1"
+  for d in "$2"/*/; do
+    kver=$(basename "$d")
+    [[ -f $d/vmlinuz ]] || die "$kver has no vmlinuz"
+    [[ ! -e $archive/$1/$kver ]] || { echo "$1 $kver is in the archive"; continue; }
+    [[ -L $modules/$kver || ! -e $modules/$kver ]] ||
+      { echo "$kver is installed by a package, left out"; continue; }
+    mv "$d" "$archive/$1/$kver"
+    echo "added $1 $kver to the archive"
+  done
+}
+
+# Get a channel's newest kernel into the archive, unless it is there.
+# Inputs:
+#   $1    channel
+update_channel() {
+  local kver work
+  load_channel "$1"
+  check_requires
+  record_modules
+  kver=$(format_available | sort -V | tail -n 1)
+  [[ -n $kver ]] || die "channel $1 has no kernel"
+  [[ -d $archive/$1/$kver ]] && { echo "$1 $kver is the newest"; return 0; }
+  echo "downloading $1 $kver"
+  work=$cache/$kver
+  mkdir -p "$work/packages" "$work/unpacked"
+  format_download "$kver" "$work/packages"
+  format_unpack "$work/unpacked" "$work/packages"/*
+  store "$1" "$work/unpacked"
+  rm -rf "$work"
+}
+
+# The kernels of the archive: <channel> <kver> and what it is to the boot
+# loader: default (loader.conf's default entry), boot (newest of its
+# channel), fallback, or archived (no entry); running for the running
+# kernel. The kernels of a package manager in /usr/lib/modules as
+# "package <kver>".
+list() {
+  local channel kver default running n i d tags
+  local -a kvers
+  boot_paths
+  default=$(sed -n 's/^default[[:space:]]\+//p' "$boot_root/loader/loader.conf" 2>/dev/null || true)
+  running=$(uname -r)
+  for channel in $(archived_channels); do
+    mapfile -t kvers < <(versions "$channel")
+    n=${#kvers[@]}
+    for i in "${!kvers[@]}"; do
+      kver=${kvers[i]}
+      tags=archived
+      if has_entry "$kver"; then
+        tags=boot
+        ((i == n - 1)) || tags=fallback
+        [[ $(entry_id "$kver") != "$default" ]] || tags=default
+      fi
+      [[ $kver != "$running" ]] || tags+=" running"
+      is_enabled "$channel" || tags+=" (channel disabled)"
+      echo "$channel $kver $tags"
+    done
+  done
+  for d in "$modules"/*; do
+    [[ -d $d && ! -L $d ]] && echo "package ${d##*/}"
+  done
+  return 0
+}
+
+# Inputs:
+#   $@    channels to add to (+) or remove from (-) kernel.channels, after
+#         a + or -
+set_channels() {
+  local how=$1 channel
+  local -a now
+  shift
+  mapfile -t now < <(enabled_channels)
+  for channel in "$@"; do
+    channel_file "$channel" >/dev/null
+    mapfile -t now < <(printf '%s\n' "${now[@]}" | grep -vxF -e "$channel" -e '' || true)
+    [[ $how == - ]] || now+=("$channel")
+  done
+  ((${#now[@]})) || die "the system boots no other channel; enable one first"
+  pos-preferences set kernel.channels "${now[@]}"
+}
+
+# The system's /usr/lib/modules must be the modules directory: the
+# kernel and kmod look there.
+# Recording takes no lock: a boot or shutdown does not wait for an update.
+if [[ ${1:-} == record-modules ]]; then
+  (($# == 1)) || usage
+  record_modules
+  exit 0
+fi
+mkdir -p "$modules"
+[[ $(readlink -f /usr/lib/modules) == "$modules" ]] ||
+  die "/usr/lib/modules does not link to $modules"
+exec 9>"$state/.lock"
+flock -n 9 || die "another pos-kernel is running"
+
+case ${1:-} in
+  list)
+    (($# == 1)) || usage
+    list
+    ;;
+  channels)
+    (($# == 1)) || usage
+    for channel in $(channels); do
+      load_channel "$channel"
+      is_enabled "$channel" && on=enabled || on=disabled
+      echo "$channel $on ${conf[description]:-}"
+    done
+    ;;
+  update)
+    shift
+    (($#)) || { mapfile -t args < <(enabled_channels) && set -- "${args[@]}"; }
+    for channel in "$@"; do
+      is_enabled "$channel" || die "channel $channel is not enabled"
+      update_channel "$channel"
+    done
+    sync
+    ;;
+  enable)
+    shift
+    (($#)) || usage
+    # What a channel needs is checked before the system boots it.
+    for channel in "$@"; do
+      load_channel "$channel"
+      check_requires
+    done
+    set_channels + "$@"
+    for channel in "$@"; do
+      update_channel "$channel"
+    done
+    sync
+    ;;
+  disable | remove)
+    how=$1
+    shift
+    (($#)) || usage
+    if [[ $how == remove ]]; then
+      for channel in "$@"; do
+        ! versions "$channel" | grep -qxF "$(uname -r)" ||
+          die "the running kernel is $channel's; boot another one first"
+      done
+    fi
+    set_channels - "$@"
+    sync
+    if [[ $how == remove ]]; then
+      for channel in "$@"; do
+        rm -rf "${archive:?}/$channel" "${caches:?}/$channel"
+        echo "removed $channel"
+      done
+    fi
+    ;;
+  default)
+    (($# == 2)) || usage
+    is_enabled "$2" || die "channel $2 is not enabled"
+    pos-preferences set kernel.default "$2"
+    set_default
+    ;;
+  import)
+    (($# >= 3)) || usage
+    load_channel "$2"
+    check_requires
+    work=$cache/import
+    rm -rf "$work"
+    mkdir -p "$work"
+    format_unpack "$work" "${@:3}"
+    store "$2" "$work"
+    rm -rf "$work"
+    sync
+    ;;
+  sync)
+    (($# == 1)) || usage
+    sync
+    ;;
+  *) usage ;;
+esac

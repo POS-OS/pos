@@ -1,0 +1,164 @@
+# pos-kernel's format plugin for kernels in RPM packages, from rpm-md
+# repositories (the ones dnf reads). Sourced by pos-kernel, which defines
+# download, die and the channel's settings, conf[<key>] (one value per
+# line of the channel file):
+#   repo       base URL of a repository (the directory with repodata/)
+#   metalink   URL of a Fedora metalink that names mirrors of a repository
+#   packages   names of the packages that make a kernel
+# No rpm runs: a package's payload is cut out of the file and unpacked
+# with cpio. Its scriptlets are not run (pos-kernel does what Fedora's do,
+# through kernel-install). Packages are checked against the repository's
+# SHA-256, not against their signatures.
+
+# The repositories' packages of the channel, as cache/index lines:
+#   <name> <kver> <sha256> <url>
+# where kver is <version>-<release>.<arch>, the kernel's
+# /usr/lib/modules directory. Only packages of the channel and this
+# machine's architecture are listed. A metalink's repository is read from
+# the first of its https mirrors that answers.
+# Inputs:
+#   cache   the channel's cache directory
+#   conf    the channel's settings
+format_index() {
+  local url base
+  : >"$cache/index"
+  while read -r url; do
+    [[ -n $url ]] || continue
+    index_repo "$url" || die "cannot read the repository $url"
+  done <<<"${conf[repo]:-}"
+  while read -r url; do
+    [[ -n $url ]] || continue
+    download "$url" "$cache/metalink" || die "cannot download $url"
+    for base in $(grep -o 'https://[^<]*/repodata/repomd.xml' "$cache/metalink"); do
+      index_repo "${base%/repodata/repomd.xml}" && continue 2
+      echo "mirror ${base%%/repodata/*} failed, trying the next" >&2
+    done
+    die "no mirror of $url answered"
+  done <<<"${conf[metalink]:-}"
+  rm -f "$cache/metalink"
+  [[ -s $cache/index ]] || die "channel $channel: no packages ${conf[packages]} in its repositories"
+}
+
+# Add a repository's packages of the channel to cache/index.
+# Inputs:
+#   $1    base URL of the repository
+#   cache, conf
+# Outputs:
+#   status 1 when its metadata cannot be downloaded
+index_repo() {
+  local base=$1 primary
+  download "$base/repodata/repomd.xml" "$cache/repomd.xml" || return 1
+  primary=$(awk '/<data type="primary">/ { p = 1 }
+    p && /<location href=/ { match($0, /href="[^"]*"/); print substr($0, RSTART + 6, RLENGTH - 7); exit }' \
+    "$cache/repomd.xml")
+  [[ -n $primary ]] || return 1
+  download "$base/$primary" "$cache/primary" || return 1
+  "$(decompressor "$cache/primary" 0)" -dc <"$cache/primary" |
+    awk -v packages=" ${conf[packages]//$'\n'/ } " -v arch="$(uname -m)" -v base="$base" '
+      /<package / { n = a = v = r = s = h = "" }
+      /<name>/ { n = $0; sub(/.*<name>/, "", n); sub(/<.*/, "", n) }
+      /<arch>/ { a = $0; sub(/.*<arch>/, "", a); sub(/<.*/, "", a) }
+      /<version / {
+        match($0, /ver="[^"]*"/); v = substr($0, RSTART + 5, RLENGTH - 6)
+        match($0, /rel="[^"]*"/); r = substr($0, RSTART + 5, RLENGTH - 6)
+      }
+      /<checksum type="sha256" pkgid="YES">/ { s = $0; sub(/.*">/, "", s); sub(/<.*/, "", s) }
+      /<location href=/ { match($0, /href="[^"]*"/); h = substr($0, RSTART + 6, RLENGTH - 7) }
+      /<\/package>/ && a == arch && index(packages, " " n " ") {
+        print n, v "-" r "." a, s, base "/" h
+      }' >>"$cache/index"
+  rm -f "$cache/repomd.xml" "$cache/primary"
+}
+
+# Outputs:
+#   the kernel versions the channel's repositories have, one per line:
+#   those that have every package of the channel
+format_available() {
+  format_index
+  awk -v n="$(wc -w <<<"${conf[packages]}")" '
+    !seen[$1, $2]++ { count[$2]++ }
+    END { for (k in count) if (count[k] == n) print k }' "$cache/index"
+}
+
+# Download a kernel's packages, checked against the repository's SHA-256.
+# Inputs:
+#   $1    kernel version, one format_available printed (in this run)
+#   $2    directory for the package files
+format_download() {
+  local kver sum url file
+  while read -r _ kver sum url; do
+    [[ $kver == "$1" ]] || continue
+    file=$2/${url##*/}
+    [[ -f $file ]] && continue
+    download "$url" "$file.part" || die "cannot download $url"
+    echo "$sum  $file.part" | sha256sum -c --quiet - || die "checksum of ${url##*/} does not match"
+    mv "$file.part" "$file"
+  done <"$cache/index"
+}
+
+# Unpack packages: their /usr/lib/modules/<kver> (or /lib/modules/<kver>)
+# directories, the kernel and its modules, go to <dir>/<kver>. The rest of
+# their files (licenses, documentation) are left out.
+# Inputs:
+#   $1      directory, empty
+#   ${@:2}  package files
+format_unpack() {
+  local dir=$1 tree=$1/.tree f off
+  shift
+  mkdir -p "$tree"
+  for f in "$@"; do
+    off=$(payload_offset "$f")
+    tail -c +$((off + 1)) "$f" | "$(decompressor "$f" "$off")" -dc |
+      (cd "$tree" && cpio -idm --quiet --no-absolute-filenames) || die "cannot unpack $f"
+  done
+  for f in "$tree"/lib/modules/* "$tree"/usr/lib/modules/*; do
+    [[ -d $f ]] && mv "$f" "$dir/"
+  done
+  rm -rf "$tree"
+}
+
+# Where the payload of an RPM package starts: after the lead (96 bytes),
+# the signature header (padded to 8 bytes) and the header. A header is a
+# magic (8e ad e8), version and reserved bytes, the number of index
+# entries (16 bytes each) and the size of the data, as big-endian 32-bit
+# numbers, then the index and the data.
+# Inputs:
+#   $1    package file
+# Outputs:
+#   the payload's offset in the file
+payload_offset() {
+  local off=96 header
+  for header in signature main; do
+    [[ $(od -An -tx1 -j "$off" -N3 "$1" | tr -d ' ') == 8eade8 ]] || die "not an RPM package: $1"
+    off=$((off + 16 + 16 * $(u32 "$1" $((off + 8))) + $(u32 "$1" $((off + 12)))))
+    [[ $header == main ]] || off=$(((off + 7) / 8 * 8))
+  done
+  echo "$off"
+}
+
+# Inputs:
+#   $1    file
+#   $2    offset
+# Outputs:
+#   the big-endian 32-bit number at the offset
+u32() {
+  od -An -tu4 --endian=big -j "$2" -N4 "$1" | tr -d ' '
+}
+
+# The program that uncompresses data in a file (an RPM payload, repository
+# metadata), told by its magic number.
+# Inputs:
+#   $1    file
+#   $2    offset of the data
+# Outputs:
+#   xz, zstd or gzip
+decompressor() {
+  local magic
+  magic=$(od -An -tx1 -j "$2" -N4 "$1" | tr -d ' ')
+  case $magic in
+    fd377a58) echo xz ;;
+    28b52ffd) echo zstd ;;
+    1f8b*) echo gzip ;;
+    *) die "unknown compression in $1 ($magic)" ;;
+  esac
+}
