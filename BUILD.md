@@ -513,10 +513,7 @@ others are built has an `env.sh`, and `pkg_setup` sources the `env.sh` of
 every package in the resolved requirements. What a build gets therefore
 follows from what it requires, never from what is found on disk:
 
-* `gcc/env.sh`: the POS compiler, `/pos/sdk/bin/gcc`, `g++` and `ld`. A
-  toolchain reference from before the sdk prefix has them in `/pos/bin`;
-  in a toolchain build on one, `COMPILER_PATH` points that gcc at the
-  build's binutils in `/pos/sdk/bin`.
+* `gcc/env.sh`: the POS compiler, `/pos/sdk/bin/gcc`, `g++` and `ld`.
 * `host-toolchain/env.sh` and `gcc-host/env.sh`: the Fedora compiler,
   searching `/pos` ahead of `/usr` (`gcc-host`, standing in for gcc).
 * `pos-link/env.sh`: link against `/pos` with the build's compiler.
