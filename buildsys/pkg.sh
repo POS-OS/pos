@@ -385,6 +385,9 @@ _pkg_split() {
 # goes to <debug>/pos/lib/debug/.build-id/<xx>/<rest>.debug, where gdb and
 # debuginfod look it up by build ID. The loader keeps its symbol table
 # (valgrind needs it) and static libraries lose only their debug info.
+# strip writes archives deterministically (-D: members with zero dates and
+# owners), whichever binutils it is; the tools image's, Fedora's, writes
+# the current date otherwise.
 # Object files (crt*.o) are left as they are.
 # Inputs:
 #   $1    staging directory to scan ($dest_dir or output staging dir)
@@ -403,7 +406,7 @@ _pkg_strip() {
     mode=$(stat -c %a "$f")
     chmod u+w "$f"
     if [[ $magic == '!<arch>\n' ]]; then
-      strip -g "$f"
+      strip -g -D "$f"
     else
       type=$(readelf -h "$f" 2>/dev/null | awk '$1 == "Type:" {print $2}')
       if [[ $type == EXEC || $type == DYN ]]; then
