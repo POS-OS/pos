@@ -1,7 +1,0 @@
-{
-  "tune_params": {
-    "regmove_cost": {
-      "GP2FP": 2
-    }
-  }
-}

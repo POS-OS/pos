@@ -1,6 +1,0 @@
-#...
-Symbol table '\.symtab' contains [0-9]+ entries:
- +Num: +Value +Size Type +Bind +Vis +Ndx Name
-#...
- +[0-9]+: +[0-9a-f]+ +[0-9]+ +FUNC +GLOBAL +DEFAULT .*[0-9]+ _start
-#pass
