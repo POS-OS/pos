@@ -62,7 +62,7 @@ tools_build() {
   host_podman build --build-arg "BASE=$from" \
     --build-arg "PACKAGES=$(xargs <"$bdir/tools-packages.tmp")" \
     --label "pos.build=$id" -t "localhost/pos-tools:$id" \
-    -f "$(host_path "$base/buildsys/tools.containerfile")" "$(host_path "$base/buildsys")" 2>&1 |
+    -f "$(host_path "$engine/buildsys/tools.containerfile")" "$(host_path "$engine/buildsys")" 2>&1 |
     tee -a "$log" >&2
   mv "$bdir/tools-packages.tmp" "$bdir/tools-packages"
 }

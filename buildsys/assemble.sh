@@ -15,9 +15,11 @@
 
 set -euo pipefail
 
-base=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
+engine=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
+# The project's stage lists: POS_PROJECT (build.sh), else the engine's checkout.
+base=$(cd "${POS_PROJECT:-$engine}" && pwd -P)
 # shellcheck source=buildinfo.sh
-source "$base/buildsys/buildinfo.sh"
+source "$engine/buildsys/buildinfo.sh"
 bdir=${1:-}
 stage=${2:-}
 rdir=${3:-}

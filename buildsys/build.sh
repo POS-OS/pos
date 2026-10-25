@@ -35,16 +35,24 @@
 # reference's toolchain, and assembles the stages with the reference's
 # toolchain packages in them. podman runs on the host; from inside a
 # toolbox through flatpak-spawn.
+#
+# The engine, this buildsys/, builds a project: the checkout POS_PROJECT
+# names, else the one the engine is in. Recipes, stages, outputs, VERSION
+# and work/ are the project's; a build records the engine's commit when it
+# is another checkout's (BUILD.md "Engine").
 
 set -euo pipefail
 
-base=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
+engine=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
+base=$(cd "${POS_PROJECT:-$engine}" && pwd -P)
+# The scripts the engine runs (assemble.sh) build the same project.
+export POS_PROJECT=$base
 # shellcheck source=resolve.sh
-source "$base/buildsys/resolve.sh"
+source "$engine/buildsys/resolve.sh"
 # shellcheck source=config.sh
-source "$base/buildsys/config.sh"
+source "$engine/buildsys/config.sh"
 # shellcheck source=buildinfo.sh
-source "$base/buildsys/buildinfo.sh"
+source "$engine/buildsys/buildinfo.sh"
 
 builds=$base/work/builds
 CHECKS=yes
@@ -62,13 +70,13 @@ fedora_image=registry.fedoraproject.org/fedora
 export LC_ALL=C
 
 # shellcheck source=container.sh
-source "$base/buildsys/container.sh"
+source "$engine/buildsys/container.sh"
 # shellcheck source=reference.sh
-source "$base/buildsys/reference.sh"
+source "$engine/buildsys/reference.sh"
 # shellcheck source=release.sh
-source "$base/buildsys/release.sh"
+source "$engine/buildsys/release.sh"
 # shellcheck source=outputs.sh
-source "$base/buildsys/outputs.sh"
+source "$engine/buildsys/outputs.sh"
 
 
 usage() {
@@ -113,6 +121,7 @@ core-libs; by default the ones reference marked last, and for a pos build
 the pos reference its toolchain was built on. A toolchain build without a
 toolchain reference (none) is built by Fedora's compiler; it needs a pos
 reference. A pos build without one builds glibc, the first pos reference.
+It builds the checkout POS_PROJECT names, else the one of this buildsys.
 Settings (build.conf.dist) are read from
 $build_config; an environment variable overrides one:
   fedora-release  POS_FEDORA_RELEASE  the Fedora release (default 44)
@@ -214,7 +223,7 @@ build_new() {
     echo "toolchain-reference $TOOLCHAIN_REF"
     echo "pos-reference $POS_REF"
     echo "branch $branch"
-    tree_state | awk '{print "commit", $1; print "tree", $2}'
+    tree_state | awk '{print "commit", $1; print "tree", $2} NF > 2 {print "engine", $4}'
     echo "$version"
     echo "started $(date -u +%FT%TZ)"
     echo "source-archives $archives"
@@ -233,18 +242,24 @@ build_info() {
 
 # The commit the checkout is at, and clean or dirty: tracked files that
 # differ from it, or files not added yet where the build reads its
-# instructions. Recorded for the build, each package and each step made,
-# so validate can tell that a build was made from one commit.
+# instructions; then "engine <commit>" when the engine is another
+# checkout's, whose buildsys/ counts for clean. Recorded for the build,
+# each package and each step made, so validate can tell that a build was
+# made from one commit.
 # Inputs:
 #   base    path to the POS checkout
+#   engine  path to the engine's checkout
 tree_state() {
-  local dirty
+  local dirty state=clean
   dirty=$(git -C "$base" --no-optional-locks status --porcelain --untracked-files=no
           git -C "$base" --no-optional-locks status --porcelain -- VERSION outputs buildsys devtools "${RECIPES[@]}")
-  if [[ -n $dirty ]]; then
-    echo "$(git -C "$base" rev-parse HEAD) dirty"
+  [[ $engine == "$base" ]] ||
+    dirty+=$(git -C "$engine" --no-optional-locks status --porcelain -- buildsys)
+  [[ -z $dirty ]] || state=dirty
+  if [[ $engine == "$base" ]]; then
+    echo "$(git -C "$base" rev-parse HEAD) $state"
   else
-    echo "$(git -C "$base" rev-parse HEAD) clean"
+    echo "$(git -C "$base" rev-parse HEAD) $state engine $(git -C "$engine" rev-parse HEAD)"
   fi
 }
 
@@ -333,7 +348,7 @@ prepare_key() {
   {
     source_tree "$s"
     upstream_info "$s"
-    cat "$base/${PKGDIR[$s]}/prepare.sh" "$base/buildsys/prepare.sh"
+    cat "$base/${PKGDIR[$s]}/prepare.sh" "$engine/buildsys/prepare.sh"
     echo "${PREQ[$s]}"
     if [[ -f $base/${SRCPATH[$s]}/bootstrap.conf || -x $base/${SRCPATH[$s]}/autopull.sh ]]; then
       source_tree gnulib
@@ -368,7 +383,7 @@ prepare_source() {
   git -C "$base" archive --format=tar "HEAD:${SRCPATH[$s]}" | tar -x -C "$dir.tmp"
   upstream_info "$s" >"$dir.upstream"
   recipe_mounts
-  mounts=(net ro:"$base/buildsys" "${RECIPE_MOUNTS[@]}" ro:"$base/${SRCPATH[$s]}" rw:"$dir.tmp" ro:"$dir.upstream")
+  mounts=(net ro:"$engine/buildsys" "${RECIPE_MOUNTS[@]}" ro:"$base/${SRCPATH[$s]}" rw:"$dir.tmp" ro:"$dir.upstream")
   if [[ -n ${SRCPATH[gnulib]:-} && -d $base/${SRCPATH[gnulib]} ]]; then
     gnulib=$hbase/${SRCPATH[gnulib]}
     mounts+=(ro:"$base/${SRCPATH[gnulib]}")
@@ -387,7 +402,7 @@ prepare_source() {
     POS_PREP_DIR="$(host_path "$dir.tmp")" \
     POS_UPSTREAM="$(host_path "$dir.upstream")" \
     POS_WITH_SRC_DIRS="${with_dirs# }" \
-    bash "$hbase/buildsys/prepare.sh" 2>&1 | tee -a "$log"
+    bash "$(host_path "$engine/buildsys/prepare.sh")" 2>&1 | tee -a "$log"
   mv "$dir.tmp" "$dir"
   touch "$dir.done"
 }
@@ -643,7 +658,7 @@ build_one() {
   # The package's own inputs: the recipes (they source each other's),
   # its source trees, and the build's build, dest and debug directories.
   recipe_mounts
-  local -a mounts=(pos:"$root" ro:"$base/buildsys" "${RECIPE_MOUNTS[@]}")
+  local -a mounts=(pos:"$root" ro:"$engine/buildsys" "${RECIPE_MOUNTS[@]}")
   [[ ! -d $src_dir ]] || mounts+=(ro:"$src_dir")
   WITH_SOURCE_IDS=()
   for s in ${WSRC[$p]}; do
@@ -668,7 +683,7 @@ build_one() {
     POS_DEBUG_DIR="$hbdir/debug/$p" \
     POS_OUTPUTS="${OUTS[$p]# }" \
     POS_ENV_SCRIPTS="${env_files# }" \
-    bash "$hbase/buildsys/pkg.sh" 2>&1 | tee -a "$log"
+    bash "$(host_path "$engine/buildsys/pkg.sh")" 2>&1 | tee -a "$log"
   for q in "$p" ${OUTS[$p]}; do
     pkg_record "$q"
     BUILT[$q]=1
@@ -737,11 +752,13 @@ cmd_plan() {
 # their metadata (build-source, build-with-source), and the build recipes.
 # A source from a release archive is that archive as downloaded,
 # pos-src-<archive>: the meta's sha256 checks it, and its patches are in
-# the recipes.
+# the recipes. An engine of another checkout gets an archive of its own,
+# pos-engine-<stem>.tar.zst.
 # Inputs:
 #   bdir, PKGS, KIND, BUILT
 source_archives() {
-  local p s key out commit
+  local p s key out commit stem
+  local -a recipes=(outputs buildsys "${RECIPES[@]}" BUILD.md README.md)
   local -A seen=()
   for p in "${PKGS[@]}"; do
     [[ ${KIND[$p]} == package && -n ${BUILT[$p]:-} ]] || continue
@@ -769,15 +786,29 @@ source_archives() {
       echo "$out"
     done < <(awk '$1 == "build-source" || $1 == "build-with-source" {print $2, $3}' "$(marker "$p")")
   done
+  stem=$(build_stem "$bdir")
+  if [[ $engine != "$base" ]]; then
+    recipes=(outputs "${RECIPES[@]}" BUILD.md README.md)
+    commit=$(git -C "$engine" rev-parse HEAD)
+    if [[ $commit != "$(build_info engine)" ]] ||
+       [[ -n $(git -C "$engine" status --porcelain --untracked-files=no -- buildsys) ]]; then
+      echo "warning: the engine differs from the commit the build started at; the engine archive holds HEAD" >&2
+    fi
+    out=$bdir/pos-engine-$stem.tar.zst
+    git -C "$engine" archive --format=tar --prefix="pos-engine-$stem/" HEAD buildsys |
+      zstd -q -f -o "$out.tmp"
+    mv "$out.tmp" "$out"
+    echo "$out"
+  fi
   commit=$(git -C "$base" rev-parse HEAD)
   if [[ $commit != "$(build_info commit)" ]] ||
-     [[ -n $(git -C "$base" status --porcelain --untracked-files=no -- outputs buildsys "${RECIPES[@]}") ]]; then
+     [[ -n $(git -C "$base" status --porcelain --untracked-files=no -- "${recipes[@]}") ]]; then
     echo "warning: outputs, buildsys, recipes or stages differ from the commit the build started at;" \
          "the recipes archive holds HEAD" >&2
   fi
-  out=$bdir/pos-recipes-$(build_stem "$bdir").tar.zst
-  git -C "$base" archive --format=tar --prefix="pos-recipes-$(build_stem "$bdir")/" HEAD \
-    outputs buildsys "${RECIPES[@]}" BUILD.md README.md | zstd -q -f -o "$out.tmp"
+  out=$bdir/pos-recipes-$stem.tar.zst
+  git -C "$base" archive --format=tar --prefix="pos-recipes-$stem/" HEAD \
+    "${recipes[@]}" | zstd -q -f -o "$out.tmp"
   mv "$out.tmp" "$out"
   echo "$out"
 }
@@ -807,7 +838,7 @@ assemble_stages() {
   for t in "$@"; do
     title "assemble $t"
     step_start "stage-$t"
-    "$base/buildsys/assemble.sh" "$bdir" "$t" "$refs/$TOOLCHAIN_REF"
+    "$engine/buildsys/assemble.sh" "$bdir" "$t" "$refs/$TOOLCHAIN_REF"
     step_made "stage-$t"
   done
 }

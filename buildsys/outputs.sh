@@ -27,7 +27,8 @@
 # Both phases see the helpers below, the functions of the plugins
 # (output-plugins.d/*.sh) and these variables:
 #
-#   base      the POS checkout
+#   base      the POS checkout, the project (build.sh)
+#   engine    the checkout of buildsys/
 #   bdir      the build directory; id is the build ID
 #   output    the output's name
 #   stages    the stages it requires, in order (array)
@@ -93,7 +94,7 @@ _output_setup() {
   for r in $(output_meta "$output" requires); do
     [[ ! -f $base/pos/$r/stage ]] || stages+=("$r")
   done
-  for f in "$base"/buildsys/output-plugins.d/*.sh; do
+  for f in "$engine"/buildsys/output-plugins.d/*.sh; do
     # shellcheck source=/dev/null
     source "$f"
   done
@@ -195,8 +196,9 @@ output_make() {
       for s in $(all_stages); do
         stage_mounts+=(ro:"$(stage_file "$s")")
       done
-      step_run "output-$output" net root ro:"$base/buildsys" ro:"$base/outputs" "${stage_mounts[@]}" rw:"$bdir" -- \
-        bash "$(host_path "$base/buildsys/outputs.sh")" "$(host_path "$bdir")" "$output"
+      step_run "output-$output" net root ro:"$engine/buildsys" ro:"$base/outputs" "${stage_mounts[@]}" rw:"$bdir" -- \
+        env POS_PROJECT="$(host_path "$base")" \
+        bash "$(host_path "$engine/buildsys/outputs.sh")" "$(host_path "$bdir")" "$output"
     fi
     if declare -F output_host >/dev/null; then
       output_host
@@ -290,9 +292,10 @@ if [[ ${BASH_SOURCE[0]} == "$0" ]]; then
     echo "$*" >&2
     exit 1
   }
-  base=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
+  engine=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
+  base=$(cd "${POS_PROJECT:-$engine}" && pwd -P)
   # shellcheck source=buildinfo.sh
-  source "$base/buildsys/buildinfo.sh"
+  source "$engine/buildsys/buildinfo.sh"
   bdir=${1:?usage: outputs.sh <build dir> <output>}
   _output_setup "${2:?usage: outputs.sh <build dir> <output>}"
   rm -rf "$work"

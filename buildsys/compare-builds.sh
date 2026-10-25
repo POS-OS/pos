@@ -7,14 +7,16 @@
 #
 #   compare-builds.sh <build> <build> [<package>...]
 #
-# A build is an ID in work/builds or work/references, or a directory with
+# A build is an ID in work/builds or work/references of the project
+# (POS_PROJECT, else the checkout of this buildsys/), or a directory with
 # a dest/ of package trees. The default is every package of either build.
 # Prints the differences; exits 1 when there are any.
 
 set -euo pipefail
 export LC_ALL=C
 
-base=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
+engine=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
+base=$(cd "${POS_PROJECT:-$engine}" && pwd -P)
 
 usage() {
   sed -n '/^#   compare-builds.sh/,/^#$/s/^# \{0,1\}//p' "$0" >&2
