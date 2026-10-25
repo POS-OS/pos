@@ -5,8 +5,7 @@
 # reach a POS binary.
 
 pkg() {
-  # Out-of-tree, as binutils requires. The tree also carries gdb; only the
-  # binutils parts are built. No debuginfod: binutils cannot require
+  # Out-of-tree, as binutils requires. No debuginfod: binutils cannot require
   # elfutils, which is built with the gcc that execs it; auto would link it
   # wherever elfutils happens to be in /pos. The bundled zlib and no zstd,
   # as for gcc: the toolchain runs on glibc only (BUILD.md "Toolchain").
@@ -28,11 +27,6 @@ pkg() {
     --enable-default-hash-style=gnu \
     --without-zstd \
     --without-debuginfod \
-    --disable-gdb \
-    --disable-gdbserver \
-    --disable-sim \
-    --disable-readline \
-    --disable-libdecnumber \
     --disable-gprofng \
     --disable-werror \
     --disable-nls

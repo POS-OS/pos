@@ -32,8 +32,8 @@
 #                   a release archive is what prepare makes of a tree
 #
 # A source is the package's own tree's or common's; a source of another
-# tree is named <tree>/<source> (gcc: core-libs/gmp), so what crosses
-# trees shows in the meta.
+# tree is named <tree>/<source>, so what crosses trees shows in the
+# meta.
 #   outputs         further packages the build produces (kind output)
 #   output-of       the package whose build produces this one
 #   pipeline        pos (default) or toolchain: the build that builds the

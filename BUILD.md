@@ -174,7 +174,7 @@ list of the stage named after the tree.
 | --- | --- |
 | `core-libs`, `system`, `sdk` | the stages: their member lists, and the packages and sources of their members |
 | `network`, `container` | the optional stages (see "Network stage", "Container stage"), as the stages above |
-| `toolchain` | the toolchain pipeline (see "Toolchain"): binutils, gcc with gcc-runtime, and mpc, which gcc builds in its tree |
+| `toolchain` | the toolchain pipeline (see "Toolchain"): binutils, gcc with gcc-runtime, and gcc-gmp, gcc-mpfr and mpc, which gcc builds in its tree; release archives, no `src` |
 | `common` | sources of packages of several trees: gnulib |
 | `build-env` | the host and profile packages builds require (host-base, host-toolchain, gcc-host, pos-link) |
 
@@ -189,9 +189,7 @@ Package names are unique across trees, and so are source names; meta and
 stage files name packages without their tree, so a package moves between
 stages without edits elsewhere. A package's sources (`source`,
 `with-sources`) are its own tree's or `common`'s. A source of another
-tree is named with it, `<tree>/<source>`, which shows what crosses trees:
-gcc builds core-libs' gmp and mpfr in its tree (`with-sources
-core-libs/gmp core-libs/mpfr mpc`).
+tree is named with it, `<tree>/<source>`, which shows what crosses trees.
 
 ## Sources
 POS builds from upstream source, not from upstream releases, so it does
@@ -223,7 +221,7 @@ Everything that changes or generates source files belongs to prepare:
 autogen.sh, bootstrap and autoreconf, generators such as less's
 `Makefile.aut`, and edits to upstream files (systemd's libseccomp version
 check, shadow's `chsh.c`). A build recipe configures, compiles and installs
-a tree it does not change. Sources that need none of that (glibc, gcc,
+a tree it does not change. Sources that need none of that (glibc,
 zlib, the meson and cmake packages, and bash, sqlite and sudo, which commit
 their `configure`) have no prepare recipe and are built from their
 committed source.
@@ -233,8 +231,8 @@ of the committed source tree, its `.upstream`, the prepare recipe, the
 helpers, the `prepare-requires`, the committed gnulib for
 packages that use gnulib, and the committed `with-sources`. A tree is prepared once for each key and shared by
 every package built from that source (util-linux, util-linux-bootstrap),
-every build that copies it into its own tree (gcc builds gmp, mpfr and mpc
-in its tree), and later builds. `run` prepares a source when it
+every build that copies it into its own tree (`with-sources`), and later
+builds. `run` prepares a source when it
 first needs it; `./build prepare` does it ahead of time. Builds and
 prepare use the committed state of a source, so uncommitted changes under
 its `src/<source>` stop them.
@@ -407,10 +405,14 @@ zlib and no zstd, and binutils links its own libraries (libbfd,
 libopcodes, libctf, libsframe) statically. The gcc recipe fails if a
 compiler program needs another library. So a pos build can change any library but glibc, whose ABI is
 backward compatible, under the toolchain it builds with: the toolchain
-reference's gcc runs on the pos build's glibc as soon as that is built. gmp and mpfr
-are also pos packages, built from the same sources for coreutils and
-gawk; mpc is only built in gcc's tree (`kind source`), from its release
-archive (see "Release archives").
+reference's gcc runs on the pos build's glibc as soon as that is built.
+
+The toolchain follows upstream releases, not development: gcc, binutils
+and the gmp, mpfr and mpc gcc builds in its tree are release archives (see
+"Release archives"), and a new version is a new `archive` line. gcc's
+gmp and mpfr are sources of their own, gcc-gmp and gcc-mpfr (`kind
+source`, as mpc), apart from core-libs' gmp and mpfr, which coreutils and
+gawk use and which follow upstream's development as the rest of pos.
 
 gcc-runtime (libstdc++, libgcc_s) ships in core-libs but is an output of
 the gcc build, so the C++ headers a program is compiled with and the

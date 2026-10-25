@@ -5,10 +5,12 @@
 # pos build can change any other library under it. The
 # build also produces gcc-runtime, which gcc requires; a build does not
 # need its own outputs to run. glibc and linux-headers are pos's: from the
-# pos reference in a toolchain build.
+# pos reference in a toolchain build. gcc, gmp, mpfr and mpc are upstream
+# releases.
 pipeline toolchain
 build-requires gcc pos-link
 requires glibc gcc-runtime binutils linux-headers
-with-sources core-libs/gmp core-libs/mpfr mpc
+with-sources gcc-gmp gcc-mpfr mpc
 obsoletes gcc-host
 outputs gcc-runtime
+archive https://ftp.gnu.org/gnu/gcc/gcc-16.2.0/gcc-16.2.0.tar.xz e6738e29597f733270731aa90600f37ffdc045079dfc27ec7e8192cc81085c3e

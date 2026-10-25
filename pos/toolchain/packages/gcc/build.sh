@@ -3,8 +3,12 @@
 
 pkg() {
   # The gcc source, with gmp, mpfr and mpc (meta with-sources) beside its
-  # own directories, where gcc's configure builds them along with it.
+  # own directories, where gcc's configure builds them along with it. It
+  # looks for them as gmp and mpfr; the sources are named gcc-gmp and
+  # gcc-mpfr, as core-libs has sources gmp and mpfr.
   pkg_sync_src
+  mv gcc-gmp gmp
+  mv gcc-mpfr mpfr
 
   # POS is a prefix (/pos) on a root that has no /lib or /usr/include of its
   # own, so the compiler's built-in defaults must point there. --with-sysroot
