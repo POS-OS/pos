@@ -567,6 +567,10 @@ pkg_record() {
     echo "built $(date -u +%FT%TZ)"
   } >"$dir/meta.tmp"
   mv "$dir/meta.tmp" "$dir/meta"
+  # A build that takes the package from a reference sets up with it.
+  if [[ -f $base/${PKGDIR[$p]}/env.sh ]]; then
+    cp "$base/${PKGDIR[$p]}/env.sh" "$dir/env.sh"
+  fi
   step_made "package-$p"
 }
 
@@ -639,15 +643,17 @@ source_of() {
 #   BUILT[$p] and BUILT[$q] for each output q in OUTS[$p]
 build_one() {
   local p=$1 q scripts log root env_files=
-  env_of "$p" || die "$p: unresolved: ${MISSING[*]}"
-  scripts=$(env_scripts | xargs)
-  for q in $scripts; do
-    env_files+=" ${PKGDIR[$q]}/env.sh"
-  done
-  log=$bdir/logs/$p.log
-  root=$bdir/roots/$p
   local hbase hbdir src_dir s with_dirs=
   hbase=$(host_path "$base")
+  env_of "$p" || die "$p: unresolved: ${MISSING[*]}"
+  scripts=
+  for q in $(env_scripts); do
+    scripts+=" ${q%@*}"
+    env_files+=" $(env_script "$q" "$hbase")"
+  done
+  scripts=${scripts# }
+  log=$bdir/logs/$p.log
+  root=$bdir/roots/$p
   hbdir=$(host_path "$bdir")
   for q in "$p" ${OUTS[$p]}; do
     step_start "package-$q"
@@ -737,7 +743,7 @@ cmd_plan() {
   echo "toolchain reference $TOOLCHAIN_REF (${#REF[@]} packages), pos reference $POS_REF (${#POSREF[@]} packages)"
   while next_package "${TARGETS[@]}"; do
     env_of "$NEXT"
-    printf '%3d %-24s setup: %s\n' $((++n)) "$NEXT" "$(env_scripts | xargs)"
+    printf '%3d %-24s setup: %s\n' $((++n)) "$NEXT" "$(env_scripts | sed 's/@.*//' | xargs)"
     printf '    env: %s\n' "${ENV[*]}"
     for t in "$NEXT" ${OUTS[$NEXT]}; do
       BUILT[$t]=1

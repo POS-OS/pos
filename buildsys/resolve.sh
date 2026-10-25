@@ -70,6 +70,12 @@
 # in a build without a toolchain reference, and in the toolchain build
 # that builds gcc with it.
 #
+# A project may have the packages of one pipeline only (pos-sdk has the
+# toolchain, pos the rest): the other's are known from its reference, by
+# the meta each package installs (lib/pos/packages/<package>/meta), and
+# taken from it as below. They are FOREIGN; a capability nothing in such a
+# project provides is checked when a build resolves it.
+#
 # Where nothing available provides a capability, a build falls back to a
 # reference's copy of a package: a toolchain package if the capability is
 # a stand-in one (provided by a package another obsoletes: the
@@ -86,7 +92,7 @@ declare -a PKGS=()
 declare -A KIND=() REQ=() BREQ=() HREQ=() PREQ=() PROV=() OBS=() SRC=() WSRC=() OUTS=() PARENT=()
 declare -A PIPE=() PKGDIR=() SRCPATH=() SRCREFS=() ARCHIVE=()
 declare -A PROVIDERS=() BOOTCAP=() TPROV=()
-declare -A BUILT=() REF=() POSREF=() REF_REQ=()
+declare -A BUILT=() REF=() POSREF=() REF_REQ=() FOREIGN=()
 declare -a TARGETS=()
 PIPELINE=pos
 
@@ -184,8 +190,19 @@ meta_load() {
       done
     fi
   done
+  meta_index
+}
+
+# Sort PKGS and index them: the pipeline of outputs, PROVIDERS and
+# BOOTCAP (the capabilities of obsoleted packages).
+# Inputs:
+#   PKGS, KIND, PARENT, PROV, OBS
+# Outputs:
+#   PKGS (sorted), PIPE of outputs, PROVIDERS, BOOTCAP
+meta_index() {
+  local p cap q
   mapfile -t PKGS < <(printf '%s\n' "${PKGS[@]}" | sort)
-  local cap q
+  PROVIDERS=() BOOTCAP=()
   for p in "${PKGS[@]}"; do
     [[ ${KIND[$p]} != output ]] || PIPE[$p]=${PIPE[${PARENT[$p]}]:-pos}
     for cap in ${PROV[$p]}; do
@@ -199,14 +216,55 @@ meta_load() {
   done
 }
 
+# Add the packages of a restored reference the checkout has no recipe for
+# (FOREIGN, see the top), from the meta each installed: what the resolver
+# needs of a package it takes from a reference.
+# Inputs:
+#   $1      reference ID, or none
+#   refs    work/references directory
+# Outputs:
+#   PKGS, KIND, PIPE, REQ, PROV, OBS, OUTS, PARENT, FOREIGN; meta_index
+foreign_load() {
+  local meta p key vals line
+  [[ $1 != none ]] || return 0
+  for meta in "$refs/$1"/dest/*/pos/lib/pos/packages/*/meta; do
+    [[ -f $meta ]] || continue
+    p=$(basename "$(dirname "$meta")")
+    [[ -z ${KIND[$p]:-} || -n ${FOREIGN[$p]:-} ]] || continue
+    FOREIGN[$p]=1
+    PKGS+=("$p")
+    KIND[$p]=package REQ[$p]='' BREQ[$p]='' HREQ[$p]='' PREQ[$p]='' PROV[$p]=$p OBS[$p]='' SRC[$p]=$p
+    WSRC[$p]='' OUTS[$p]='' PARENT[$p]='' PIPE[$p]=pos
+    while read -r line; do
+      line=${line%%#*}
+      read -r key vals <<<"$line"
+      case $key in
+        requires) REQ[$p]+=" $vals" ;;
+        provides) PROV[$p]+=" $vals" ;;
+        obsoletes) OBS[$p]+=" $vals" ;;
+        pipeline) PIPE[$p]=$vals ;;
+        kind) KIND[$p]=$vals ;;
+        outputs) OUTS[$p]+=" $vals" ;;
+        output-of) PARENT[$p]=$vals ;;
+      esac
+    done <"$meta"
+  done
+  mapfile -t PKGS < <(printf '%s\n' "${PKGS[@]}" | sort -u)
+  meta_index
+}
+
 # Validate all loaded package metadata for missing recipes, broken output-of
 # links, missing capability providers, and incomplete obsoletes coverage.
 # Inputs:
 #   base, PKGS, PKGDIR, KIND, PARENT, OUTS, REQ, BREQ, PROVIDERS, PIPE, WSRC,
 #   SRCREFS, SRCPATH, ARCHIVE, OBS, PROV
 meta_validate() {
-  local p m cap q t err=0
-  local -A required=()
+  local p m cap q t err=0 both=
+  local -A required=() pipes=()
+  for p in "${PKGS[@]}"; do
+    [[ ${KIND[$p]} != package ]] || pipes[${PIPE[$p]}]=1
+  done
+  ((${#pipes[@]} < 2)) || both=1
   for p in "${PKGS[@]}"; do
     m=${PKGDIR[$p]}/meta
     case ${KIND[$p]} in
@@ -223,7 +281,8 @@ meta_validate() {
     esac
     for cap in ${REQ[$p]} ${BREQ[$p]}; do
       required[$cap]=1
-      if [[ -z ${PROVIDERS[$cap]:-} ]]; then
+      # A project of one pipeline takes the other's from its references.
+      if [[ -z ${PROVIDERS[$cap]:-} && -n $both ]]; then
         echo "$m: nothing provides $cap" >&2
         err=1
       fi
@@ -487,16 +546,34 @@ env_provides() {
   return 1
 }
 
-# Packages in the environment that set up the build (buildsys/pkg.sh).
+# The entries of the environment that set up the build (buildsys/pkg.sh)
+# with an env.sh: a reference's package with the one it installed
+# (lib/pos/packages/<package>/env.sh), else the recipe's.
 # Inputs:
 #   ENV    resolved environment array from env_of
 env_scripts() {
-  local p
-  for p in "${ENV[@]}"; do
-    p=${p%@*}
-    [[ -f $base/${PKGDIR[$p]}/env.sh ]] && echo "$p"
+  local q
+  for q in "${ENV[@]}"; do
+    env_script "$q" >/dev/null && echo "$q"
   done
   return 0
+}
+
+# The env.sh of an environment entry (env_scripts) in the build container,
+# where the reference's package is in /pos and the recipes at their host
+# path. Returns 1 when it has none.
+# Inputs:
+#   $1      environment entry
+#   [$2]    host path of base (default base)
+env_script() {
+  local q=$1 p=${1%@*}
+  if is_ref "$q" && [[ -f $(env_tree "$q")/lib/pos/packages/$p/env.sh ]]; then
+    echo "/pos/lib/pos/packages/$p/env.sh"
+  elif [[ -n ${PKGDIR[$p]:-} && -f $base/${PKGDIR[$p]}/env.sh ]]; then
+    echo "${2:-$base}/${PKGDIR[$p]}/env.sh"
+  else
+    return 1
+  fi
 }
 
 # Expand target names (stages or packages) into TARGETS (package names),

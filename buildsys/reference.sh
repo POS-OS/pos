@@ -67,6 +67,8 @@ references_choose() {
     POS_REF=$(reference_default pos)
   POS_REF=${POS_REF:-none}
   reference_restore "$POS_REF" pos
+  foreign_load "$TOOLCHAIN_REF"
+  foreign_load "$POS_REF"
   if [[ $PIPELINE == toolchain ]]; then
     [[ $POS_REF != none ]] ||
       die "a toolchain build builds on the glibc of a pos reference; make one with:
@@ -226,6 +228,8 @@ build_references() {
   POS_REF=${POS_REF:-none}
   reference_restore "$TOOLCHAIN_REF" toolchain
   reference_restore "$POS_REF" pos
+  foreign_load "$TOOLCHAIN_REF"
+  foreign_load "$POS_REF"
 }
 
 # Store a build in the reference store (reference-dir) and mark it the

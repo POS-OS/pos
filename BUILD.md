@@ -179,6 +179,14 @@ engine's `buildsys/` makes such a build's records dirty, as one to the
 project does. `buildsys/compare-builds.sh` takes build IDs of the
 project the same way.
 
+A project may have the packages of one pipeline only: pos-sdk has the
+toolchain's. The other pipeline's packages are known from the
+references, by the `meta` each installed in
+`/pos/lib/pos/packages/<package>/`, and taken from them as any reference
+package is; a capability nothing in the project provides is checked when
+a build resolves it. A package's `env.sh` is installed beside its `meta`,
+and a build that takes the package from a reference sources that copy.
+
 ## Trees
 What POS builds is in `pos/`, divided into trees: `pos/<tree>/` has any
 of `packages/<name>/` (recipes, see "Packages"), `src/<source>` with
