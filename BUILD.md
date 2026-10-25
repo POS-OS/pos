@@ -318,8 +318,9 @@ image's glibc, which may be older than POS's. `pkg_cargo` passes an
 explicit `--target` for that, which keeps RUSTFLAGS to the target's crates.
 
 `pipeline toolchain` marks a package of the toolchain (see "Toolchain").
-`kind source` is a directory with only a prepare recipe, for a source
-other packages copy into their tree (mpc).
+`kind source` is a directory with only what makes a source, a prepare
+recipe or an `archive`, for a source other packages copy into their tree
+(mpc).
 
 `run` picks a package whose requirements are all available (built in this
 build, host packages, or from a reference build), builds it, and repeats
@@ -408,7 +409,8 @@ compiler program needs another library. So a pos build can change any library bu
 backward compatible, under the toolchain it builds with: the toolchain
 reference's gcc runs on the pos build's glibc as soon as that is built. gmp and mpfr
 are also pos packages, built from the same sources for coreutils and
-gawk; mpc is only built in gcc's tree (`kind source`).
+gawk; mpc is only built in gcc's tree (`kind source`), from its release
+archive (see "Release archives").
 
 gcc-runtime (libstdc++, libgcc_s) ships in core-libs but is an output of
 the gcc build, so the C++ headers a program is compiled with and the

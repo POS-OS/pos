@@ -23,11 +23,6 @@ pkg() {
 #define STANDARD_STARTFILE_PREFIX_1 "/pos/lib/"
 #define STANDARD_STARTFILE_PREFIX_2 ""
 EOF2
-  # mpc's development branch makes mpc.h at configure time (from mpc.h.in),
-  # in mpc's build directory; gcc's configure looks for the in-tree mpc.h in
-  # the source directory only, where a release tarball has it.
-  sed -e "s|gmpinc='-I\\\$\\\$s/mpc/src |gmpinc='-I\$\$r/\$(HOST_SUBDIR)/mpc/src -I\$\$s/mpc/src |" -i configure
-  grep -q 'mpc/src -I\$\$s/mpc/src' configure || { echo "gcc: in-tree mpc include not patched" >&2; exit 1; }
 
   # gcc's top-level configure derives CFLAGS_FOR_TARGET from CFLAGS, so the
   # flags of _pkg_flags would reach libgcc, libstdc++ and the other target
