@@ -12,7 +12,11 @@
 # (pos/<tree>/src/<source>, resolve.sh) is copied and turned into
 # what a release tarball holds (buildsys/prepare.sh). Prepared trees are kept
 # in work/sources/<source>/<key>, keyed by their inputs, and shared by
-# builds.
+# builds. A source from a release archive (meta "archive") is downloaded
+# into the download directory (setting download-dir), checked against its
+# sha256, and unpacked with its patches into work/sources/<source>/<key>
+# the same way. Downloads and prepares are the steps with network; package
+# builds have none.
 #
 # Every step of a build (prepare, package build, output) runs in a
 # container of the build's tools image: Fedora's container image with the
@@ -47,6 +51,8 @@ CHECKS=yes
 # Who commits VERSION bumps, as the source syncs are committed.
 bot_name=pos-bot bot_email=pos-bot@devzero.dk
 sources=$base/work/sources
+downloads=$(config download-dir)
+downloads=${downloads:-$base/work/downloads}
 refs=$base/work/references
 # The recipes of the checkout, as git pathspecs: the package directories
 # and the stage lists of every tree (resolve.sh).
@@ -72,7 +78,8 @@ usage: ./build plan [--new [--toolchain]] [<target>...]
        ./build run [--new [--toolchain] [--source-archives]] [--no-checks] [<target>...]
                                                build the targets, then assemble stage
                                                archives and make the outputs
-       ./build prepare [<target>...]           prepare the sources of the targets now
+       ./build prepare [<target>...]           download and prepare the sources of the
+                                               targets now
        ./build rebuild <package>...            drop packages from the current build
        ./build output [--no-checks] [<output>...]
                                                make outputs of the current build again
@@ -96,8 +103,9 @@ builds the rest, and takes the toolchain from its toolchain reference. An output
 (outputs/<output>: images, disks, RPM packages) is made when run
 assembles all the stages it requires, after the outputs it requires.
 --source-archives makes the new build also write an archive of every
-source it built from (pos-src-<source>-<key>.tar.zst) and of the build
-recipes (pos-recipes-<stem>.tar.zst).
+source it built from (pos-src-<source>-<key>.tar.zst, or the release
+archive as downloaded, pos-src-<archive>) and of the build recipes
+(pos-recipes-<stem>.tar.zst).
 
 A new build takes the toolchain from a toolchain reference, a stored
 toolchain build, and core-libs from a pos reference, a stored pos build's
@@ -114,6 +122,8 @@ $build_config; an environment variable overrides one:
   toolchain-reference  POS_TOOLCHAIN_REFERENCE  the toolchain reference, or none
   pos-reference   POS_POS_REFERENCE   the pos reference, or none
   release-dir     POS_RELEASE_DIR     the release library publish copies into
+  download-dir    POS_DOWNLOAD_DIR    the sources' release archives
+                                      (default work/downloads)
 EOF
   exit 1
 }
@@ -382,6 +392,108 @@ prepare_source() {
   touch "$dir.done"
 }
 
+# The release archive of a source in the download directory, named as
+# upstream names it.
+# Inputs:
+#   $1    source name
+archive_file() {
+  local url
+  read -r url _ <<<"${ARCHIVE[$1]}"
+  echo "$downloads/${url##*/}"
+}
+
+# The patches of a source from a release archive: patches/*.patch of its
+# package directory, in name order.
+# Inputs:
+#   $1    source name
+archive_patches() {
+  local f
+  for f in "$base/${PKGDIR[$1]}"/patches/*.patch; do
+    [[ -f $f ]] && echo "$f"
+  done
+  return 0
+}
+
+# Download a source's release archive into the download directory, unless
+# it is there. What is there or arrives must have the sha256 of the meta:
+# a file that does not is left for the user to look at, never replaced.
+# Inputs:
+#   $1    source name
+fetch_archive() {
+  local s=$1 url sha f have
+  read -r url sha <<<"${ARCHIVE[$s]}"
+  f=$(archive_file "$s")
+  if [[ ! -f $f ]]; then
+    mkdir -p "$downloads"
+    title "download $s"
+    echo "=== download $s: $url ==="
+    step_run "download-$s" net rw:"$downloads" -- \
+      curl -fL --retry 3 --no-progress-meter -o "$(host_path "$f.tmp")" "$url"
+    have=$(sha256sum "$f.tmp" | cut -d' ' -f1)
+    [[ $have == "$sha" ]] || die "$s: $url has sha256 $have, not ${PKGDIR[$s]}/meta's $sha; kept as $f.tmp"
+    mv "$f.tmp" "$f"
+  fi
+  have=$(sha256sum "$f" | cut -d' ' -f1)
+  [[ $have == "$sha" ]] || die "$s: $f has sha256 $have, not ${PKGDIR[$s]}/meta's $sha"
+}
+
+# The key of an unpacked release archive: the archive and the patches.
+# Inputs:
+#   $1    source name
+unpack_key() {
+  local f
+  {
+    echo "${ARCHIVE[$1]}"
+    while read -r f; do
+      echo "${f##*/}"
+      cat "$f"
+    done < <(archive_patches "$1")
+  } | sha256sum | cut -c1-16
+}
+
+# Unpack a source's release archive, downloaded if it is not yet, and
+# apply its patches, unless a tree with the same key exists. The archive
+# holds one top directory, which becomes the tree. Sets UNPACKED to the
+# tree.
+# Inputs:
+#   $1    source name
+# Outputs:
+#   UNPACKED (path to the tree in $sources/$s/$key)
+unpack_source() {
+  local s=$1 key dir f p
+  local -a patches=() mounts
+  key=$(unpack_key "$s")
+  dir=$sources/$s/$key
+  UNPACKED=$dir
+  [[ -f $dir.done ]] && return
+  fetch_archive "$s"
+  f=$(archive_file "$s")
+  while read -r p; do
+    patches+=("$(host_path "$p")")
+  done < <(archive_patches "$s")
+  rm -rf "$dir" "$dir.tmp"
+  mkdir -p "$dir.tmp"
+  mounts=(ro:"$f" rw:"$dir.tmp")
+  ((${#patches[@]} == 0)) || mounts+=(ro:"$base/${PKGDIR[$s]}/patches")
+  title "unpack $s"
+  echo "=== unpack $s ($key) ==="
+  # shellcheck disable=SC2016
+  step_run "unpack-$s" "${mounts[@]}" -- bash -euo pipefail -c '
+  f=$1 dir=$2
+  shift 2
+  tops=$(tar -tf "$f" | cut -d/ -f1 | sort -u | wc -l)
+  [[ $tops == 1 ]] || { echo "${f##*/}: $tops top directories, not one" >&2; exit 1; }
+  tar -xf "$f" -C "$dir" --strip-components=1 --no-same-owner
+  cd "$dir"
+  for p; do
+    echo "patch ${p##*/}"
+    patch -p1 -s --no-backup-if-mismatch <"$p"
+  done
+  ' unpack "$(host_path "$f")" "$(host_path "$dir.tmp")" "${patches[@]}"
+  mv "$dir.tmp" "$dir"
+  touch "$dir.done"
+}
+
 # Path to the installed package metadata file that marks a package built.
 # Inputs:
 #   $1      package name
@@ -479,8 +591,8 @@ root_compose() {
 
 
 # The tree a source is built from, and its identity for the package
-# metadata and the source archives: the prepared tree's key, or the
-# committed tree. Sets SOURCE_DIR and SOURCE_KEY.
+# metadata and the source archives: the unpacked or prepared tree's key,
+# or the committed tree. Sets SOURCE_DIR and SOURCE_KEY.
 # Inputs:
 #   $1    source name
 # Outputs:
@@ -488,7 +600,11 @@ root_compose() {
 source_of() {
   local s=$1
   SOURCE_DIR=$base/${SRCPATH[$s]}
-  if has_prepare "$s"; then
+  if [[ -n ${ARCHIVE[$s]:-} ]]; then
+    unpack_source "$s"
+    SOURCE_DIR=$UNPACKED
+    SOURCE_KEY=$(basename "$UNPACKED")
+  elif has_prepare "$s"; then
     prepare_source "$s"
     SOURCE_DIR=$PREPARED
     SOURCE_KEY=$(basename "$PREPARED")
@@ -619,6 +735,9 @@ cmd_plan() {
 
 # Archive every source the build's packages were built from, as recorded in
 # their metadata (build-source, build-with-source), and the build recipes.
+# A source from a release archive is that archive as downloaded,
+# pos-src-<archive>: the meta's sha256 checks it, and its patches are in
+# the recipes.
 # Inputs:
 #   bdir, PKGS, KIND, BUILT
 source_archives() {
@@ -631,6 +750,12 @@ source_archives() {
       seen[$s]=1
       if [[ -z $key ]]; then
         echo "note: no source archive for $s: ${SRCPATH[$s]:-its source} is not in the repository"
+        continue
+      fi
+      if [[ -n ${ARCHIVE[$s]:-} ]]; then
+        out=$bdir/pos-src-$(basename "$(archive_file "$s")")
+        [[ -f $out ]] || { cp "$(archive_file "$s")" "$out.tmp" && mv "$out.tmp" "$out"; }
+        echo "$out"
         continue
       fi
       out=$bdir/pos-src-$s-${key:0:16}.tar.zst
@@ -759,8 +884,9 @@ cmd_run() {
   [[ -z $all ]] || step_made complete
 }
 
-# Prepare the sources the targets are built from, ahead of a run (run
-# prepares them when it needs them). Uses the current build's tools image.
+# Download, unpack and prepare the sources the targets are built from,
+# ahead of a run (run does when it needs them), so the run can be offline.
+# Uses the current build's tools image.
 # Inputs:
 #   $@    optional stage and/or package target names
 cmd_prepare() {
@@ -777,10 +903,15 @@ cmd_prepare() {
   for p in "${TARGETS[@]}"; do
     p=$(build_of "$p")
     for s in ${SRC[$p]} ${WSRC[$p]}; do
-      [[ -z ${seen[$s]:-} ]] && has_prepare "$s" || continue
+      [[ -z ${seen[$s]:-} ]] || continue
       seen[$s]=1
-      prepare_source "$s"
-      echo "$s: $PREPARED"
+      if [[ -n ${ARCHIVE[$s]:-} ]]; then
+        unpack_source "$s"
+        echo "$s: $UNPACKED"
+      elif has_prepare "$s"; then
+        prepare_source "$s"
+        echo "$s: $PREPARED"
+      fi
     done
   done
 }

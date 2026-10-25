@@ -207,7 +207,7 @@ publish_copy() {
   stem=$(build_stem "$bdir")
   mkdir -p "$dir/rpm"
   cp "$bdir/info" "$dir/info"
-  for f in "$bdir"/pos-*-"$stem".* "$bdir"/pos-src-*.tar.zst; do
+  for f in "$bdir"/pos-*-"$stem".* "$bdir"/pos-src-*; do
     [[ ! -f $f ]] || cp --reflink=auto "$f" "$dir/"
   done
   for f in "$bdir"/rpm/*.rpm; do

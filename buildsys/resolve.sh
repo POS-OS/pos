@@ -24,6 +24,12 @@
 #   with-sources    further source trees the build copies into its own,
 #                   each as a directory named after the source (gcc builds
 #                   gmp, mpfr and mpc in its tree)
+#   archive         <url> <sha256>: the package's source is this release
+#                   archive, not a synced tree in src/. Patches in the
+#                   package directory's patches/ (*.patch, applied with -p1
+#                   in name order) are applied to it. Only in the package
+#                   directory named after the source, without prepare.sh:
+#                   a release archive is what prepare makes of a tree
 #
 # A source is the package's own tree's or common's; a source of another
 # tree is named <tree>/<source> (gcc: core-libs/gmp), so what crosses
@@ -40,8 +46,9 @@
 #                   installed by dnf
 #                   profile: nothing to build or install; a build setup
 #                   that recipes require
-#                   source: nothing to build; holds the prepare recipe of
-#                   a source other packages build from (with-sources)
+#                   source: nothing to build; holds the prepare recipe or
+#                   the archive of a source other packages build from
+#                   (with-sources)
 #
 # A package directory may also have env.sh. pkg_setup sources it in every
 # build whose resolved environment contains the package.
@@ -77,7 +84,7 @@
 
 declare -a PKGS=()
 declare -A KIND=() REQ=() BREQ=() HREQ=() PREQ=() PROV=() OBS=() SRC=() WSRC=() OUTS=() PARENT=()
-declare -A PIPE=() PKGDIR=() SRCPATH=() SRCREFS=()
+declare -A PIPE=() PKGDIR=() SRCPATH=() SRCREFS=() ARCHIVE=()
 declare -A PROVIDERS=() BOOTCAP=() TPROV=()
 declare -A BUILT=() REF=() POSREF=() REF_REQ=()
 declare -a TARGETS=()
@@ -128,8 +135,8 @@ sources_load() {
 #   base    path to the POS checkout
 # Outputs (arrays/maps populated):
 #   PKGS, PKGDIR, KIND, REQ, BREQ, HREQ, PREQ, PROV, OBS, SRC, WSRC,
-#   SRCREFS (source and with-sources as written), SRCPATH, OUTS, PARENT,
-#   PIPE, PROVIDERS, BOOTCAP
+#   SRCREFS (source and with-sources as written), SRCPATH, ARCHIVE, OUTS,
+#   PARENT, PIPE, PROVIDERS, BOOTCAP
 meta_load() {
   local dir p key vals line r
   sources_load
@@ -155,6 +162,7 @@ meta_load() {
         obsoletes) OBS[$p]+=" $vals" ;;
         source) SRC[$p]=$vals ;;
         with-sources) WSRC[$p]+=" $vals" ;;
+        archive) ARCHIVE[$p]=$vals ;;
         pipeline) PIPE[$p]=$vals ;;
         kind) KIND[$p]=$vals ;;
         outputs) OUTS[$p]+=" $vals" ;;
@@ -195,7 +203,7 @@ meta_load() {
 # links, missing capability providers, and incomplete obsoletes coverage.
 # Inputs:
 #   base, PKGS, PKGDIR, KIND, PARENT, OUTS, REQ, BREQ, PROVIDERS, PIPE, WSRC,
-#   SRCREFS, SRCPATH, OBS, PROV
+#   SRCREFS, SRCPATH, ARCHIVE, OBS, PROV
 meta_validate() {
   local p m cap q t err=0
   local -A required=()
@@ -224,8 +232,22 @@ meta_validate() {
       pos|toolchain) ;;
       *) echo "$m: unknown pipeline: ${PIPE[$p]}" >&2; err=1 ;;
     esac
+    if [[ -n ${ARCHIVE[$p]:-} ]]; then
+      if [[ ! ${ARCHIVE[$p]} =~ ^[a-z]+://[^[:space:]]+/[^/[:space:]]+[[:space:]]+[0-9a-f]{64}$ ]]; then
+        echo "$m: archive: expected <url> <sha256>" >&2
+        err=1
+      fi
+      if [[ ${KIND[$p]} != package && ${KIND[$p]} != source || ${SRC[$p]} != "$p" ]]; then
+        echo "$m: archive is for the package directory of its own source" >&2
+        err=1
+      fi
+      if [[ -e $base/${SRCPATH[$p]} || -f $base/${PKGDIR[$p]}/prepare.sh ]]; then
+        echo "$m: archive, and also ${SRCPATH[$p]} or prepare.sh" >&2
+        err=1
+      fi
+    fi
     for q in ${WSRC[$p]}; do
-      if [[ ! -d $base/${SRCPATH[$q]} ]]; then
+      if [[ -z ${ARCHIVE[$q]:-} && ! -d $base/${SRCPATH[$q]} ]]; then
         echo "$m: with-sources $q: no ${SRCPATH[$q]}" >&2
         err=1
       fi

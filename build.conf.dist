@@ -34,3 +34,9 @@
 # build's artifacts into <release-dir>/<release>; publish reads it, builds
 # do not record it. No default: publish needs it.
 #release-dir /path/to/pos-releases
+
+# Download directory (POS_DOWNLOAD_DIR): the release archives of the
+# sources that are built from one (meta archive), downloaded when a build
+# first needs them and checked against their sha256 each time. Builds of
+# several checkouts can share one. Default: work/downloads of the checkout.
+#download-dir /path/to/pos-downloads

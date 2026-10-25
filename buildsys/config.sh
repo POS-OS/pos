@@ -17,6 +17,7 @@ config_keys=(
   "toolchain-reference POS_TOOLCHAIN_REFERENCE -"
   "pos-reference POS_POS_REFERENCE -"
   "release-dir POS_RELEASE_DIR -"
+  "download-dir POS_DOWNLOAD_DIR -"
 )
 
 declare -A CONFIG=()
@@ -56,7 +57,7 @@ config_load() {
 # The value of a setting; empty for one without a default.
 # Inputs:
 #   $1    setting key (fedora-release, tools-image, reference-dir,
-#         toolchain-reference, pos-reference, release-dir)
+#         toolchain-reference, pos-reference, release-dir, download-dir)
 config() {
   local line k var def
   for line in "${config_keys[@]}"; do

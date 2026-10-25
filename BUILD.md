@@ -13,7 +13,7 @@ reaches through `flatpak-spawn --host` from inside a toolbox, as the
     $ ./build run                  # build and assemble every stage
     $ ./build run core-libs        # one stage
     $ ./build run zlib             # one package (and what it needs)
-    $ ./build prepare              # prepare sources ahead of a run
+    $ ./build prepare              # download and prepare sources ahead of a run
     $ ./build status
     $ ./build output               # make the outputs of the current build again
     $ ./build output rpm-pos       # one output: the pos RPM package
@@ -162,6 +162,7 @@ an unknown key is an error.
 | `toolchain-reference` | `POS_TOOLCHAIN_REFERENCE` | the store's default (see "Reference builds"); `none`: a build with Fedora's compiler |
 | `pos-reference` | `POS_POS_REFERENCE` | a pos build: its toolchain reference's; a toolchain build: the store's default |
 | `release-dir` | `POS_RELEASE_DIR` | none: `publish` needs it; read by `publish`, not recorded by builds |
+| `download-dir` | `POS_DOWNLOAD_DIR` | `work/downloads`: the sources' release archives (see "Release archives"); not recorded by builds |
 
 ## Trees
 What POS builds is in `pos/`, divided into trees: `pos/<tree>/` has any
@@ -249,15 +250,36 @@ says `0.0.0` in `configure.ac` until a release sets it; its prepare
 recipe sets the newest release in `CHANGELOG`, which is also the library's
 soname (`libseccomp.so.2`) and `SCMP_VER_*`.
 
+### Release archives
+A source can instead be an upstream release archive, for what follows
+upstream releases rather than its development (the toolchain, see
+"Toolchain"). The meta of the package named after the source has
+`archive <url> <sha256>`, and the source has no `src/<source>` and no
+prepare recipe: a release archive is what prepare makes of a tree.
+Patches go in the package directory's `patches/`, `*.patch` applied with
+`-p1` in name order. Changing the version is changing that line.
+
+The archive is downloaded into the download directory (setting
+`download-dir`) when a build first needs it, or by `./build prepare`,
+in a build container with network access, and kept under the name
+upstream gives it. It is checked against the sha256 when downloaded and
+each time it is used; a file that does not match stops the build and is
+left as it is. A build container without network unpacks it, with the
+patches, into `work/sources/<source>/<key>`, keyed by the `archive` line
+and the patches; the archive holds one top directory, which becomes the
+tree. Builds use the tree as they use a prepared one.
+
 Each package's metadata records the source it was built from:
-`build-source <source> <key>`, the prepared tree's key or the committed
-tree's hash.
+`build-source <source> <key>`, the prepared or unpacked tree's key or
+the committed tree's hash.
 
 ## Source archives
 `./build run --new --source-archives` creates a build that, after
 assembling the stages, archives every source its packages were built from,
 as recorded in their metadata: `pos-src-<source>-<key>.tar.zst`, the
-prepared tree or the committed tree. It also archives the build recipes as
+prepared tree or the committed tree, and for a source from a release
+archive the archive as downloaded, `pos-src-<archive>`, which its sha256
+in the meta checks; its patches are in the recipes. It also archives the build recipes as
 they are at `HEAD` (`buildsys`, the trees' `packages` and `stage`, `outputs`,
 the docs) as
 `pos-recipes-<stem>.tar.zst`, with a warning if they changed since the build
