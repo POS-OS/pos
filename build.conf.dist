@@ -42,3 +42,8 @@
 # first needs them and checked against their sha256 each time. Builds of
 # several checkouts can share one. Default: work/downloads of the checkout.
 #download-dir /path/to/pos-downloads
+
+# The pos checkout another project's ./build takes the engine from, at
+# the commit its project file pins (POS_ENGINE_CHECKOUT). Read by that
+# ./build, not by the engine; set it in the project's <project>.conf.
+#engine-checkout /path/to/pos

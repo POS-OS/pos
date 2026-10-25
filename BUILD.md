@@ -167,6 +167,7 @@ an unknown key is an error.
 | `pos-reference` | `POS_POS_REFERENCE` | a pos build: its toolchain reference's; a toolchain build: the store's default |
 | `release-dir` | `POS_RELEASE_DIR` | none: `publish` needs it; read by `publish`, not recorded by builds |
 | `download-dir` | `POS_DOWNLOAD_DIR` | `work/downloads`: the sources' release archives (see "Release archives"); not recorded by builds |
+| `engine-checkout` | `POS_ENGINE_CHECKOUT` | none: the pos checkout another project's `./build` takes the engine from (see "Engine"); read by that `./build` |
 
 ## Engine
 `buildsys/` is the engine: it resolves, runs the steps in containers,
@@ -179,8 +180,10 @@ engine is in. Its `name` (pos) names the project's settings
 (`localhost/<name>-tools:<id>`, `<name>-<id>-<step>`) and its recipes
 archive.
 
-pos builds itself with its own engine. Another project runs the engine of a pos checkout with
-`POS_PROJECT` set to itself; its builds are kept in its own `work/`,
+pos builds itself with its own engine. Another project runs the engine of
+a pos checkout with `POS_PROJECT` set to itself: its `./build` pins the
+engine, an `engine <pos commit>` line in its `project` file, checked out
+from the pos checkout the `engine-checkout` setting names. Its builds are kept in its own `work/`,
 and their `info` records the engine's commit (`engine`), as every
 record a producer makes does (see "Build numbers"). A change to the
 engine's `buildsys/` makes such a build's records dirty, as one to the

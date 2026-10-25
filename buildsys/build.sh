@@ -133,6 +133,8 @@ $build_config and $project_config; an environment variable overrides one:
   release-dir     POS_RELEASE_DIR     the release library publish copies into
   download-dir    POS_DOWNLOAD_DIR    the sources' release archives
                                       (default work/downloads)
+  engine-checkout POS_ENGINE_CHECKOUT the pos checkout another project's
+                                      ./build takes the engine from
 EOF
   exit 1
 }
