@@ -125,6 +125,7 @@ stage_file() {
 sources_load() {
   local f s rel
   for f in "$base"/pos/*/src/*; do
+    [[ -e $f ]] || continue
     rel=${f#"$base"/}
     rel=${rel%.upstream}
     s=${rel##*/}

@@ -765,8 +765,8 @@ cmd_plan() {
 # Inputs:
 #   bdir, PKGS, KIND, BUILT
 source_archives() {
-  local p s key out commit stem
-  local -a recipes=(outputs buildsys "${RECIPES[@]}" BUILD.md README.md)
+  local p s key out commit stem spec
+  local -a recipes=() specs=(outputs buildsys "${RECIPES[@]}" BUILD.md README.md)
   local -A seen=()
   for p in "${PKGS[@]}"; do
     [[ ${KIND[$p]} == package && -n ${BUILT[$p]:-} ]] || continue
@@ -795,8 +795,12 @@ source_archives() {
     done < <(awk '$1 == "build-source" || $1 == "build-with-source" {print $2, $3}' "$(marker "$p")")
   done
   stem=$(build_stem "$bdir")
+  [[ $engine == "$base" ]] || specs=(outputs "${RECIPES[@]}" BUILD.md README.md)
+  # What the project has of them: git archive refuses a path it has not.
+  for spec in "${specs[@]}"; do
+    [[ -z $(git -C "$base" ls-files -- "$spec" | head -n1) ]] || recipes+=("$spec")
+  done
   if [[ $engine != "$base" ]]; then
-    recipes=(outputs "${RECIPES[@]}" BUILD.md README.md)
     commit=$(git -C "$engine" rev-parse HEAD)
     if [[ $commit != "$(build_info engine)" ]] ||
        [[ -n $(git -C "$engine" status --porcelain --untracked-files=no -- buildsys) ]]; then

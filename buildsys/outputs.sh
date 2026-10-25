@@ -112,6 +112,7 @@ _output_setup() {
 outputs_load() {
   local dir o key r
   for dir in "$base"/outputs/*/; do
+    [[ -d $dir ]] || continue
     o=$(basename "$dir")
     [[ -f $dir/meta ]] || die "outputs/$o: missing meta"
     [[ -f $dir/output.sh ]] || die "outputs/$o: missing output.sh"
