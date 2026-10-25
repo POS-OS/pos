@@ -11,7 +11,9 @@ pkg() {
   # wherever elfutils happens to be in /pos. The bundled zlib and no zstd,
   # as for gcc: the toolchain runs on glibc only (BUILD.md "Toolchain").
   # In the sdk prefix, whose lib the loader does not search: libbfd,
-  # libopcodes, libctf and libsframe are linked in statically.
+  # libopcodes, libctf and libsframe are linked in statically. ar and
+  # ranlib write archive members with zero dates and owners and mode 0644
+  # (their D option): two builds of a package then give the same archives.
   pkg_configure "${src_dir}/configure" \
     --prefix="$sdk_prefix" \
     --libdir="${sdk_prefix}/lib" \
@@ -21,6 +23,7 @@ pkg() {
     --enable-plugins \
     --enable-64-bit-bfd \
     --enable-new-dtags \
+    --enable-deterministic-archives \
     --enable-relro \
     --enable-default-hash-style=gnu \
     --without-zstd \
