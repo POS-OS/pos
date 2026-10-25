@@ -1,0 +1,4 @@
+# The project buildsys/ builds (BUILD.md "Engine"): "key value" lines.
+# name: names the project's settings (<name>.conf), tools images and
+# containers, and recipes archive.
+name pos

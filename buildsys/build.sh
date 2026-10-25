@@ -113,7 +113,7 @@ assembles all the stages it requires, after the outputs it requires.
 --source-archives makes the new build also write an archive of every
 source it built from (pos-src-<source>-<key>.tar.zst, or the release
 archive as downloaded, pos-src-<archive>) and of the build recipes
-(pos-recipes-<stem>.tar.zst).
+(<project>-recipes-<stem>.tar.zst, pos-recipes for pos).
 
 A new build takes the toolchain from a toolchain reference, a stored
 toolchain build, and core-libs from a pos reference, a stored pos build's
@@ -123,7 +123,7 @@ toolchain reference (none) is built by Fedora's compiler; it needs a pos
 reference. A pos build without one builds glibc, the first pos reference.
 It builds the checkout POS_PROJECT names, else the one of this buildsys.
 Settings (build.conf.dist) are read from
-$build_config; an environment variable overrides one:
+$build_config and $project_config; an environment variable overrides one:
   fedora-release  POS_FEDORA_RELEASE  the Fedora release (default 44)
   tools-image     POS_TOOLS_IMAGE     the image tools are installed on
                                       (default $fedora_image:<release>)
@@ -159,7 +159,7 @@ title_init() {
 
 title() {
   [[ -n $TITLE ]] || return 0
-  printf '\e]2;pos %s\a' "$*" >/dev/tty 2>/dev/null || true
+  printf '\e]2;%s %s\a' "$project" "$*" >/dev/tty 2>/dev/null || true
 }
 
 title_restore() {
@@ -219,7 +219,7 @@ build_new() {
     echo "pipeline $PIPELINE"
     echo "fedora $fedora_release"
     echo "tools-base $from"
-    echo "tools-image localhost/pos-tools:$id"
+    echo "tools-image $(tools_image)"
     echo "toolchain-reference $TOOLCHAIN_REF"
     echo "pos-reference $POS_REF"
     echo "branch $branch"
@@ -812,8 +812,8 @@ source_archives() {
     echo "warning: outputs, buildsys, recipes or stages differ from the commit the build started at;" \
          "the recipes archive holds HEAD" >&2
   fi
-  out=$bdir/pos-recipes-$stem.tar.zst
-  git -C "$base" archive --format=tar --prefix="pos-recipes-$stem/" HEAD \
+  out=$bdir/$project-recipes-$stem.tar.zst
+  git -C "$base" archive --format=tar --prefix="$project-recipes-$stem/" HEAD \
     "${recipes[@]}" | zstd -q -f -o "$out.tmp"
   mv "$out.tmp" "$out"
   echo "$out"
@@ -1001,9 +1001,9 @@ cmd_status() {
 #   [$1]    build ID (defaults to current_id)
 cmd_clean() {
   id=${1:-$(current_id)} || die "no current build"
-  if host_podman image exists "localhost/pos-tools:$id"; then
-    echo "removing image localhost/pos-tools:$id"
-    host_podman rmi "localhost/pos-tools:$id" >/dev/null
+  if host_podman image exists "$(tools_image)"; then
+    echo "removing image $(tools_image)"
+    host_podman rmi "$(tools_image)" >/dev/null
   fi
   rm -rf "${builds:?}/$id/roots"
   echo "outputs are kept in $builds/$id"

@@ -1,5 +1,7 @@
 # Settings of ./build. Copy to ~/.config/pos/build.conf, or another file
-# named by POS_BUILD_CONFIG, and edit. Lines are "<key> <value>"; the
+# named by POS_BUILD_CONFIG, and edit. <project>.conf next to it (pos.conf,
+# the project file's name) holds what differs between projects, as
+# release-dir; its lines replace these. Lines are "<key> <value>"; the
 # environment variable named with each setting overrides it. Only new
 # builds read settings: a build records what it uses in its info.
 
