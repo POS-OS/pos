@@ -214,7 +214,7 @@ list of the stage named after the tree.
 | Tree | What it holds |
 | --- | --- |
 | `core-libs`, `system` | the stages: their member lists, and the packages and sources of their members |
-| `network`, `container` | the optional stages (see "Network stage", "Container stage"), as the stages above |
+| `network`, `container`, `storage` | the optional stages (see "Network stage", "Container stage", "Storage stage"), as the stages above |
 | `common` | sources of packages of several trees: gnulib |
 | `build-env` | the host and profile packages builds require (host-base, host-toolchain, gcc-host, pos-link) |
 
@@ -1010,7 +1010,7 @@ rpm-pos-fedora; fedora-toolbox from container-fs-dnf).
 | output | requires | makes |
 | --- | --- | --- |
 | `container-fs` | core-libs, system | `pos-container-fs-<stem>.tar.zst` |
-| `stage-images` | core-libs, system, network, container | `pos-<stage>-<stem>.raw` and `.requires` of network and container |
+| `stage-images` | core-libs, system, network, container, storage | `pos-<stage>-<stem>.raw` and `.requires` of network, container and storage |
 | `vm-disk` | core-libs, system, stage-images | `pos-vm-disk-<stem>.qcow2` |
 | `rpm-pos` | core-libs, system | `rpm/pos`, `rpm/pos-debuginfo` |
 | `rpm-pos-fedora` | core-libs, system | `rpm/pos-fedora` |
@@ -1268,7 +1268,7 @@ commands.
   shows as `package` and leaves alone.
 
 ## Stage images
-An optional stage (network, container) ships with an installed system without being
+An optional stage (network, container, storage) ships with an installed system without being
 part of its `/pos`: as a system extension image in the system's library
 of stage images, which `pos-stage` enables. The stage arrives built, from
 the same build as the rest, and nothing is downloaded or integrated on
@@ -1501,6 +1501,11 @@ and the shell userland. It builds on core-libs.
   dependencies (a page viewer that costs four packages; each package still
   installs its man pages under `/pos/share/man`). Their recipes remain in
   `pos/system/packages/` for reuse.
+* e2fsprogs and dosfstools, the tools of the root's ext4 and the ESP's
+  FAT: systemd-fsck checks them at boot with fsck.ext4 and fsck.vfat, and
+  they resize and repair without a stage enabled. Other file systems are
+  the storage stage's. e2fsprogs uses util-linux's libuuid, libblkid,
+  fsck and uuidd; no fuse2fs.
 * file and which are user utilities in the base. GNU which is the GNU
   project's git tree on Savannah, with its build system in the cwm4
   submodule; `pos/system/packages/which/prepare.sh` notes what its bootstrap needs.
@@ -1565,6 +1570,16 @@ libsystemd (journal output for logger/lslogins). util-linux-bootstrap,
 `--without-systemd`, is what systemd is built against; util-linux is built
 after systemd `--with-systemd`. shadow and dbus require systemd so their
 logind and sd_notify integration is on.
+
+systemd builds against cryptsetup (it dlopens libcryptsetup), which links
+libdevmapper from lvm2, and lvm2 links libudev and libsystemd.
+`lvm2-bootstrap` is lvm2's device-mapper part without udev
+synchronization or libsystemd (`lvm2_make`, `lvm2_install` and
+`configure_extra` set before sourcing lvm2's recipe); cryptsetup requires
+it and `util-linux-bootstrap`, and lvm2 provides and obsoletes it, as
+util-linux does `util-linux-bootstrap`. A stage image's requirements on
+such a capability count for the stage of the package that provides it
+(`sysext_stage_of`).
 
 ## System integration
 `pos-integration` is POS's own package for the files that make the
@@ -1663,7 +1678,7 @@ with Fedora's compilers (see "Packages").
   conmon, catatonit, crun), the journald log driver, netavark, the overlay
   driver (rootless too, without fuse-overlayfs), and docker.io for short
   names. `/etc/containers` has its empty drop-in directories.
-* crun (with json-c; its libocispec submodule generates C from the OCI
+* crun (with core-libs' json-c; its libocispec submodule generates C from the OCI
   schemas with Python): cgroup v2 through systemd, eBPF device rules,
   seccomp, capabilities; no CRIU, Wasm or libkrun. conmon (glib,
   libsystemd), catatonit.
@@ -1679,3 +1694,41 @@ with Fedora's compilers (see "Packages").
 Not in the stage: buildah and skopeo (podman build and podman image cover
 most of their use), toolbox, podman-remote, slirp4netns, fuse-overlayfs
 and iptables, which podman's current defaults do without.
+
+# Storage stage
+The storage stage (`pos/storage/stage`) is file system, volume,
+encryption and network storage tools, optional on a system: it is not in
+`/pos` until enabled (see "Stage images"). It builds on core-libs and
+system; the root's and the ESP's tools (e2fsprogs, dosfstools) are the
+system stage's.
+
+* File systems: xfsprogs, with liburcu (userspace-rcu) and inih, and ICU
+  for xfs_scrub; xfs_scrub_all and xfs_protofile are Python scripts and
+  are left out, with the xfs_scrub_all units. btrfs-progs, with
+  btrfs-convert from ext2/3/4 (e2fsprogs' libraries), OpenSSL checksums,
+  zstd and zlib; no LZO, as lzo is released only as tarballs, not git:
+  restore, receive and mkfs --rootdir cannot handle LZO-compressed
+  extents. exfatprogs.
+* lvm2: the lvm tools, dmsetup, dmeventd, lvmpolld, libdevmapper, with
+  udev synchronization, its udev rules and units, the devices file on by
+  default; thin, cache, writecache and integrity volumes, checked with
+  thin-provisioning-tools (Rust, built with Fedora's compiler as the
+  container stage's). No VDO (vdoformat), no D-Bus service, and no NVMe
+  WWIDs: lvm2 reads them with libnvme 1, and nvme-cli's tree now has
+  libnvme 3, a new API. libaio for the tools' I/O. mdadm with mdmon, its
+  udev rules (incremental assembly), units and shutdown hook.
+* cryptsetup with veritysetup and integritysetup: OpenSSL, its Argon2
+  too, kernel keyring tokens; no SSH token or pwquality. systemd dlopens
+  libcryptsetup (see "Circular dependencies"): crypttab,
+  systemd-cryptsetup, cryptenroll and homed's LUKS volumes work once the
+  stage is enabled.
+* open-iscsi (iscsid, iscsiadm, iscsistart, iscsiuio, the iBFT generator)
+  with iSNS from open-isns. The initiator name is made on the machine by
+  iscsi-init.service; the build's is not shipped, or machines would share
+  it. nvme-cli with libnvme, NVMe over Fabrics discovery and autoconnect;
+  no TLS keys (keyutils), mDNS or KMIP.
+* smartmontools: smartctl, smartd and the drive database, which updates
+  with POS (no update-smart-drivedb).
+
+Not in the stage: f2fs-tools, ntfs-3g, multipath-tools, targetcli (iSCSI
+targets), Stratis, VDO.

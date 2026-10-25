@@ -25,6 +25,10 @@ file
 which
 # Process tools: ps, top, free, pgrep, sysctl, watch, w, uptime.
 procps
+# File systems of the root and the ESP: ext4 (e2fsprogs) and FAT (dosfstools),
+# for systemd-fsck at boot and resizing. Others are the storage stage's.
+e2fsprogs
+dosfstools
 # The initramfs: dracut (kernel-install's plugin), with GNU cpio.
 cpio
 dracut

@@ -1,0 +1,7 @@
+build-requires gcc pos-link
+# libdevmapper (lvm2-bootstrap until lvm2 is built), LUKS2 metadata in
+# JSON (json-c), libblkid and libuuid (util-linux-bootstrap until
+# util-linux is built), popt for the tools: systemd builds against it
+# (BUILD.md "Circular dependencies").
+requires glibc lvm2-bootstrap json-c openssl popt util-linux-bootstrap
+host-requires meson ninja-build rubygem-asciidoctor

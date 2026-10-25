@@ -1,9 +1,8 @@
 # Container tools: an optional stage, shipped as a system extension image
 # and enabled with pos-stage (BUILD.md "Container stage"). It requires the
 # network stage: netavark writes its firewall rules with nft.
-# The OCI runtime (crun, with json-c), the container monitor (conmon) and
-# the init of pods and --init (catatonit).
-json-c
+# The OCI runtime (crun; json-c is core-libs'), the container monitor
+# (conmon) and the init of pods and --init (catatonit).
 crun
 conmon
 catatonit

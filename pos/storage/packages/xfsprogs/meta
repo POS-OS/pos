@@ -1,0 +1,4 @@
+build-requires gcc pos-link
+# liburcu (userspace-rcu), inih, libuuid and libblkid (util-linux), ICU for
+# xfs_scrub; libdevmapper (lvm2) for xfs_io's log_writes (dm-log-writes marks).
+requires glibc userspace-rcu inih util-linux icu lvm2

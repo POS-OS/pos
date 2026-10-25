@@ -1,0 +1,6 @@
+build-requires gcc pos-link
+# libudev and libsystemd (systemd), libblkid (util-linux), libaio for the
+# tools' I/O; the thin and cache tools it runs. lvm2-bootstrap stands in for it until it is built.
+requires glibc systemd util-linux libaio readline thin-provisioning-tools
+provides lvm2-bootstrap
+obsoletes lvm2-bootstrap

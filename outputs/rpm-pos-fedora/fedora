@@ -12,8 +12,8 @@
 # Development packages and the compiler are not listed: the POS compiler
 # searches /pos/include, not the /usr/include Fedora -devel packages
 # install into.
-# The optional stages (network) have no RPM package and are not claimed:
-# their Fedora packages install in /usr, as on Fedora.
+# The optional stages (network, container, storage) have no RPM package and
+# are not claimed: their Fedora packages install in /usr, as on Fedora.
 
 glibc glibc glibc-common glibc-gconv-extra glibc-minimal-langpack glibc-all-langpacks libnsl nss_db nss_hesiod
 # glibc: the UTF-8 locales are compiled (/pos/lib/locale), not the legacy
@@ -46,6 +46,7 @@ mpfr mpfr
 # Not icu: POS has ICU 79, Fedora libicu 77.
 # Not openssl: POS has OpenSSL 4 (libcrypto.so.4), Fedora 3 (libcrypto.so.3).
 elfutils elfutils elfutils-libelf elfutils-libs elfutils-debuginfod-client
+json-c json-c
 pam pam pam-libs
 ca-certificates ca-certificates
 tzdata tzdata
@@ -54,6 +55,9 @@ util-linux util-linux util-linux-core util-linux-script libblkid libmount libsma
 # util-linux: no setpriv, write, fdformat.
 kmod kmod kmod-libs
 popt popt
+e2fsprogs e2fsprogs e2fsprogs-libs libcom_err libss
+# e2fsprogs: no fuse2fs.
+dosfstools dosfstools
 bash bash
 # bash: no /usr/bin wrappers for builtins (cd, alias, ...), no bashbug.
 coreutils coreutils coreutils-common

@@ -3,17 +3,29 @@
 # system extension image, which systemd-sysext merges over /pos on a
 # system that enables it (pos-stage). BUILD.md "Stage images".
 
-# The stage whose member list (pos/<tree>/stage) names a package.
+# The stage of a requirement: the one whose member list (pos/<tree>/stage)
+# names it, or, for a capability a package provides instead (lvm2 provides
+# lvm2-bootstrap), the one whose archive has a package with that provides
+# line in its installed meta.
 # Inputs:
-#   $1    package name
-#   base
+#   $1    package name or capability
+#   base, bdir, stem
 # Outputs:
-#   the stage name on stdout; nothing when no stage lists it
+#   the stage name on stdout; nothing when no stage has it
 sysext_stage_of() {
-  local f
+  local f s
   for f in "$base"/pos/*/stage; do
     if sed -e 's/#.*//' "$f" | grep -qxF -- "$1"; then
       basename "$(dirname "$f")"
+      return 0
+    fi
+  done
+  for f in "$base"/pos/*/stage; do
+    s=$(basename "$(dirname "$f")")
+    [[ -f $bdir/pos-$s-$stem.tar.zst ]] || continue
+    if tar --zstd -xOf "$bdir/pos-$s-$stem.tar.zst" --wildcards 'pos/lib/pos/packages/*/meta' |
+      awk -v c="$1" '$1 == "provides" { for (i = 2; i <= NF; i++) if ($i == c) found = 1 } END { exit !found }'; then
+      echo "$s"
       return 0
     fi
   done

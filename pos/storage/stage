@@ -1,0 +1,23 @@
+# Storage tools: an optional stage, shipped as a system extension image and
+# enabled with pos-stage (BUILD.md "Storage stage"). The root's and the
+# ESP's file system tools (e2fsprogs, dosfstools) are the system stage's.
+# File systems: XFS (with liburcu and inih), Btrfs, exFAT.
+userspace-rcu
+inih
+xfsprogs
+btrfs-progs
+exfatprogs
+# Volumes: LVM and device-mapper (with libaio and the thin and cache
+# tools), software RAID.
+libaio
+thin-provisioning-tools
+lvm2
+mdadm
+# Encryption and integrity: cryptsetup, veritysetup, integritysetup.
+cryptsetup
+# Network block storage: iSCSI (with iSNS), NVMe and NVMe over Fabrics.
+open-isns
+open-iscsi
+nvme-cli
+# Drive health.
+smartmontools

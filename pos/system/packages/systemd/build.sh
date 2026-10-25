@@ -24,8 +24,13 @@ pkg() {
   #
   # Disabled: SysV compatibility (runlevel targets, legacy tmpfiles),
   # documentation (docbook toolchain), and every feature whose library is
-  # not built yet (cryptsetup, curl, idn2, gnutls, p11-kit, fido2, tpm2,
-  # qrencode, microhttpd, xkbcommon, bpf, glib, lz4, selinux, apparmor, audit).
+  # not built yet (curl, idn2, gnutls, p11-kit, fido2, tpm2, qrencode,
+  # microhttpd, xkbcommon, bpf, glib, lz4, selinux, apparmor, audit).
+  #
+  # libcryptsetup is the storage stage's, an optional one: systemd dlopens
+  # it, so systemd-cryptsetup, the crypttab generator, cryptenroll and
+  # homed's LUKS volumes work once the stage is enabled and fail without
+  # it, as with the other dlopen'd libraries.
   #
   # Note for tmpfiles: a C line without a source copies from /usr/share/factory,
   # which does not exist on POS. Lines shipped by POS give the source
@@ -70,7 +75,7 @@ pkg() {
         -Dxz=enabled \
         -Dzstd=enabled \
         -Dlz4=disabled \
-        -Dlibcryptsetup=disabled \
+        -Dlibcryptsetup=enabled \
         -Dlibcurl=disabled \
         -Dlibidn2=disabled \
         -Dgnutls=disabled \

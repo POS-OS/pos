@@ -1,0 +1,5 @@
+# libdevmapper without udev synchronization or libsystemd, for building
+# cryptsetup, which systemd builds against.
+source lvm2
+build-requires gcc pos-link
+requires glibc

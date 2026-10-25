@@ -1,0 +1,5 @@
+build-requires gcc pos-link
+# libisns (open-isns), libkmod, libcrypto (CHAP), libmount (util-linux),
+# libsystemd (socket activation).
+requires glibc open-isns kmod openssl util-linux systemd
+host-requires meson ninja-build

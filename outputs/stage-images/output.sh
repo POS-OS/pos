@@ -2,4 +2,5 @@
 output() {
   sysext_stage network core-libs system
   sysext_stage container core-libs system
+  sysext_stage storage core-libs system
 }

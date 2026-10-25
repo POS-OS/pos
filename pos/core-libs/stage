@@ -27,6 +27,8 @@ mpfr
 icu
 openssl
 elfutils
+# JSON: crun, cryptsetup, nvme-cli.
+json-c
 pam
 # System trust store and timezone data
 ca-certificates

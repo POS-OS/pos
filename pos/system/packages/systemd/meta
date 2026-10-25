@@ -1,4 +1,9 @@
 build-requires gcc pos-link
+# cryptsetup (the storage stage's) for its headers: libcryptsetup is
+# dlopen'd, not required to run. Its libdevmapper and libblkid are
+# lvm2-bootstrap's and util-linux-bootstrap's until lvm2 and util-linux are
+# built (BUILD.md "Circular dependencies").
+build-requires cryptsetup
 # util-linux links libsystemd, so systemd is built against util-linux-bootstrap.
 requires glibc util-linux-bootstrap libseccomp kmod pam acl libcap libxcrypt
 requires openssl elfutils pcre2 zlib bzip2 xz zstd

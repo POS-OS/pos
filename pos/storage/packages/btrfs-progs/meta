@@ -1,0 +1,5 @@
+build-requires gcc pos-link
+# libudev (systemd), libblkid and libuuid (util-linux), libext2fs and
+# libcom_err for btrfs-convert (e2fsprogs).
+requires glibc systemd util-linux e2fsprogs zlib zstd openssl
+host-requires python3-sphinx python3-sphinx_rtd_theme
