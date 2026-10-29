@@ -615,15 +615,18 @@ root_compose() {
 
 # The time of a release archive, for SOURCE_DATE_EPOCH: its newest
 # member's, as upstream made it. Kept beside the unpacked tree, as
-# <tree>.epoch, since listing an archive takes a while.
+# <tree>.epoch, since listing an archive takes a while; a tree unpacked
+# without one has its archive downloaded again, if it is gone.
 # Inputs:
 #   $1    source name
 #   UNPACKED  the source's unpacked tree (unpack_source)
 archive_epoch() {
   local t
   if [[ ! -s $UNPACKED.epoch ]]; then
-    t=$(TZ=UTC tar --full-time -tvf "$(archive_file "$1")" | awk '{print $4 " " $5}' | sort | tail -n 1)
-    TZ=UTC date -d "$t" +%s >"$UNPACKED.epoch.tmp"
+    fetch_archive "$1" >&2
+    t=$(TZ=UTC tar --full-time -tvf "$(archive_file "$1")" | awk '{print $4 " " $5}' | sort | tail -n 1) ||
+      die "$1: cannot list $(archive_file "$1")"
+    TZ=UTC date -d "${t:?}" +%s >"$UNPACKED.epoch.tmp"
     mv "$UNPACKED.epoch.tmp" "$UNPACKED.epoch"
   fi
   cat "$UNPACKED.epoch"
@@ -646,7 +649,7 @@ source_of() {
     unpack_source "$s"
     SOURCE_DIR=$UNPACKED
     SOURCE_KEY=$(basename "$UNPACKED")
-    SOURCE_EPOCH=$(archive_epoch "$s")
+    SOURCE_EPOCH=$(archive_epoch "$s") || exit 1
     return 0
   fi
   SOURCE_EPOCH=$(git -C "$base" log -1 --format=%ct HEAD -- "${SRCPATH[$s]}")
