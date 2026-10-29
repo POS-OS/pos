@@ -22,7 +22,7 @@ reaches through `flatpak-spawn --host` from inside a toolbox, as the
     $ ./build output fedora-toolbox  # POS as a toolbox image
     $ devtools/vm.sh               # boot the vm-disk-dnf disk in a VM
     $ devtools/vm.sh -c devtools/smoke.sh  # check it: boot, run the checks, power off
-    $ devtools/compare-builds.sh <id> <id>  # what differs between two builds
+    $ buildsys/compare-builds.sh <id> <id>  # what differs between two builds
 
 ## Builds
 A build has an ID (a timestamp) and keeps everything under
@@ -56,13 +56,14 @@ with `./build tag`, or `./build publish`, which also publishes it (see
 1. `./build validate` checks the current build from what its producers
    recorded. Every producer records what it made in `made/<name>`
    (`package-<package>`, `stage-<stage>`, `output-<output>`): the
-   commit it was made from and whether the tree had uncommitted changes.
+   commit it was made from and whether the tree had uncommitted changes,
+   and the engine's commit when it is another checkout's (see "Engine").
    It drops its record and `complete` before it starts, so a failed one
    leaves neither. A default `run` that finishes records `complete`;
    `rebuild` drops the records of the dropped packages and of everything
    made from packages.
    The build is an OS build when it is a pos build with `complete`, every
-   record names its commit with a clean tree, and its BUILD (`VERSION` at
+   record names its commit (and engine) with a clean tree, and its BUILD (`VERSION` at
    its commit) is above every `main-*` tag.
 2. The build's commit is tagged `main-<BUILD>`, an annotated tag with the
    build ID, its identifier, the references and whether checks were
@@ -147,7 +148,10 @@ product version:
 
 ## Settings
 Settings of `./build` are lines of `<key> <value>` in
-`~/.config/pos/build.conf`, or in the file `POS_BUILD_CONFIG` names.
+`~/.config/pos/build.conf`, or in the file `POS_BUILD_CONFIG` names, and
+in `<project>.conf` next to it (`pos.conf`, see "Engine"), whose lines
+replace the shared file's for that project: `release-dir` differs
+between projects, the reference store and the downloads need not.
 `build.conf.dist` lists them; copy it there and edit. Each setting's
 environment variable overrides the file, for a single run. Only a new
 build reads them: what it uses is recorded in its `info`, so a build
@@ -163,6 +167,36 @@ an unknown key is an error.
 | `pos-reference` | `POS_POS_REFERENCE` | a pos build: its toolchain reference's; a toolchain build: the store's default |
 | `release-dir` | `POS_RELEASE_DIR` | none: `publish` needs it; read by `publish`, not recorded by builds |
 | `download-dir` | `POS_DOWNLOAD_DIR` | `work/downloads`: the sources' release archives (see "Release archives"); not recorded by builds |
+| `engine-checkout` | `POS_ENGINE_CHECKOUT` | none: the pos checkout another project's `./build` takes the engine from (see "Engine"); read by that `./build` |
+
+## Engine
+`buildsys/` is the engine: it resolves, runs the steps in containers,
+keeps the references and fetches the sources. What it builds is a
+project, a checkout with the layout below (`pos/<tree>`, `outputs/`,
+`VERSION`, `work/`) and a `project` file of `<key> <value>` lines: the
+checkout the environment variable `POS_PROJECT` names, else the one the
+engine is in. Its `name` (pos) names the project's settings
+(`<name>.conf`, see "Settings"), its tools images and containers
+(`localhost/<name>-tools:<id>`, `<name>-<id>-<step>`) and its recipes
+archive.
+
+pos builds itself with its own engine. Another project runs the engine of
+a pos checkout with `POS_PROJECT` set to itself: its `./build` pins the
+engine, an `engine <pos commit>` line in its `project` file, checked out
+from the pos checkout the `engine-checkout` setting names. Its builds are kept in its own `work/`,
+and their `info` records the engine's commit (`engine`), as every
+record a producer makes does (see "Build numbers"). A change to the
+engine's `buildsys/` makes such a build's records dirty, as one to the
+project does. `buildsys/compare-builds.sh` takes build IDs of the
+project the same way.
+
+A project may have the packages of one pipeline only: pos-sdk has the
+toolchain's. The other pipeline's packages are known from the
+references, by the `meta` each installed in
+`/pos/lib/pos/packages/<package>/`, and taken from them as any reference
+package is; a capability nothing in the project provides is checked when
+a build resolves it. A package's `env.sh` is installed beside its `meta`,
+and a build that takes the package from a reference sources that copy.
 
 ## Trees
 What POS builds is in `pos/`, divided into trees: `pos/<tree>/` has any
@@ -280,8 +314,9 @@ archive the archive as downloaded, `pos-src-<archive>`, which its sha256
 in the meta checks; its patches are in the recipes. It also archives the build recipes as
 they are at `HEAD` (`buildsys`, the trees' `packages` and `stage`, `outputs`,
 the docs) as
-`pos-recipes-<stem>.tar.zst`, with a warning if they changed since the build
-started. Together they are the source of the build's archives. Whether a
+`pos-recipes-<stem>.tar.zst` (`<project>-recipes` in another project), with a warning if they changed since the build
+started. An engine of another checkout is archived on its own, its
+`buildsys` at `HEAD`, as `pos-engine-<stem>.tar.zst`. Together they are the source of the build's archives. Whether a
 build writes them is chosen when it is created.
 
 ## Packages
@@ -438,7 +473,7 @@ output) runs in a podman container of its own, except what an output
 does with the host's podman (see "Build outputs"). A package build sees
 two things:
 
-* `/usr`: the build's tools image, `localhost/pos-tools:<id>`, made when the
+* `/usr`: the build's tools image, `localhost/<project>-tools:<id>`, made when the
   build is created (`buildsys/tools.containerfile`). It is the `tools-image`
   setting, Fedora's container image by default, pulled then and pinned by
   digest (`info`: `tools-base`), with the `host-requires` and
@@ -529,7 +564,7 @@ references holds glibc as well, which is not used: it was built on that
 glibc, and a pos build with it needs `pos-reference` set.
 
 Comparing a pos build made with a toolchain built from nothing to one
-made with a later toolchain (`devtools/compare-builds.sh`: the files of
+made with a later toolchain (`buildsys/compare-builds.sh`: the files of
 each package and the libraries every ELF file links against) shows what
 the build environment leaked into a package.
 

@@ -1,5 +1,7 @@
 # Settings of ./build. Copy to ~/.config/pos/build.conf, or another file
-# named by POS_BUILD_CONFIG, and edit. Lines are "<key> <value>"; the
+# named by POS_BUILD_CONFIG, and edit. <project>.conf next to it (pos.conf,
+# the project file's name) holds what differs between projects, as
+# release-dir; its lines replace these. Lines are "<key> <value>"; the
 # environment variable named with each setting overrides it. Only new
 # builds read settings: a build records what it uses in its info.
 
@@ -40,3 +42,8 @@
 # first needs them and checked against their sha256 each time. Builds of
 # several checkouts can share one. Default: work/downloads of the checkout.
 #download-dir /path/to/pos-downloads
+
+# The pos checkout another project's ./build takes the engine from, at
+# the commit its project file pins (POS_ENGINE_CHECKOUT). Read by that
+# ./build, not by the engine; set it in the project's <project>.conf.
+#engine-checkout /path/to/pos

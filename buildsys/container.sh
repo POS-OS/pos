@@ -49,7 +49,14 @@ tools_packages() {
   } | xargs -n1 | sort -u
 }
 
-# Make the build's tools image, localhost/pos-tools:<id>, from the pinned
+# The build's tools image, localhost/<project>-tools:<id>.
+# Inputs:
+#   id, project
+tools_image() {
+  echo "localhost/$project-tools:$id"
+}
+
+# Make the build's tools image (tools_image) from the pinned
 # base (info: tools-base), and record its packages in tools-packages.
 # Inputs:
 #   $1      pinned base image reference (from tools_base)
@@ -58,11 +65,11 @@ tools_packages() {
 tools_build() {
   local from=$1 log=$bdir/logs/tools.log
   tools_packages >"$bdir/tools-packages.tmp"
-  echo "=== tools image localhost/pos-tools:$id from $from ===" | tee "$log" >&2
+  echo "=== tools image $(tools_image) from $from ===" | tee "$log" >&2
   host_podman build --build-arg "BASE=$from" \
     --build-arg "PACKAGES=$(xargs <"$bdir/tools-packages.tmp")" \
-    --label "pos.build=$id" -t "localhost/pos-tools:$id" \
-    -f "$(host_path "$base/buildsys/tools.containerfile")" "$(host_path "$base/buildsys")" 2>&1 |
+    --label "pos.build=$id" -t "$(tools_image)" \
+    -f "$(host_path "$engine/buildsys/tools.containerfile")" "$(host_path "$engine/buildsys")" 2>&1 |
     tee -a "$log" >&2
   mv "$bdir/tools-packages.tmp" "$bdir/tools-packages"
 }
@@ -92,7 +99,7 @@ tools_ensure() {
   missing=$(tools_packages | comm -13 "$bdir/tools-packages" - | xargs)
   if [[ -n $missing ]]; then
     echo "tools image: adding $missing" >&2
-  elif host_podman image exists "localhost/pos-tools:$id"; then
+  elif host_podman image exists "$(tools_image)"; then
     return 0
   fi
   tools_build "$(build_info tools-base)"
@@ -108,7 +115,7 @@ tools_ensure() {
 # Its output goes to the caller only, not to podman's log (journald by
 # default on Fedora).
 # Inputs:
-#   $1              container name suffix (pos-$id-$name)
+#   $1              container name suffix (<project>-$id-$name)
 #   <mount|opt>...  zero or more of: net, root, ro:<path>, rw:<path>, pos:<path>
 #   --              separator before command
 #   $@              command and arguments to execute inside the tools container
@@ -130,7 +137,7 @@ step_run() {
     esac
   done
   shift
-  host_podman run --rm --replace --log-driver=none --name "pos-$id-$name" ${net:+"$net"} ${user:+"$user"} \
+  host_podman run --rm --replace --log-driver=none --name "$project-$id-$name" ${net:+"$net"} ${user:+"$user"} \
     --security-opt label=disable --pids-limit=-1 --ulimit=host \
     "${mounts[@]}" -w /tmp -e HOME=/tmp -e LC_ALL=C \
     "$(build_info tools-image)" "$@"

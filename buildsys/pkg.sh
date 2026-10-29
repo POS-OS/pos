@@ -23,8 +23,9 @@
 #   POS_DEBUG_DIR   where _pkg_finish puts the package's separate debug
 #                   info, $POS_DEBUG_DIR/pos/lib/debug; an output's goes
 #                   next to it, as with the staging directories
-#   POS_ENV_SCRIPTS the env.sh files, relative to POS_BASE, of the packages
-#                   in the resolved environment that set up the build;
+#   POS_ENV_SCRIPTS the env.sh files of the packages in the resolved
+#                   environment that set up the build: a recipe's, or the
+#                   one a reference's package installed, in /pos;
 #                   _pkg_setup sources each.
 #                   The compiler comes from the package providing gcc (the
 #                   toolchain reference's gcc, or gcc-host, Fedora's, without
@@ -97,7 +98,7 @@ _pkg_setup() {
   local f
   for f in ${POS_ENV_SCRIPTS:-}; do
     # shellcheck source=/dev/null
-    source "$base/$f"
+    source "$f"
   done
 }
 

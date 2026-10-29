@@ -55,7 +55,7 @@ version_info() {
 
 # Check that build id is an OS build (BUILD.md "Build numbers"): a pos
 # build with a complete run, whose every record (step_made) was made from
-# its commit, clean, with its checks unless unchecked is yes; its BUILD
+# its commit (and engine), clean, with its checks unless unchecked is yes; its BUILD
 # (VERSION at that commit) above every main-* tag. Lists every problem and
 # exits, or sets BUILD_NUMBER and UNCHECKED (the records made unchecked).
 # Inputs:
@@ -64,11 +64,13 @@ version_info() {
 # Outputs:
 #   BUILD_NUMBER, UNCHECKED[]
 validate() {
-  local unchecked=$1 commit f r last
+  local unchecked=$1 commit made f r last
   local -a problems=()
   bdir=$builds/$id
   [[ -f $bdir/info ]] || die "no build $id"
   commit=$(build_info commit)
+  made="$commit clean"
+  [[ -z $(build_info engine) ]] || made+=" engine $(build_info engine)"
   UNCHECKED=()
   [[ $(build_info pipeline) == pos ]] || problems+=("not a pos build")
   [[ -f $bdir/made/complete ]] || problems+=("no complete run since it was created or last rebuilt")
@@ -76,11 +78,11 @@ validate() {
     [[ -f $f ]] || continue
     r=$(<"$f")
     case $r in
-      "$commit clean") ;;
-      "$commit clean unchecked")
+      "$made") ;;
+      "$made unchecked")
         UNCHECKED+=("$(basename "$f")")
         [[ $unchecked == yes ]] || problems+=("$(basename "$f"): made without its checks (--unchecked accepts it)") ;;
-      *) problems+=("$(basename "$f"): made from $r, not $commit clean") ;;
+      *) problems+=("$(basename "$f"): made from $r, not $made") ;;
     esac
   done
   BUILD_NUMBER=$(version_build "$commit")
