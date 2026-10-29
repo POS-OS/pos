@@ -207,11 +207,14 @@ versions() {
 }
 
 # Where kernel-install puts boot entries: BOOT_ROOT and ENTRY_TOKEN, read
-# once from kernel-install inspect.
+# once from kernel-install inspect. Neither depends on a kernel: inspect is
+# given a placeholder version and image, since without them it inspects the
+# running kernel's image in /usr/lib/modules, which an image build (the
+# host's kernel) does not have.
 boot_paths() {
   [[ -z ${boot_root:-} ]] || return 0
   local json
-  json=$(kernel-install inspect --json=short)
+  json=$(kernel-install inspect --json=short 0 /dev/null)
   boot_root=$(sed -n 's/.*"BootRoot":"\([^"]*\)".*/\1/p' <<<"$json")
   entry_token=$(sed -n 's/.*"EntryToken":"\([^"]*\)".*/\1/p' <<<"$json")
   [[ -n $boot_root && -n $entry_token ]] || die "kernel-install inspect: no boot root or entry token"
