@@ -92,9 +92,9 @@ usage: ./build plan [--new] [<target>...]
        ./build output [--no-checks] [<output>...]
                                                make outputs of the current build again
        ./build status                          show the current build
-       ./build reference [<id>]                store a toolchain build, or a pos
-                                               build's core-libs, as the default
-                                               reference of its kind
+       ./build reference [<id>]                store a toolchain or extras build, or
+                                               a pos build's core-libs, as the
+                                               default reference of its kind
        ./build clean [<id>]                    remove the tools image of a build
        ./build validate [--unchecked] [<id>]   check that a build is an OS build
        ./build tag [--unchecked]               number the current build: validate it,
@@ -106,7 +106,8 @@ usage: ./build plan [--new] [<target>...]
 A target is a stage (pos/<stage>/stage) or a package. The default is
 every stage. run continues the current build; --new starts another, of
 the project's pipeline: a toolchain build (pos-sdk) builds the toolchain
-packages (project: pipeline toolchain) and what they need; a pos build
+packages (project: pipeline toolchain) and what they need; an extras
+build (pos-extras, pipeline extras) builds the extras packages; a pos build
 builds the rest, and takes the toolchain from its toolchain reference. An output
 (outputs/<output>: images, disks, RPM packages) is made when run
 assembles all the stages it requires, after the outputs it requires.
@@ -121,6 +122,7 @@ core-libs; by default the ones reference marked last, and for a pos build
 the pos reference its toolchain was built on. A toolchain build without a
 toolchain reference (none) is built by Fedora's compiler; it needs a pos
 reference. A pos build without one builds glibc, the first pos reference.
+An extras build needs both references.
 It builds the checkout POS_PROJECT names, else the one of this buildsys.
 Settings (build.conf.dist) are read from
 $build_config and $project_config; an environment variable overrides one:
@@ -177,13 +179,6 @@ current_id() {
   [[ -L $builds/current ]] && basename "$(readlink "$builds/current")"
 }
 
-# Return 0 if the active pipeline is the toolchain's.
-# Inputs:
-#   PIPELINE    active pipeline name ("pos" or "toolchain")
-is_toolchain_pipeline() {
-  [[ ${PIPELINE:-pos} == toolchain ]]
-}
-
 # A pos build without a toolchain reference is the bootstrap of the first
 # pos reference: it builds packages (glibc) with Fedora's compiler, not
 # stages, which hold the toolchain.
@@ -205,7 +200,7 @@ bootstrap_check() {
 # not stop it at a failed step.
 # Inputs:
 #   $1          whether to produce source archives ("yes" or "no")
-#   PIPELINE    active pipeline name ("pos" or "toolchain")
+#   PIPELINE    active pipeline name (pos, toolchain or extras)
 # Outputs:
 #   id, bdir    the new build's ID and directory
 build_new() {
@@ -780,7 +775,7 @@ cmd_plan() {
   ((${#args[@]})) || mapfile -t args < <(pipeline_targets)
   bootstrap_check "${args[@]}"
   targets_expand "${args[@]}"
-  is_toolchain_pipeline || targets_check "${TARGETS[@]}"
+  targets_check "${TARGETS[@]}"
   echo "build $id ($PIPELINE)"
   echo "toolchain reference $TOOLCHAIN_REF (${#REF[@]} packages), pos reference $POS_REF (${#POSREF[@]} packages)"
   while next_package "${TARGETS[@]}"; do
@@ -951,7 +946,7 @@ cmd_run() {
   fi
   bootstrap_check "${args[@]}"
   targets_expand "${args[@]}"
-  is_toolchain_pipeline || targets_check "${TARGETS[@]}"
+  targets_check "${TARGETS[@]}"
   tools_ensure
   TOOLS_ID=$(host_podman image inspect --format '{{.Id}}' "$(build_info tools-image)")
 

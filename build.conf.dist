@@ -29,9 +29,9 @@
 # Pos reference a new build takes glibc and core-libs from
 # (POS_POS_REFERENCE): a pos build ID or a release, as for
 # toolchain-reference, or none. Default:
-# for a pos build, the one its toolchain reference was built on (a newer
-# one may be named here); for a toolchain build, the one ./build reference
-# marked last.
+# for a pos or extras build, the one its toolchain reference was built on
+# (a newer one may be named here); for a toolchain build, the one ./build
+# reference marked last.
 #pos-reference none
 
 # Release library (POS_RELEASE_DIR): ./build publish copies a numbered

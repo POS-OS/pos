@@ -33,8 +33,9 @@ and what the outputs make: the RPM packages in `rpm/`, image archives
 their logs `logs/output-<output>.log`, where `<stem>` is
 `<major>.<minor>-<build>.<release>` (see "Build numbers"). `work/builds/current`
 points at the build that `run` continues. `run --new` starts another, of
-the project's pipeline: a pos build in pos, a toolchain build in pos-sdk
-(`info`: `pipeline`; see "Toolchain"). A
+the project's pipeline: a pos build in pos, a toolchain build in pos-sdk,
+an extras build in pos-extras (`info`: `pipeline`; see "Toolchain",
+"Extras"). A
 package is built once per build; `./build rebuild <package>` drops it
 from the current build so the next `run` builds it again. Packages that were
 built against it are not rebuilt. A package that a bootstrap package
@@ -195,8 +196,9 @@ project does. `buildsys/compare-builds.sh` takes build IDs of the
 project the same way.
 
 A project has the packages of one pipeline, which a `pipeline` line of
-its `project` file names: `pipeline toolchain` in pos-sdk, none (pos) in
-pos. The other pipeline's packages are known from the references, by the
+its `project` file names: `pipeline toolchain` in pos-sdk, `pipeline
+extras` in pos-extras, none (pos) in pos. The other pipelines' packages
+are known from the references, by the
 `meta` each installed in `/pos/lib/pos/packages/<package>/`, of the
 pipeline the reference's `info` names, and taken from them as any
 reference package is; a capability nothing in the project provides is checked when
@@ -475,6 +477,21 @@ Its `build.sh` sources the main recipe after setting `configure_extra`,
 which the main recipe appends to its configure arguments, where the later
 flag wins (`--without-systemd`).
 
+## Extras
+The extras are the packages of the extras pipeline, the pos-extras
+project's (`pipeline extras`): the tools builds use and applications, not
+part of the OS. An extras build (`run --new` in pos-extras) builds every
+package of its project, by default, with the toolchain of a toolchain
+reference and on the core-libs of a pos reference, as a pos build takes
+them before it has built its own; it builds no package of either.
+Fedora's compiler builds only from nothing, which the extras are not
+part of: an extras build needs a toolchain reference. Its pos reference
+is, by default, the one its toolchain reference was built on. A pos
+package outside core-libs is not in the pos reference, so an extras
+package cannot require it. `./build reference` stores a complete extras
+build as an extras reference; builds do not take one yet. The extras
+still install in `/pos`.
+
 ## Build containers
 Every step of a build (preparing a source, building a package, making an
 output) runs in a podman container of its own, except what an output
@@ -532,7 +549,7 @@ an installed `/pos` records what it contains.
 `./build clean` removes the tools image; a later `run` makes it again.
 
 ## Reference builds
-A reference build is a stored build of the other pipeline. There are two
+A reference build is a stored build of another pipeline. There are three
 kinds:
 
 * A toolchain reference is a toolchain build: the toolchain packages. Its
@@ -550,7 +567,11 @@ kinds:
   target of the run provides it. A run of a single
   package in a new pos build builds only that package, against the pos
   reference's core-libs; what it requires outside core-libs must be among
-  the targets.
+  the targets. In an extras build, as in a toolchain build, a pos
+  reference package provides what no package of the build does, and a
+  toolchain reference package what no target provides.
+* An extras reference is an extras build: the extras packages. It is
+  stored, and not taken by builds yet.
 
 A reference package's own requirements are those it was built with (its
 recorded meta). They are met by this build's packages once built,
@@ -563,11 +584,12 @@ requires, once it is built, not the pos reference's.
 
 `./build reference [<id>]` (default: the current build) stores a build in
 the reference store, the `reference-dir` setting, as
-`pos-ref-toolchain-<id>.tar.zst` or `pos-ref-pos-<id>.tar.zst`: its
-`info` and the staging trees and debug info of what it stores. Of a toolchain build, which must be complete, that is
-its toolchain packages; of a pos build, its core-libs packages, which
-must include glibc. It marks the build the store's `default-toolchain` or
-`default-pos`, the reference of that kind of new builds (a store's
+`pos-ref-<kind>-<id>.tar.zst` (`toolchain`, `pos`, `extras`): its
+`info` and the staging trees and debug info of what it stores. Of a
+toolchain or extras build, which must be complete, that is its packages
+and outputs; of a pos build, its core-libs packages, which must include
+glibc. It marks the build the store's `default-<kind>`, the reference of
+that kind of new builds (a store's
 `default` from before pos references counts as `default-toolchain`). A
 build records its references in `info` (`toolchain-reference`,
 `pos-reference`) and restores them from the store into

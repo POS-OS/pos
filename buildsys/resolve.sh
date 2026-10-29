@@ -59,12 +59,12 @@
 # available, those obsoleted by another candidate are dropped; more than one
 # left is an error.
 #
-# A build is in one of two pipelines (PIPELINE), and builds only the
+# A build is in one of three pipelines (PIPELINE), and builds only the
 # packages of its own. A toolchain build builds the toolchain packages; a
-# pos build builds everything else. Each takes what the other builds from
-# a reference (reference.sh): the toolchain from a toolchain reference
-# (REF: its packages), glibc and the rest of core-libs from a pos reference
-# (POSREF). A host or profile package is not available where a toolchain
+# pos build builds the OS; an extras build builds the extras (pos-extras),
+# on both. Each takes what another builds from a reference (reference.sh):
+# the toolchain from a toolchain reference (REF: its packages), glibc and
+# the rest of core-libs from a pos reference (POSREF). A host or profile package is not available where a toolchain
 # reference package obsoletes it, or a target of the run that does not
 # itself require it: gcc-host, Fedora's compiler, stands in for gcc only
 # in a build without a toolchain reference, and in the toolchain build
@@ -72,7 +72,8 @@
 #
 # A project has the packages of one pipeline, which its project file names
 # (pipeline; pos without one), and its builds are of that one (pos-sdk has
-# the toolchain, pos the rest): the other's are known from its reference,
+# the toolchain, pos-extras the extras, pos the rest): the others' are
+# known from its references,
 # by the meta each package installs (lib/pos/packages/<package>/meta), of
 # the pipeline the reference's info names, and taken from it as below.
 # They are FOREIGN; a capability nothing in the project provides is checked when a
@@ -81,9 +82,10 @@
 # Where nothing available provides a capability, a build falls back to a
 # reference's copy of a package: a toolchain package if the capability is
 # a stand-in one (provided by a package another obsoletes: the
-# reference's gcc stands in for gcc-host) or, in a pos build, if no target
-# of the run provides it (it is not being built); a pos package in a
-# toolchain build, or in a pos build if no target of the run provides it.
+# reference's gcc stands in for gcc-host) or, in a pos or extras build, if
+# no target of the run provides it (it is not being built); a pos package
+# in a toolchain or extras build, or in a pos build if no target of the
+# run provides it.
 # In ENV it is <name>@ref (toolchain reference) or <name>@pos (pos
 # reference). Its own requirements are those it was built with (REF_REQ),
 # and are met by this build's packages where they are built, otherwise by
@@ -152,7 +154,7 @@ meta_load() {
   PIPELINE=$(awk '$1 == "pipeline" {print $2}' "$base/project" 2>/dev/null) || true
   PIPELINE=${PIPELINE:-pos}
   case $PIPELINE in
-    pos|toolchain) ;;
+    pos|toolchain|extras) ;;
     *) die "$base/project: unknown pipeline: $PIPELINE" ;;
   esac
   sources_load
@@ -469,11 +471,11 @@ provider_ref() {
   for p in ${PROVIDERS[$cap]:-}; do
     if [[ -n ${REF[$p]:-} ]]; then
       [[ -n $ref || -n ${BOOTCAP[$cap]:-} ]] ||
-        [[ $PIPELINE == pos && -z ${TPROV[$cap]:-} ]] || continue
+        [[ $PIPELINE != toolchain && -z ${TPROV[$cap]:-} ]] || continue
       PROVIDER=$p@ref
       return 0
     elif [[ -n ${POSREF[$p]:-} ]]; then
-      [[ -n $ref || $PIPELINE == toolchain || -z ${TPROV[$cap]:-} ]] || continue
+      [[ -n $ref || $PIPELINE != pos || -z ${TPROV[$cap]:-} ]] || continue
       PROVIDER=$p@pos
       return 0
     fi
@@ -585,7 +587,7 @@ env_script() {
 # Expand target names (stages or packages) into TARGETS (package names),
 # and TPROV, the capabilities their builds provide. A pos build leaves out
 # the toolchain packages of a stage, which its reference has; a toolchain
-# build has toolchain packages only.
+# or extras build has packages of its pipeline only, and no stages.
 # Inputs:
 #   $@    stage names and/or package names
 # Outputs:
@@ -595,7 +597,7 @@ targets_expand() {
   local -A set=()
   for t in "$@"; do
     if [[ -f $(stage_file "$t") ]]; then
-      [[ $PIPELINE == pos ]] || die "$t: a toolchain build builds toolchain packages, not stages"
+      [[ $PIPELINE == pos ]] || die "$t: a $PIPELINE build builds its packages, not stages"
       while read -r p; do
         p=${p%%#*}
         p=${p//[[:space:]]/}
@@ -632,8 +634,9 @@ all_stages() {
   return 0
 }
 
-# What a build of the pipeline builds by default: every stage, or every
-# toolchain package.
+# What a build of the pipeline builds by default: every stage (pos), or
+# every package and output of the pipeline (toolchain, extras), as a stage
+# lists outputs.
 # Inputs:
 #   PIPELINE    active pipeline name
 pipeline_targets() {
@@ -643,14 +646,14 @@ pipeline_targets() {
     return 0
   fi
   for p in "${PKGS[@]}"; do
-    [[ ${KIND[$p]} == package ]] && in_pipeline "$p" && echo "$p"
+    [[ ${KIND[$p]} == package || ${KIND[$p]} == output ]] && in_pipeline "$p" && echo "$p"
   done
   return 0
 }
 
-# Warn about run-time requirements that nothing in the target set, or the
-# toolchain a pos build takes from its reference, provides: the released
-# archives would not be complete.
+# Warn about run-time requirements that nothing in the target set, or a
+# package of another pipeline (taken from a reference, released by its own
+# project), provides: the released archives would not be complete.
 # Inputs:
 #   $@    target package names
 targets_check() {
@@ -662,7 +665,7 @@ targets_check() {
         [[ " ${PROV[$q]} " == *" $cap "* ]] && { found=1; break; }
       done
       for q in ${PROVIDERS[$cap]:-}; do
-        [[ ${PIPE[$q]} == toolchain ]] && found=1
+        [[ ${PIPE[$q]} != "$PIPELINE" ]] && found=1
       done
       [[ -n $found ]] || echo "warning: $p requires $cap, which no target provides" >&2
     done

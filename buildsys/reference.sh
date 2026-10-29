@@ -2,14 +2,16 @@
 # Reference build management. Sourced by buildsys/build.sh.
 #
 # A reference is a stored build, in work/references/<ref>, restored from the
-# reference store (reference-dir). There are two kinds, by the pipeline of
-# the build stored (BUILD.md "Reference builds"):
+# reference store (reference-dir). Its kind is the pipeline of the build
+# stored (BUILD.md "Reference builds"):
 #
 #   toolchain reference  a toolchain build: the toolchain packages. Its
 #                        info names the pos reference it was built on
 #   pos reference        a pos build: its core-libs packages, glibc and
 #                        what links it. The toolchain runs on its glibc
 #                        and builds with its kernel headers
+#   extras reference     an extras build: the extras packages. Stored, not
+#                        yet taken by builds
 #
 # A toolchain build takes the compiler from a toolchain reference (or
 # Fedora's, gcc-host, without one) and glibc from a pos reference. A pos
@@ -17,14 +19,16 @@
 # built its own, core-libs from a pos reference: by default the one the
 # toolchain was built on, or a newer one. A pos build without a toolchain
 # reference is the bootstrap: glibc and linux-headers, by Fedora's
-# compiler, for the first pos reference.
+# compiler, for the first pos reference. An extras build takes the
+# toolchain from a toolchain reference and core-libs from a pos reference,
+# as a pos build does, and builds no package of either.
 
 declare TOOLCHAIN_REF=none POS_REF=none
 
 # The reference the store marks the default of a kind, or nothing. Stores
 # from before pos references mark the toolchain's as default.
 # Inputs:
-#   $1      toolchain or pos
+#   $1      toolchain, pos or extras
 #   config(reference-dir)
 reference_default() {
   local store
@@ -48,8 +52,8 @@ ref_info() {
 
 # The references a new build of PIPELINE uses, restored: the settings (a
 # build ID or a release, reference_named), else
-# for a pos build the pos reference its toolchain reference was built on,
-# else the store's defaults.
+# for a pos or extras build the pos reference its toolchain reference was
+# built on, else the store's defaults.
 # Inputs:
 #   PIPELINE, config(toolchain-reference, pos-reference, reference-dir)
 # Outputs:
@@ -60,7 +64,7 @@ references_choose() {
   TOOLCHAIN_REF=${TOOLCHAIN_REF:-none}
   reference_restore "$TOOLCHAIN_REF" toolchain
   POS_REF=$(reference_named "$(config pos-reference)") || exit 1
-  if [[ -z $POS_REF && $PIPELINE == pos ]]; then
+  if [[ -z $POS_REF && $PIPELINE != toolchain ]]; then
     # The bootstrap builds the first pos reference without one.
     [[ $TOOLCHAIN_REF == none ]] || POS_REF=$(ref_info "$TOOLCHAIN_REF" pos-reference)
   fi
@@ -70,20 +74,38 @@ references_choose() {
   reference_restore "$POS_REF" pos
   foreign_load "$TOOLCHAIN_REF"
   foreign_load "$POS_REF"
-  if [[ $PIPELINE == toolchain ]]; then
-    [[ $POS_REF != none ]] ||
-      die "a toolchain build builds on the glibc of a pos reference; make one with:
+  case $PIPELINE in
+    toolchain)
+      [[ $POS_REF != none ]] ||
+        die "a toolchain build builds on the glibc of a pos reference; make one with:
   POS_TOOLCHAIN_REFERENCE=none ./build run --new glibc && ./build reference"
-    local p
-    for p in $(toolchain_needs); do
-      [[ -f $refs/$POS_REF/dest/$p/pos/lib/pos/packages/$p/meta ]] ||
-        die "pos reference $POS_REF has no $p, which the toolchain builds on; store a pos build that has (./build reference <id>)"
-    done
-  elif [[ $TOOLCHAIN_REF != none ]]; then
-    [[ $POS_REF != none ]] ||
-      die "toolchain reference $TOOLCHAIN_REF names no pos reference; set pos-reference (POS_POS_REFERENCE)"
-    pos_ref_check
-  fi
+      local p
+      for p in $(toolchain_needs); do
+        [[ -f $refs/$POS_REF/dest/$p/pos/lib/pos/packages/$p/meta ]] ||
+          die "pos reference $POS_REF has no $p, which the toolchain builds on; store a pos build that has (./build reference <id>)"
+      done
+      ;;
+    extras)
+      # Fedora's compiler builds only from nothing; the extras are not part
+      # of that chain.
+      [[ $TOOLCHAIN_REF != none ]] ||
+        die "an extras build builds with the toolchain of a toolchain reference; store one with pos-sdk's ./build reference"
+      pos_ref_needed
+      ;;
+    pos)
+      [[ $TOOLCHAIN_REF == none ]] || pos_ref_needed
+      ;;
+  esac
+}
+
+# Die unless a build with a toolchain reference has a pos reference its
+# toolchain runs on (pos_ref_check).
+# Inputs:
+#   TOOLCHAIN_REF, POS_REF
+pos_ref_needed() {
+  [[ $POS_REF != none ]] ||
+    die "toolchain reference $TOOLCHAIN_REF names no pos reference; set pos-reference (POS_POS_REFERENCE)"
+  pos_ref_check
 }
 
 # The pos packages the toolchain packages require, which a toolchain build
@@ -105,7 +127,7 @@ toolchain_needs() {
 # Die unless a restored reference is a build of the pipeline.
 # Inputs:
 #   $1      reference ID
-#   $2      toolchain or pos
+#   $2      toolchain, pos or extras
 reference_kind() {
   local pipe
   pipe=$(ref_info "$1" pipeline)
@@ -147,7 +169,7 @@ pos_ref_check() {
 # The store archive of a reference of a kind: pos-ref-<kind>-<ref>.tar.zst.
 # Inputs:
 #   $1      reference ID
-#   $2      toolchain or pos
+#   $2      toolchain, pos or extras
 reference_archive() {
   echo "pos-ref-$2-$1.tar.zst"
 }
@@ -267,8 +289,8 @@ build_references() {
 }
 
 # The reference archive of a build: its info and the staging trees and
-# debug info of what a reference of it holds: a complete toolchain build's
-# toolchain packages, or a pos build's core-libs packages, which must
+# debug info of what a reference of it holds: a complete toolchain or
+# extras build's packages, or a pos build's core-libs packages, which must
 # include what the toolchain packages require of pos (glibc,
 # linux-headers). Written as <dir>/pos-ref-<kind>-<id>.tar.zst
 # (reference_archive), for the reference store and for a release.
@@ -276,7 +298,7 @@ build_references() {
 #   $1      directory to write the archive into
 #   id, bdir
 # Outputs:
-#   REF_OUT (the archive), REF_KIND (toolchain or pos), REF_COUNT (packages)
+#   REF_OUT (the archive), REF_KIND (the pipeline), REF_COUNT (packages)
 reference_pack() {
   local p t
   local -a trees=() debug=() args=()
@@ -284,8 +306,8 @@ reference_pack() {
   PIPELINE=$(build_info pipeline)
   PIPELINE=${PIPELINE:-pos}
   load_built
-  if [[ $PIPELINE == toolchain ]]; then
-    REF_KIND=toolchain
+  if [[ $PIPELINE != pos ]]; then
+    REF_KIND=$PIPELINE
     mapfile -t args < <(pipeline_targets)
     targets_expand "${args[@]}"
     for t in "${TARGETS[@]}"; do
