@@ -70,11 +70,12 @@
 # in a build without a toolchain reference, and in the toolchain build
 # that builds gcc with it.
 #
-# A project may have the packages of one pipeline only (pos-sdk has the
-# toolchain, pos the rest): the other's are known from its reference, by
-# the meta each package installs (lib/pos/packages/<package>/meta), and
-# taken from it as below. They are FOREIGN; a capability nothing in such a
-# project provides is checked when a build resolves it.
+# A project has the packages of one pipeline, and its builds are of that
+# one (pos-sdk has the toolchain, pos the rest): the other's are known
+# from its reference, by the meta each package installs
+# (lib/pos/packages/<package>/meta), and taken from it as below. They are
+# FOREIGN; a capability nothing in the project provides is checked when a
+# build resolves it.
 #
 # Where nothing available provides a capability, a build falls back to a
 # reference's copy of a package: a toolchain package if the capability is
@@ -144,6 +145,7 @@ sources_load() {
 #   PKGS, PKGDIR, KIND, REQ, BREQ, HREQ, PREQ, PROV, OBS, SRC, WSRC,
 #   SRCREFS (source and with-sources as written), SRCPATH, ARCHIVE, OUTS,
 #   PARENT, PIPE, PROVIDERS, BOOTCAP
+#   PIPELINE    the project's pipeline, of its packages
 meta_load() {
   local dir p key vals line r
   sources_load
@@ -190,6 +192,7 @@ meta_load() {
         [[ -n ${SRCPATH[${r##*/}]:-} ]] || SRCPATH[${r##*/}]=pos/${r%/*}/src/${r##*/}
       done
     fi
+    [[ ${KIND[$p]} != package ]] || PIPELINE=${PIPE[$p]}
   done
   meta_index
 }
@@ -260,12 +263,8 @@ foreign_load() {
 #   base, PKGS, PKGDIR, KIND, PARENT, OUTS, REQ, BREQ, PROVIDERS, PIPE, WSRC,
 #   SRCREFS, SRCPATH, ARCHIVE, OBS, PROV
 meta_validate() {
-  local p m cap q t err=0 both=
-  local -A required=() pipes=()
-  for p in "${PKGS[@]}"; do
-    [[ ${KIND[$p]} != package ]] || pipes[${PIPE[$p]}]=1
-  done
-  ((${#pipes[@]} < 2)) || both=1
+  local p m cap q t err=0
+  local -A required=()
   for p in "${PKGS[@]}"; do
     m=${PKGDIR[$p]}/meta
     case ${KIND[$p]} in
@@ -282,16 +281,15 @@ meta_validate() {
     esac
     for cap in ${REQ[$p]} ${BREQ[$p]}; do
       required[$cap]=1
-      # A project of one pipeline takes the other's from its references.
-      if [[ -z ${PROVIDERS[$cap]:-} && -n $both ]]; then
-        echo "$m: nothing provides $cap" >&2
-        err=1
-      fi
     done
     case ${PIPE[$p]} in
       pos|toolchain) ;;
       *) echo "$m: unknown pipeline: ${PIPE[$p]}" >&2; err=1 ;;
     esac
+    if [[ ${KIND[$p]} == package && ${PIPE[$p]} != "$PIPELINE" ]]; then
+      echo "$m: a ${PIPE[$p]} package; the project's packages are of one pipeline" >&2
+      err=1
+    fi
     if [[ -n ${ARCHIVE[$p]:-} ]]; then
       if [[ ! ${ARCHIVE[$p]} =~ ^[a-z]+://[^[:space:]]+/[^/[:space:]]+[[:space:]]+[0-9a-f]{64}$ ]]; then
         echo "$m: archive: expected <url> <sha256>" >&2

@@ -32,9 +32,9 @@ and what the outputs make: the RPM packages in `rpm/`, image archives
 `pos-<output>-<stem>.tar.zst` and disks `pos-<output>-<stem>.qcow2`, with
 their logs `logs/output-<output>.log`, where `<stem>` is
 `<major>.<minor>-<build>.<release>` (see "Build numbers"). `work/builds/current`
-points at the build that `run` continues. `run --new` starts another, a
-pos build, or a toolchain build with `--toolchain` (`info`: `pipeline`;
-see "Toolchain"). A
+points at the build that `run` continues. `run --new` starts another, of
+the project's pipeline: a pos build in pos, a toolchain build in pos-sdk
+(`info`: `pipeline`; see "Toolchain"). A
 package is built once per build; `./build rebuild <package>` drops it
 from the current build so the next `run` builds it again. Packages that were
 built against it are not rebuilt. A package that a bootstrap package
@@ -380,16 +380,16 @@ packages whose meta says `pipeline toolchain`. Their recipes are the
 pos-sdk project's, which builds them with this engine (see "Engine"); pos
 has no toolchain package of its own and knows them from its toolchain
 reference. It is built apart from the rest, and a build is one of two
-kinds (`info`: `pipeline`):
+kinds (`info`: `pipeline`), the one of its project's packages:
 
-* A toolchain build (`run --new --toolchain`, in pos-sdk) builds the
+* A toolchain build (`run --new` in pos-sdk) builds the
   toolchain packages only. Its compiler is the toolchain reference's gcc, or
   Fedora's without one; it builds on the glibc of a pos reference, a
   stored pos build, with its kernel headers (linux-headers), and never
   builds either. `./build reference` stores it
   as the toolchain reference of later builds, which records the pos
   reference it was built on.
-* A pos build (`run --new`) builds every stage with the toolchain
+* A pos build (`run --new` in pos) builds every stage with the toolchain
   reference's toolchain, and never builds a toolchain package. Its own
   packages are all built from the checkout; the stages that list
   toolchain packages (sdk, and core-libs' gcc-runtime) are assembled with
@@ -411,14 +411,14 @@ reference: it builds packages, not stages: glibc, and linux-headers,
 which glibc requires. From nothing, POS is built in four builds, two of
 them in pos-sdk:
 
-    pos$     POS_TOOLCHAIN_REFERENCE=none ./build run --new glibc        # glibc, linux-headers by Fedora's gcc
-    pos$     ./build reference                                           # the first pos reference
-    pos-sdk$ POS_TOOLCHAIN_REFERENCE=none ./build run --new --toolchain  # by Fedora's gcc
+    pos$     POS_TOOLCHAIN_REFERENCE=none ./build run --new glibc  # glibc, linux-headers by Fedora's gcc
+    pos$     ./build reference                                     # the first pos reference
+    pos-sdk$ POS_TOOLCHAIN_REFERENCE=none ./build run --new        # by Fedora's gcc
     pos-sdk$ ./build reference
-    pos-sdk$ ./build run --new --toolchain                               # by itself
+    pos-sdk$ ./build run --new                                     # by itself
     pos-sdk$ ./build reference
-    pos$     ./build run --new                                           # the stages
-    pos$     ./build reference                                           # pos reference of later toolchains
+    pos$     ./build run --new                                     # the stages
+    pos$     ./build reference                                     # pos reference of later toolchains
 
 The second toolchain build is the one released: its gcc is built by a POS
 gcc of the same sources. The bootstrap glibc is only what the first

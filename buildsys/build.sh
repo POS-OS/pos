@@ -81,9 +81,9 @@ source "$engine/buildsys/outputs.sh"
 
 usage() {
   cat >&2 <<EOF
-usage: ./build plan [--new [--toolchain]] [<target>...]
+usage: ./build plan [--new] [<target>...]
                                                print what run would build, in order
-       ./build run [--new [--toolchain] [--source-archives]] [--no-checks] [<target>...]
+       ./build run [--new [--source-archives]] [--no-checks] [<target>...]
                                                build the targets, then assemble stage
                                                archives and make the outputs
        ./build prepare [<target>...]           download and prepare the sources of the
@@ -104,8 +104,8 @@ usage: ./build plan [--new [--toolchain]] [<target>...]
        ./build bump                            commit VERSION with the next BUILD
 
 A target is a stage (pos/<stage>/stage) or a package. The default is
-every stage. run continues the current build; --new starts another, a
-toolchain build with --toolchain. A toolchain build builds the toolchain
+every stage. run continues the current build; --new starts another, of
+the project's pipeline: a toolchain build (pos-sdk) builds the toolchain
 packages (meta: pipeline toolchain) and what they need; a pos build
 builds the rest, and takes the toolchain from its toolchain reference. An output
 (outputs/<output>: images, disks, RPM packages) is made when run
@@ -714,26 +714,22 @@ report_stuck() {
 
 # CLI command: print the topological build plan and resolved environments.
 # Inputs:
-#   $@    [--new] [--toolchain] [<stage>|<package>...]
+#   $@    [--new] [<stage>|<package>...]
 cmd_plan() {
-  local id= bdir n=0 t toolchain=
+  local id= bdir n=0 t
   local -a args=()
   for t in "$@"; do
     case $t in
       --new) id="<new>" ;;
-      --toolchain) toolchain=1 ;;
       -*) usage ;;
       *) args+=("$t") ;;
     esac
   done
-  [[ -z $toolchain || -n $id ]] || die "--toolchain is chosen when a build is created; use it with --new"
   if [[ -z $id ]] && id=$(current_id); then
     bdir=$builds/$id
     build_load
   else
     id="<new>"
-    PIPELINE=${toolchain:+toolchain}
-    PIPELINE=${PIPELINE:-pos}
     references_choose
     load_references
   fi
@@ -878,14 +874,13 @@ build_os() {
 # CLI command: build target stages/packages, assemble stages, and make the
 # outputs they can make.
 # Inputs:
-#   $@    [--new] [--toolchain] [--source-archives] [--no-checks] [<stage>|<package>...]
+#   $@    [--new] [--source-archives] [--no-checks] [<stage>|<package>...]
 cmd_run() {
-  local new= archives=no t toolchain= all=
+  local new= archives=no t all=
   local -a args=()
   for t in "$@"; do
     case $t in
       --new) new=1 ;;
-      --toolchain) toolchain=1 ;;
       --source-archives) archives=yes ;;
       --no-checks) CHECKS=no ;;
       -*) usage ;;
@@ -895,10 +890,7 @@ cmd_run() {
   if [[ $archives == yes && -z $new ]]; then
     die "--source-archives is chosen when a build is created; use it with --new"
   fi
-  [[ -z $toolchain || -n $new ]] || die "--toolchain is chosen when a build is created; use it with --new"
   if [[ -n $new ]] || ! id=$(current_id); then
-    PIPELINE=${toolchain:+toolchain}
-    PIPELINE=${PIPELINE:-pos}
     id=$(build_new "$archives")
     echo "new build $id"
   fi
