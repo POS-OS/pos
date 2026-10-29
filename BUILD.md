@@ -497,7 +497,14 @@ A requirement the package does not declare is not there, so the build
 fails instead of picking it up from whatever else is installed. Of the
 checkout, a step sees only what it uses, at the host's paths: a package
 build the recipes (`buildsys`, the trees' `packages`) and its source tree read-only,
-and the build's `build`, `dest` and `debug` directories. A step runs as the
+and the build's `build`, `dest` and `debug` directories. The source trees
+are at `/src/<source>` and the `build` directory at `/build` instead,
+whatever the checkout's path and the build ID: compilers write the paths
+they build at into debug info, `__FILE__` and libtool archives, and builds
+of the same sources should not differ in them. A package build has
+`SOURCE_DATE_EPOCH`, the time of its source: the newest member of a
+release archive, else the last commit of the source's tree, for the dates
+tools write, as in man pages. A step runs as the
 caller, with `HOME=/tmp`, `LC_ALL=C` and no network. Preparing has
 network, and an output runs as the container's root (the caller outside
 it) with network: for dnf and Fedora's kernel, and `pos-fedora`'s Fedora
@@ -1397,6 +1404,9 @@ directory `lib/gcc/<target>/<version>` (crt files, `libgcc.a`, `unwind.h`,
 `omp.h`), the static libraries (Fedora's `-static` packages), the
 unversioned `lib*.so` names the linker looks up, `libgomp.spec` and
 `libstdc++.modules.json`. The `.la` files are deleted, as Fedora does.
+gcc links its LTO plugin into `/pos/sdk/lib/bfd-plugins`, as Fedora does,
+so binutils' `ar`, `nm` and `ranlib` read LTO objects as `gcc-ar`,
+`gcc-nm` and `gcc-ranlib` do.
 
 The compiler searches `/pos/include` as its system header directory, so gcc
 requires linux-headers, which core-libs ships with glibc's headers.

@@ -23,6 +23,8 @@
 #   POS_DEBUG_DIR   where _pkg_finish puts the package's separate debug
 #                   info, $POS_DEBUG_DIR/pos/lib/debug; an output's goes
 #                   next to it, as with the staging directories
+#   SOURCE_DATE_EPOCH  the time of the package's source, for the dates
+#                   tools write, as in man pages
 #   POS_ENV_SCRIPTS the env.sh files of the packages in the resolved
 #                   environment that set up the build: a recipe's, or the
 #                   one a reference's package installed, in /pos;

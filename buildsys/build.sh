@@ -200,11 +200,14 @@ bootstrap_check() {
 }
 
 # Create a new build directory under $builds/<id>, build its tools container
-# image, write $builds/<id>/info, and point $builds/current at it.
-# Writes progress to stderr; the ID is the output.
+# image, write $builds/<id>/info, and point $builds/current at it. Called
+# in the shell itself, not in a command substitution, where errexit would
+# not stop it at a failed step.
 # Inputs:
 #   $1          whether to produce source archives ("yes" or "no")
 #   PIPELINE    active pipeline name ("pos" or "toolchain")
+# Outputs:
+#   id, bdir    the new build's ID and directory
 build_new() {
   local archives=$1 from branch version
   id=$(date +%Y%m%d%H%M)
@@ -231,7 +234,6 @@ build_new() {
     echo "source-archives $archives"
   } >"$builds/$id/info"
   ln -sfn "$id" "$builds/current"
-  echo "$id"
 }
 
 # Read a metadata field from the active build's info file ($bdir/info).
@@ -611,13 +613,32 @@ root_compose() {
 
 
 
-# The tree a source is built from, and its identity for the package
-# metadata and the source archives: the unpacked or prepared tree's key,
-# or the committed tree. Sets SOURCE_DIR and SOURCE_KEY.
+# The time of a release archive, for SOURCE_DATE_EPOCH: its newest
+# member's, as upstream made it. Kept beside the unpacked tree, as
+# <tree>.epoch, since listing an archive takes a while.
+# Inputs:
+#   $1    source name
+#   UNPACKED  the source's unpacked tree (unpack_source)
+archive_epoch() {
+  local t
+  if [[ ! -s $UNPACKED.epoch ]]; then
+    t=$(TZ=UTC tar --full-time -tvf "$(archive_file "$1")" | awk '{print $4 " " $5}' | sort | tail -n 1)
+    TZ=UTC date -d "$t" +%s >"$UNPACKED.epoch.tmp"
+    mv "$UNPACKED.epoch.tmp" "$UNPACKED.epoch"
+  fi
+  cat "$UNPACKED.epoch"
+}
+
+# The tree a source is built from, its identity for the package metadata
+# and the source archives (the unpacked or prepared tree's key, or the
+# committed tree), and its time, which builds take as SOURCE_DATE_EPOCH:
+# the archive's (archive_epoch), else the last commit of the source's
+# path, so builds of the same source write the same dates; none for a
+# package without a source.
 # Inputs:
 #   $1    source name
 # Outputs:
-#   SOURCE_DIR, SOURCE_KEY
+#   SOURCE_DIR, SOURCE_KEY, SOURCE_EPOCH
 source_of() {
   local s=$1
   SOURCE_DIR=$base/${SRCPATH[$s]}
@@ -625,14 +646,18 @@ source_of() {
     unpack_source "$s"
     SOURCE_DIR=$UNPACKED
     SOURCE_KEY=$(basename "$UNPACKED")
-  elif has_prepare "$s"; then
+    SOURCE_EPOCH=$(archive_epoch "$s")
+    return 0
+  fi
+  SOURCE_EPOCH=$(git -C "$base" log -1 --format=%ct HEAD -- "${SRCPATH[$s]}")
+  if has_prepare "$s"; then
     prepare_source "$s"
     SOURCE_DIR=$PREPARED
     SOURCE_KEY=$(basename "$PREPARED")
   elif [[ -d $SOURCE_DIR ]]; then
     SOURCE_KEY=$(source_tree "$s")
   else
-    SOURCE_KEY=
+    SOURCE_KEY='' SOURCE_EPOCH=''
   fi
 }
 
@@ -645,7 +670,7 @@ source_of() {
 #   BUILT[$p] and BUILT[$q] for each output q in OUTS[$p]
 build_one() {
   local p=$1 q scripts log root env_files=
-  local hbase hbdir src_dir s with_dirs=
+  local hbase hbdir src_dir s epoch with_dirs=
   hbase=$(host_path "$base")
   env_of "$p" || die "$p: unresolved: ${MISSING[*]}"
   scripts=
@@ -663,19 +688,24 @@ build_one() {
   source_of "${SRC[$p]}"
   src_dir=$SOURCE_DIR
   SOURCE_ID=$SOURCE_KEY
+  epoch=$SOURCE_EPOCH
   # The package's own inputs: the recipes (they source each other's),
   # its source trees, and the build's build, dest and debug directories.
+  # The source trees are at /src/<source> and the build directory at
+  # /build, whatever the checkout's path and the build's ID: compilers
+  # write the paths they build at into debug info, __FILE__ and libtool
+  # archives, and two builds of the same sources should not differ in them.
   recipe_mounts
   local -a mounts=(pos:"$root" ro:"$engine/buildsys" "${RECIPE_MOUNTS[@]}")
-  [[ ! -d $src_dir ]] || mounts+=(ro:"$src_dir")
+  [[ ! -d $src_dir ]] || mounts+=(ro:"$src_dir:/src/${SRC[$p]}")
   WITH_SOURCE_IDS=()
   for s in ${WSRC[$p]}; do
     source_of "$s"
-    mounts+=(ro:"$SOURCE_DIR")
-    with_dirs+=" $s=$(host_path "$SOURCE_DIR")"
+    mounts+=(ro:"$SOURCE_DIR:/src/$s")
+    with_dirs+=" $s=/src/$s"
     WITH_SOURCE_IDS+=("$s $SOURCE_KEY")
   done
-  mounts+=(rw:"$bdir/build" rw:"$bdir/dest" rw:"$bdir/debug")
+  mounts+=(rw:"$bdir/build:/build" rw:"$bdir/dest" rw:"$bdir/debug")
 
   echo "=== $p: setup: ${scripts:-none} ===" | tee "$log"
   echo "env: ${ENV[*]}" | tee -a "$log"
@@ -684,9 +714,10 @@ build_one() {
     POS_BASE="$hbase" \
     POS_PACKAGE="$p" \
     POS_RECIPE_DIR="$hbase/${PKGDIR[$p]}" \
-    POS_SRC_DIR="$(host_path "$src_dir")" \
+    POS_SRC_DIR="/src/${SRC[$p]}" \
     POS_WITH_SRC_DIRS="${with_dirs# }" \
-    POS_BUILD_DIR="$hbdir/build/$p" \
+    POS_BUILD_DIR="/build/$p" \
+    ${epoch:+"SOURCE_DATE_EPOCH=$epoch"} \
     POS_DEST_DIR="$hbdir/dest/$p" \
     POS_DEBUG_DIR="$hbdir/debug/$p" \
     POS_OUTPUTS="${OUTS[$p]# }" \
@@ -891,7 +922,7 @@ cmd_run() {
     die "--source-archives is chosen when a build is created; use it with --new"
   fi
   if [[ -n $new ]] || ! id=$(current_id); then
-    id=$(build_new "$archives")
+    build_new "$archives"
     echo "new build $id"
   fi
   bdir=$builds/$id

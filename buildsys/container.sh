@@ -107,8 +107,8 @@ tools_ensure() {
 
 # Run a step of the build in a container of its tools image. The step sees
 # the image and what it is given: ro:<path> and rw:<path> mount a path at
-# its host path, read-only or read-write, and pos:<path> mounts a composed
-# root as /pos, read-only. The user is the caller and there is no network,
+# its host path, or at <target> as ro:<path>:<target>, read-only or
+# read-write, and pos:<path> mounts a composed root as /pos, read-only. The user is the caller and there is no network,
 # unless given net (network) or root: the container's root, which is the
 # caller outside it, allowed to mount in the container's own namespaces
 # (SYS_ADMIN of rootless podman covers its user namespace only).
@@ -116,22 +116,26 @@ tools_ensure() {
 # default on Fedora).
 # Inputs:
 #   $1              container name suffix (<project>-$id-$name)
-#   <mount|opt>...  zero or more of: net, root, ro:<path>, rw:<path>, pos:<path>
+#   <mount|opt>...  zero or more of: net, root, ro:<path>[:<target>],
+#                   rw:<path>[:<target>], pos:<path>
 #   --              separator before command
 #   $@              command and arguments to execute inside the tools container
 step_run() {
-  local name=$1 a h net=--network=none user=--userns=keep-id
+  local name=$1 a h t net=--network=none user=--userns=keep-id
   local -a mounts=()
   shift
   while [[ $1 != -- ]]; do
     a=$1
     shift
-    h=$(host_path "${a#*:}")
+    # <kind>:<path>[:<target>]: the host path, and where the step sees it.
+    t=${a#*:}
+    h=$(host_path "${t%%:*}")
+    [[ $t == *:* ]] && t=${t#*:} || t=$h
     case $a in
       net) net= ;;
       root) user=--cap-add=SYS_ADMIN ;;
-      ro:*) mounts+=(-v "$h:$h:ro") ;;
-      rw:*) mounts+=(-v "$h:$h") ;;
+      ro:*) mounts+=(-v "$h:$t:ro") ;;
+      rw:*) mounts+=(-v "$h:$t") ;;
       pos:*) mounts+=(-v "$h:/pos:ro") ;;
       *) die "step_run: unknown argument $a" ;;
     esac
