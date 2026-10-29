@@ -210,14 +210,16 @@ publish_check() {
 publish_copy() {
   local dir=$1 stem f
   stem=$(build_stem "$bdir")
-  mkdir -p "$dir/rpm"
+  mkdir -p "$dir"
   cp "$bdir/info" "$dir/info"
   reference_pack "$dir"
   for f in "$bdir"/*-"$stem".* "$bdir"/pos-src-*; do
     [[ ! -f $f ]] || cp --reflink=auto "$f" "$dir/"
   done
   for f in "$bdir"/rpm/*.rpm; do
-    [[ ! -f $f ]] || cp --reflink=auto "$f" "$dir/rpm/"
+    [[ -f $f ]] || continue
+    mkdir -p "$dir/rpm"
+    cp --reflink=auto "$f" "$dir/rpm/"
   done
   (cd "$dir" && find . -type f ! -name SHA256SUMS -printf '%P\n' | sort | xargs sha256sum >SHA256SUMS)
 }

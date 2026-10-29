@@ -46,7 +46,8 @@ ref_info() {
   awk -v k="$2" '$1 == k {print $2}' "$refs/$1/info"
 }
 
-# The references a new build of PIPELINE uses, restored: the settings, else
+# The references a new build of PIPELINE uses, restored: the settings (a
+# build ID or a release, reference_named), else
 # for a pos build the pos reference its toolchain reference was built on,
 # else the store's defaults.
 # Inputs:
@@ -54,11 +55,11 @@ ref_info() {
 # Outputs:
 #   TOOLCHAIN_REF, POS_REF (reference IDs or none)
 references_choose() {
-  TOOLCHAIN_REF=$(config toolchain-reference)
+  TOOLCHAIN_REF=$(reference_named "$(config toolchain-reference)") || exit 1
   TOOLCHAIN_REF=${TOOLCHAIN_REF:-$(reference_default toolchain)}
   TOOLCHAIN_REF=${TOOLCHAIN_REF:-none}
   reference_restore "$TOOLCHAIN_REF" toolchain
-  POS_REF=$(config pos-reference)
+  POS_REF=$(reference_named "$(config pos-reference)") || exit 1
   if [[ -z $POS_REF && $PIPELINE == pos ]]; then
     # The bootstrap builds the first pos reference without one.
     [[ $TOOLCHAIN_REF == none ]] || POS_REF=$(ref_info "$TOOLCHAIN_REF" pos-reference)
@@ -151,12 +152,46 @@ reference_archive() {
   echo "pos-ref-$2-$1.tar.zst"
 }
 
-# Unpack a reference of a kind from the store into work/references/<ref>,
-# unless it is there, and check that it is of that kind. The store is a
-# directory; this is where a remote one would be fetched from. It holds
-# reference archives (reference_archive; pos-ref-<ref>.tar.zst from before
-# the kinds had names of their own), or reference directories
-# ($store/$ref).
+# The archive of a reference of a kind: in the reference store
+# (reference-dir; pos-ref-<ref>.tar.zst from before the kinds had names of
+# their own), else in a release of any project in the release library
+# (release-dir), which holds its build's reference archive. Nothing when
+# neither has it.
+# Inputs:
+#   $1      reference ID
+#   $2      toolchain or pos
+reference_find() {
+  local name f store rels
+  name=$(reference_archive "$1" "$2")
+  store=$(config reference-dir)
+  rels=$(config release-dir)
+  for f in ${store:+"$store/$name" "$store/pos-ref-$1.tar.zst"} ${rels:+"$rels"/*/*/"$name"}; do
+    [[ -f $f ]] && { echo "$f"; return 0; }
+  done
+  return 0
+}
+
+# The reference ID a setting names: a build ID, or a release as
+# <project>/<release> in the release library (pos-sdk/1.0-1.main.20261029-2129),
+# whose build that is.
+# Inputs:
+#   $1      the setting's value (an ID, <project>/<release>, none or nothing)
+reference_named() {
+  local info
+  if [[ $1 == */* ]]; then
+    info=$(config release-dir)/$1/info
+    [[ -f $info ]] || die "no release $1 in the release library (release-dir)"
+    awk '$1 == "id" {print $2}' "$info"
+  else
+    echo "$1"
+  fi
+}
+
+# Unpack a reference of a kind into work/references/<ref>, unless it is
+# there, and check that it is of that kind. It comes from the reference
+# store, a directory holding reference archives or reference directories
+# ($store/$ref), or from a release (reference_find); this is where a
+# remote one would be fetched from.
 # Inputs:
 #   $1      reference ID or "none"
 #   $2      toolchain or pos
@@ -166,14 +201,13 @@ reference_restore() {
   [[ $ref != none ]] || return 0
   if [[ ! -f $refs/$ref/info ]]; then
     store=$(config reference-dir)
-    [[ -n $store ]] || die "reference $ref is not in $refs, and reference-dir is not set"
-    if [[ -f $store/$ref/info ]]; then
+    if [[ -n $store && -f $store/$ref/info ]]; then
       rm -rf "$refs/$ref"
       ln -sfn "$store/$ref" "$refs/$ref"
     else
-      archive=$store/$(reference_archive "$ref" "$kind")
-      [[ -f $archive ]] || archive=$store/pos-ref-$ref.tar.zst
-      [[ -f $archive ]] || die "no $kind reference $ref: missing $(reference_archive "$ref" "$kind") in $store"
+      archive=$(reference_find "$ref" "$kind")
+      [[ -n $archive ]] ||
+        die "no $kind reference $ref: no $(reference_archive "$ref" "$kind") in the reference store (reference-dir) or a release (release-dir)"
       echo "restoring reference $ref from $archive" >&2
       rm -rf "$refs/$ref.tmp"
       mkdir -p "$refs/$ref.tmp"

@@ -167,9 +167,9 @@ an unknown key is an error.
 | `fedora-release` | `POS_FEDORA_RELEASE` | 44 |
 | `tools-image` | `POS_TOOLS_IMAGE` | `registry.fedoraproject.org/fedora:<release>` |
 | `reference-dir` | `POS_REFERENCE_DIR` | none: no reference store |
-| `toolchain-reference` | `POS_TOOLCHAIN_REFERENCE` | the store's default (see "Reference builds"); `none`: a build with Fedora's compiler |
-| `pos-reference` | `POS_POS_REFERENCE` | a pos build: its toolchain reference's; a toolchain build: the store's default |
-| `release-dir` | `POS_RELEASE_DIR` | none: `publish` needs it; the release library of every project, a directory each; read by `publish`, not recorded by builds |
+| `toolchain-reference` | `POS_TOOLCHAIN_REFERENCE` | the store's default (see "Reference builds"); a build ID or `<project>/<release>`; `none`: a build with Fedora's compiler |
+| `pos-reference` | `POS_POS_REFERENCE` | a pos build: its toolchain reference's; a toolchain build: the store's default; a build ID or `<project>/<release>` |
+| `release-dir` | `POS_RELEASE_DIR` | none: `publish` needs it; the release library of every project, a directory each; read by `publish` and to restore references, not recorded by builds |
 | `download-dir` | `POS_DOWNLOAD_DIR` | `work/downloads`: the sources' release archives (see "Release archives"); not recorded by builds |
 | `engine-checkout` | `POS_ENGINE_CHECKOUT` | none: the pos checkout another project's `./build` takes the engine from (see "Engine"); read by that `./build` |
 
@@ -575,6 +575,15 @@ build records its references in `info` (`toolchain-reference`,
 its kind; an archive named `pos-ref-<id>.tar.zst`, from before the kinds
 had names of their own, is read as either. The store is a directory
 outside the checkout, so removing builds never removes a reference.
+
+A published release holds its build's reference archive (see
+"Releases"), so a reference not in the store is restored from a release
+in the release library that has it, of any project: a pos build can take
+its toolchain from a pos-sdk release, and a toolchain build its glibc
+from a pos release. The `toolchain-reference` and `pos-reference`
+settings take a build ID or a release, `<project>/<release>`
+(`pos-sdk/1.0-1.main.20261029-2129`), which names its build; `info`
+records the build ID.
 
 A pos build's pos reference is, by default, the one its toolchain
 reference was built on (`pos-reference` in the reference's `info`); the
