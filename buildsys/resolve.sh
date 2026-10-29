@@ -92,7 +92,7 @@
 
 declare -a PKGS=()
 declare -A KIND=() REQ=() BREQ=() HREQ=() PREQ=() PROV=() OBS=() SRC=() WSRC=() OUTS=() PARENT=()
-declare -A PIPE=() PKGDIR=() SRCPATH=() SRCREFS=() ARCHIVE=()
+declare -A PIPE=() PKGDIR=() SRCPATH=() SRCREFS=() ARCHIVE=() VERSION=()
 declare -A PROVIDERS=() BOOTCAP=() TPROV=()
 declare -A BUILT=() REF=() POSREF=() REF_REQ=() FOREIGN=()
 declare -a TARGETS=()
@@ -144,7 +144,7 @@ sources_load() {
 #   base    path to the POS checkout
 # Outputs (arrays/maps populated):
 #   PKGS, PKGDIR, KIND, REQ, BREQ, HREQ, PREQ, PROV, OBS, SRC, WSRC,
-#   SRCREFS (source and with-sources as written), SRCPATH, ARCHIVE, OUTS,
+#   SRCREFS (source and with-sources as written), SRCPATH, ARCHIVE, VERSION, OUTS,
 #   PARENT, PIPE, PROVIDERS, BOOTCAP
 #   PIPELINE    the project's pipeline, from its project file
 meta_load() {
@@ -179,6 +179,7 @@ meta_load() {
         source) SRC[$p]=$vals ;;
         with-sources) WSRC[$p]+=" $vals" ;;
         archive) ARCHIVE[$p]=$vals ;;
+        version) VERSION[$p]=$vals ;;
         kind) KIND[$p]=$vals ;;
         outputs) OUTS[$p]+=" $vals" ;;
         output-of) PARENT[$p]=$vals ;;
@@ -268,7 +269,7 @@ foreign_load() {
 # links, missing capability providers, and incomplete obsoletes coverage.
 # Inputs:
 #   base, PKGS, PKGDIR, KIND, PARENT, OUTS, REQ, BREQ, PROVIDERS, WSRC,
-#   SRCREFS, SRCPATH, ARCHIVE, OBS, PROV
+#   SRCREFS, SRCPATH, ARCHIVE, VERSION, OBS, PROV
 meta_validate() {
   local p m cap q t err=0
   local -A required=()
@@ -289,6 +290,13 @@ meta_validate() {
     for cap in ${REQ[$p]} ${BREQ[$p]}; do
       required[$cap]=1
     done
+    if [[ -n ${ARCHIVE[$p]:-} && -z ${VERSION[$p]:-} || -z ${ARCHIVE[$p]:-} && -n ${VERSION[$p]:-} ]]; then
+      echo "$m: archive and version go together: the release and its version" >&2
+      err=1
+    elif [[ -n ${VERSION[$p]:-} && ! ${VERSION[$p]} =~ ^[0-9A-Za-z._+~-]+$ ]]; then
+      echo "$m: version: one word of letters, digits and . _ + ~ -" >&2
+      err=1
+    fi
     if [[ -n ${ARCHIVE[$p]:-} ]]; then
       if [[ ! ${ARCHIVE[$p]} =~ ^[a-z]+://[^[:space:]]+/[^/[:space:]]+[[:space:]]+[0-9a-f]{64}$ ]]; then
         echo "$m: archive: expected <url> <sha256>" >&2

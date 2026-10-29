@@ -537,10 +537,12 @@ load_built() {
 
 # Write the package metadata into its staging tree. It is installed with
 # the package, so a /pos tree records what it contains. The meta file is
-# written last: its presence marks the package built.
+# written last: its presence marks the package built. The version is the
+# source's (source_of), an output's its main package's.
 # Inputs:
 #   $1      package or output name
 #   bdir    active build directory
+#   SOURCE_ID, SOURCE_VER, WITH_SOURCE_IDS (build_one)
 pkg_record() {
   local p=$1 dest=$bdir/dest/$1 dir extra s
   [[ -d $dest/pos ]] || die "$p: nothing installed into $dest/pos"
@@ -558,7 +560,8 @@ pkg_record() {
   mkdir -p "$dir"
   (cd "$dest" && find pos -mindepth 1 ! -type d ! -path "pos/lib/pos/packages/*" | sed 's|^|/|' | sort) >"$dir/files"
   {
-    sed -e 's/#.*//' -e '/^[[:space:]]*$/d' "$base/${PKGDIR[$p]}/meta"
+    sed -e 's/#.*//' -e '/^[[:space:]]*$/d' -e '/^version[[:space:]]/d' "$base/${PKGDIR[$p]}/meta"
+    [[ -z ${SOURCE_VER:-} ]] || echo "version $SOURCE_VER"
     echo "build $id"
     echo "build-source ${SRC[$(build_of "$p")]} ${SOURCE_ID:-}"
     for s in "${WITH_SOURCE_IDS[@]}"; do
@@ -634,14 +637,17 @@ archive_epoch() {
 
 # The tree a source is built from, its identity for the package metadata
 # and the source archives (the unpacked or prepared tree's key, or the
-# committed tree), and its time, which builds take as SOURCE_DATE_EPOCH:
-# the archive's (archive_epoch), else the last commit of the source's
-# path, so builds of the same source write the same dates; none for a
-# package without a source.
+# committed tree), its time, which builds take as SOURCE_DATE_EPOCH: the
+# archive's (archive_epoch), else the last commit of the source's path, so
+# builds of the same source write the same dates; and its version, which
+# package records carry: a release's (meta version), else the snapshot of
+# its .upstream, as prepare names it (prep_version). None of either for a
+# package without a source, and no version for a source without a
+# .upstream (pos-integration).
 # Inputs:
 #   $1    source name
 # Outputs:
-#   SOURCE_DIR, SOURCE_KEY, SOURCE_EPOCH
+#   SOURCE_DIR, SOURCE_KEY, SOURCE_EPOCH, SOURCE_VERSION
 source_of() {
   local s=$1
   SOURCE_DIR=$base/${SRCPATH[$s]}
@@ -650,9 +656,13 @@ source_of() {
     SOURCE_DIR=$UNPACKED
     SOURCE_KEY=$(basename "$UNPACKED")
     SOURCE_EPOCH=$(archive_epoch "$s") || exit 1
+    SOURCE_VERSION=${VERSION[$s]}
     return 0
   fi
   SOURCE_EPOCH=$(git -C "$base" log -1 --format=%ct HEAD -- "${SRCPATH[$s]}")
+  SOURCE_VERSION=$(git -C "$base" show "HEAD:${SRCPATH[$s]}.upstream" 2>/dev/null |
+    awk '{v[$1] = $2} END {if (v["ref"] != "" && v["commit"] != "" && v["date"] != "")
+      print v["ref"] "-" substr(v["date"], 1, 4) substr(v["date"], 6, 2) substr(v["date"], 9, 2) "-" substr(v["commit"], 1, 12)}')
   if has_prepare "$s"; then
     prepare_source "$s"
     SOURCE_DIR=$PREPARED
@@ -660,7 +670,7 @@ source_of() {
   elif [[ -d $SOURCE_DIR ]]; then
     SOURCE_KEY=$(source_tree "$s")
   else
-    SOURCE_KEY='' SOURCE_EPOCH=''
+    SOURCE_KEY='' SOURCE_EPOCH='' SOURCE_VERSION=''
   fi
 }
 
@@ -690,7 +700,7 @@ build_one() {
   done
   source_of "${SRC[$p]}"
   src_dir=$SOURCE_DIR
-  SOURCE_ID=$SOURCE_KEY
+  SOURCE_ID=$SOURCE_KEY SOURCE_VER=$SOURCE_VERSION
   epoch=$SOURCE_EPOCH
   # The package's own inputs: the recipes (they source each other's),
   # its source trees, and the build's build, dest and debug directories.

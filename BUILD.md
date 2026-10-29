@@ -284,10 +284,11 @@ soname (`libseccomp.so.2`) and `SCMP_VER_*`.
 A source can instead be an upstream release archive, for what follows
 upstream releases rather than its development (pos-sdk's toolchain,
 see "Toolchain"). The meta of the package named after the source has
-`archive <url> <sha256>`, and the source has no `src/<source>` and no
+`archive <url> <sha256>` and `version <version>` (the release's, as
+upstream numbers it), and the source has no `src/<source>` and no
 prepare recipe: a release archive is what prepare makes of a tree.
 Patches go in the package directory's `patches/`, `*.patch` applied with
-`-p1` in name order. Changing the version is changing that line.
+`-p1` in name order. Changing the version is changing those two lines.
 
 The archive is downloaded into the download directory (setting
 `download-dir`) when a build first needs it, or by `./build prepare`,
@@ -446,7 +447,7 @@ reference's gcc runs on the pos build's glibc as soon as that is built.
 
 The toolchain follows upstream releases, not development: gcc, binutils
 and the gmp, mpfr and mpc gcc builds in its tree are release archives (see
-"Release archives"), and a new version is a new `archive` line. gcc's
+"Release archives"), and a new version is a new `archive` and `version`. gcc's
 gmp and mpfr are sources of their own, gcc-gmp and gcc-mpfr (`kind
 source`, as mpc), apart from core-libs' gmp and mpfr, which coreutils and
 gawk use and which follow upstream's development as the rest of pos.
@@ -513,9 +514,14 @@ provides. It sees the recipes (`buildsys`, `outputs`, the stage lists) and the
 build directory.
 
 A built package's staging tree carries its metadata in
-`/pos/lib/pos/packages/<name>/`: `meta` (the package's meta, the build
-ID, the packages it was built against, the tools image ID and the
-reference builds) and `files`. The metadata stays in the stage archives, so
+`/pos/lib/pos/packages/<name>/`: `meta` (the package's meta, its
+`version`, the build ID, the packages it was built against, the tools
+image ID and the reference builds) and `files`. The version is its
+source's: a release archive's `version`, or for a synced source the
+snapshot prepare names it by, `<ref>-<commit date>-<commit>` from its
+`.upstream` (`master-20260217-da607da739fa`); an output has its main
+package's (gcc-runtime gcc's). A POS-owned source (pos-integration) has
+none. The metadata stays in the stage archives, so
 an installed `/pos` records what it contains.
 
 `./build clean` removes the tools image; a later `run` makes it again.
