@@ -203,12 +203,14 @@ bootstrap_check() {
 #   PIPELINE    active pipeline name (pos, toolchain or extras)
 # Outputs:
 #   id, bdir    the new build's ID and directory
+#   PREFIX      the prefix its packages install in (project_prefix)
 build_new() {
   local archives=$1 from branch version
   id=$(date +%Y%m%d%H%M)
   [[ ! -e $builds/$id ]] || die "build $id already exists; wait a minute"
   branch=$(git -C "$base" rev-parse --abbrev-ref HEAD)
   version=$(version_info HEAD "$branch" "$id") || exit 1
+  PREFIX=$(project_prefix "$version")
   references_choose
   from=$(tools_base)
   bdir=$builds/$id
@@ -217,6 +219,7 @@ build_new() {
   {
     echo "id $id"
     echo "pipeline $PIPELINE"
+    echo "prefix $PREFIX"
     echo "fedora $fedora_release"
     echo "tools-base $from"
     echo "tools-image $(tools_image)"
@@ -229,6 +232,32 @@ build_new() {
     echo "source-archives $archives"
   } >"$builds/$id/info"
   ln -sfn "$id" "$builds/current"
+}
+
+# The prefix the project's packages install in: the project file's prefix
+# line (default /pos), its <version> the build's <product
+# version>.<revision>, which stays the same while developing and changes
+# with a service release (BUILD.md "Prefix").
+# Inputs:
+#   $1      the build's version lines (version_info)
+#   base    the project checkout
+project_prefix() {
+  local p v
+  p=$(awk '$1 == "prefix" {print $2}' "$base/project")
+  p=${p:-/pos}
+  [[ $p == /?* && $p != */ ]] || die "$base/project: prefix is an absolute path, not '$p'"
+  v=$(awk '$1 == "product-version" {pv = $2} $1 == "revision" {r = $2} END {print pv "." r}' <<<"$1")
+  echo "${p//<version>/$v}"
+}
+
+# The prefix the build in bdir installs its packages in; /pos for builds
+# from before prefixes.
+# Inputs:
+#   bdir    active build directory
+build_prefix() {
+  local p
+  p=$(build_info prefix)
+  echo "${p:-/pos}"
 }
 
 # Read a metadata field from the active build's info file ($bdir/info).
@@ -291,10 +320,11 @@ step_made() {
 # Inputs:
 #   bdir    active build directory
 # Outputs:
-#   PIPELINE, BUILT[], TOOLCHAIN_REF, POS_REF, REF[], POSREF[], REF_REQ[]
+#   PIPELINE, PREFIX, BUILT[], TOOLCHAIN_REF, POS_REF, REF[], POSREF[], REF_REQ[]
 build_load() {
   PIPELINE=$(build_info pipeline)
   PIPELINE=${PIPELINE:-pos}
+  PREFIX=$(build_prefix)
   load_built
   build_references
   load_references
@@ -512,8 +542,9 @@ unpack_source() {
 # Inputs:
 #   $1      package name
 #   bdir    active build directory
+#   PREFIX  the build's prefix (build_prefix)
 marker() {
-  echo "$bdir/dest/$1/pos/lib/pos/packages/$1/meta"
+  echo "$bdir/dest/$1${PREFIX}/lib/pos/packages/$1/meta"
 }
 
 # Populate BUILT[] for every package whose marker exists in $bdir.
@@ -531,29 +562,31 @@ load_built() {
 }
 
 # Write the package metadata into its staging tree. It is installed with
-# the package, so a /pos tree records what it contains. The meta file is
-# written last: its presence marks the package built. The version is the
-# source's (source_of), an output's its main package's.
+# the package, so a prefix tree records what it contains
+# (<prefix>/lib/pos/packages/<package>). The meta file is written last: its
+# presence marks the package built. The version is the source's
+# (source_of), an output's its main package's.
 # Inputs:
 #   $1      package or output name
 #   bdir    active build directory
+#   PREFIX  the build's prefix
 #   SOURCE_ID, SOURCE_VER, WITH_SOURCE_IDS (build_one)
 pkg_record() {
-  local p=$1 dest=$bdir/dest/$1 dir extra s
-  [[ -d $dest/pos ]] || die "$p: nothing installed into $dest/pos"
-  extra=$(find "$dest" -mindepth 1 -maxdepth 1 ! -name pos -print)
+  local p=$1 dest=$bdir/dest/$1 dir extra s rel=${PREFIX#/}
+  [[ -d $dest$PREFIX ]] || die "$p: nothing installed into $dest$PREFIX"
+  extra=$(cd "$dest" && find . -mindepth 1 -path "./$rel" -prune -o ! -type d -print)
   if [[ -n $extra ]]; then
-    echo "warning: $p installed paths outside /pos:" >&2
+    echo "warning: $p installed paths outside $PREFIX:" >&2
     echo "$extra" >&2
   fi
-  # /pos/lib is the only library directory (BUILD.md "Library directory").
-  # lib64 comes from build tools that look at the tools image's
-  # /usr/lib64 (meson, cmake GNUInstallDirs, Fedora's gcc).
-  extra=$(find "$dest/pos" -mindepth 1 -maxdepth 1 \( -name lib64 -o -name lib32 -o -name libx32 \) -print)
-  [[ -z $extra ]] || die "$p: installed into $(echo "$extra" | xargs -n1 basename | xargs); set libdir to /pos/lib"
-  dir=$dest/pos/lib/pos/packages/$p
+  # <prefix>/lib is the only library directory (BUILD.md "Library
+  # directory"). lib64 comes from build tools that look at the tools
+  # image's /usr/lib64 (meson, cmake GNUInstallDirs, Fedora's gcc).
+  extra=$(find "$dest$PREFIX" -mindepth 1 -maxdepth 1 \( -name lib64 -o -name lib32 -o -name libx32 \) -print)
+  [[ -z $extra ]] || die "$p: installed into $(echo "$extra" | xargs -n1 basename | xargs); set libdir to $PREFIX/lib"
+  dir=$dest$PREFIX/lib/pos/packages/$p
   mkdir -p "$dir"
-  (cd "$dest" && find pos -mindepth 1 ! -type d ! -path "pos/lib/pos/packages/*" | sed 's|^|/|' | sort) >"$dir/files"
+  (cd "$dest" && find "$rel" -mindepth 1 ! -type d ! -path "$rel/lib/pos/packages/*" | sed 's|^|/|' | sort) >"$dir/files"
   {
     sed -e 's/#.*//' -e '/^[[:space:]]*$/d' -e '/^version[[:space:]]/d' "$base/${PKGDIR[$p]}/meta"
     [[ -z ${SOURCE_VER:-} ]] || echo "version $SOURCE_VER"
@@ -576,36 +609,65 @@ pkg_record() {
   step_made "package-$p"
 }
 
-# The staging tree of a package in the environment: this build's, or a
-# reference's (<name>@ref, <name>@pos).
+# The staging tree of a package in the environment, a root holding its
+# prefix: this build's, or a reference's (<name>@ref, <name>@pos).
 # Inputs:
 #   $1    environment entry (<pkg>, <pkg>@ref or <pkg>@pos)
 #   TOOLCHAIN_REF, POS_REF
 env_tree() {
   case $1 in
-    *@ref) echo "$refs/$TOOLCHAIN_REF/dest/${1%@ref}/pos" ;;
-    *@pos) echo "$refs/$POS_REF/dest/${1%@pos}/pos" ;;
-    *) echo "$bdir/dest/$1/pos" ;;
+    *@ref) echo "$refs/$TOOLCHAIN_REF/dest/${1%@ref}" ;;
+    *@pos) echo "$refs/$POS_REF/dest/${1%@pos}" ;;
+    *) echo "$bdir/dest/$1" ;;
   esac
 }
 
-# Compose the /pos of a package build: the trees of the POS packages in
-# ENV hard-linked into one directory, which the build container mounts
-# read-only. A path has one owner: cp fails on a path another package of
-# the environment already put there.
+# The prefix of an environment entry's package: a reference's
+# (ref_prefix), or this build's.
+# Inputs:
+#   $1    environment entry (<pkg>, <pkg>@ref or <pkg>@pos)
+#   TOOLCHAIN_REF, POS_REF, PREFIX
+env_prefix() {
+  case $1 in
+    *@ref) ref_prefix "$TOOLCHAIN_REF" ;;
+    *@pos) ref_prefix "$POS_REF" ;;
+    *) echo "$PREFIX" ;;
+  esac
+}
+
+# Compose the root of a package build: the trees of the packages in ENV
+# hard-linked into one directory, whose top directories (pos, and apps for
+# extras) the build container mounts read-only (root_mounts). /pos is
+# there even when empty. A path has one owner: cp fails on a path another
+# package of the environment already put there.
 # Inputs:
 #   $1     destination root directory ($bdir/roots/$p)
 #   ENV    resolved package environment array
 root_compose() {
   local root=$1 q
   rm -rf "$root"
-  mkdir -p "$root"
+  mkdir -p "$root/pos"
   for q in "${ENV[@]}"; do
     case ${KIND[${q%@*}]} in
       package|output)
         cp -al --update=none-fail "$(env_tree "$q")/." "$root/" ||
           die "$p: ${q%@*} ships a path another package of the environment ships" ;;
     esac
+  done
+}
+
+# The mounts of a composed root (root_compose): each top directory at its
+# place, read-only.
+# Inputs:
+#   $1    composed root directory
+# Outputs:
+#   ROOT_MOUNTS (array of ro:<dir>:/<name>)
+root_mounts() {
+  local d
+  ROOT_MOUNTS=()
+  for d in "$1"/*/; do
+    d=${d%/}
+    ROOT_MOUNTS+=(ro:"$d:/${d##*/}")
   done
 }
 
@@ -704,7 +766,7 @@ build_one() {
   # write the paths they build at into debug info, __FILE__ and libtool
   # archives, and two builds of the same sources should not differ in them.
   recipe_mounts
-  local -a mounts=(pos:"$root" ro:"$engine/buildsys" "${RECIPE_MOUNTS[@]}")
+  local -a mounts=(ro:"$engine/buildsys" "${RECIPE_MOUNTS[@]}")
   [[ ! -d $src_dir ]] || mounts+=(ro:"$src_dir:/src/${SRC[$p]}")
   WITH_SOURCE_IDS=()
   for s in ${WSRC[$p]}; do
@@ -718,10 +780,12 @@ build_one() {
   echo "=== $p: setup: ${scripts:-none} ===" | tee "$log"
   echo "env: ${ENV[*]}" | tee -a "$log"
   root_compose "$root"
-  step_run "$p" "${mounts[@]}" -- env \
+  root_mounts "$root"
+  step_run "$p" "${ROOT_MOUNTS[@]}" "${mounts[@]}" -- env \
     POS_BASE="$hbase" \
     POS_PACKAGE="$p" \
     POS_RECIPE_DIR="$hbase/${PKGDIR[$p]}" \
+    POS_PREFIX="$PREFIX" \
     POS_SRC_DIR="/src/${SRC[$p]}" \
     POS_WITH_SRC_DIRS="${with_dirs# }" \
     POS_BUILD_DIR="/build/$p" \

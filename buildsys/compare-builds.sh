@@ -35,22 +35,41 @@ build_dir() {
   exit 2
 }
 
+# The prefix a build's packages are installed in, from its info; /pos for
+# a build from before prefixes, or a directory without one.
+# Inputs:
+#   $1    build directory
+prefix_of() {
+  local p=
+  [[ ! -f $1/info ]] || p=$(awk '$1 == "prefix" {print $2}' "$1/info")
+  echo "${p:-/pos}"
+}
+
 (($# >= 2)) || usage
 a=$(build_dir "$1")
 b=$(build_dir "$2")
 shift 2
+declare -A prefix=([$a]=$(prefix_of "$a") [$b]=$(prefix_of "$b"))
+
+# The record directory of a package in a build (pkg_record).
+# Inputs:
+#   $1    build directory
+#   $2    package name
+record() {
+  echo "$1/dest/$2${prefix[$1]}/lib/pos/packages/$2"
+}
 
 # A package is built when its metadata is there (pkg_record writes it last).
 built() {
   local f
-  for f in "$1"/dest/*/pos/lib/pos/packages/*/meta; do
+  for f in "$1"/dest/*"${prefix[$1]}"/lib/pos/packages/*/meta; do
     [[ -f $f ]] && basename "$(dirname "$f")"
   done
   return 0
 }
 
 files() {
-  cat "$1/dest/$2/pos/lib/pos/packages/$2/files"
+  cat "$(record "$1" "$2")/files"
 }
 
 needed() {
@@ -69,12 +88,12 @@ fi
 
 differ=0
 for p in "${packages[@]}"; do
-  if [[ ! -f $a/dest/$p/pos/lib/pos/packages/$p/meta ]]; then
+  if [[ ! -f $(record "$a" "$p")/meta ]]; then
     echo "== $p: only in $b"
     differ=1
     continue
   fi
-  if [[ ! -f $b/dest/$p/pos/lib/pos/packages/$p/meta ]]; then
+  if [[ ! -f $(record "$b" "$p")/meta ]]; then
     echo "== $p: only in $a"
     differ=1
     continue

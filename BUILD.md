@@ -199,7 +199,7 @@ A project has the packages of one pipeline, which a `pipeline` line of
 its `project` file names: `pipeline toolchain` in pos-sdk, `pipeline
 extras` in pos-extras, none (pos) in pos. The other pipelines' packages
 are known from the references, by the
-`meta` each installed in `/pos/lib/pos/packages/<package>/`, of the
+`meta` each installed in `<prefix>/lib/pos/packages/<package>/`, of the
 pipeline the reference's `info` names, and taken from them as any
 reference package is; a capability nothing in the project provides is checked when
 a build resolves it. A package's `env.sh` is installed beside its `meta`,
@@ -490,7 +490,8 @@ is, by default, the one its toolchain reference was built on. A pos
 package outside core-libs is not in the pos reference, so an extras
 package cannot require it. `./build reference` stores a complete extras
 build as an extras reference; builds do not take one yet. The extras
-still install in `/pos`.
+install in `/apps/pos-extras/<version>` (see "Prefix"); pos-extras's
+`pos-link` links against that prefix and `/pos`.
 
 ## Build containers
 Every step of a build (preparing a source, building a package, making an
@@ -512,7 +513,9 @@ two things:
   more than bash, coreutils and dnf.
 * `/pos`: the package's resolved environment, composed for this build: the
   staging trees of the POS packages in it (this build's `dest/<name>`, or
-  a reference's), hard-linked into `roots/<package>`, mounted read-only.
+  a reference's), hard-linked into `roots/<package>`, whose top
+  directories are mounted read-only: `/pos`, and in an extras build the
+  build's prefix under `/apps` too.
   A path has one owner: composing fails when two packages of the
   environment ship the same file or link. The root is removed after the
   build, and kept when it fails, to look at.
@@ -536,7 +539,8 @@ provides. It sees the recipes (`buildsys`, `outputs`, the stage lists) and the
 build directory.
 
 A built package's staging tree carries its metadata in
-`/pos/lib/pos/packages/<name>/`: `meta` (the package's meta, its
+`<prefix>/lib/pos/packages/<name>/` (`/pos/lib/pos/packages/<name>/` in
+pos and pos-sdk; see "Prefix"): `meta` (the package's meta, its
 `version`, the build ID, the packages it was built against, the tools
 image ID and the reference builds) and `files`. The version is its
 source's: a release archive's `version`, or for a synced source the
@@ -707,6 +711,19 @@ dependencies outside the prefix.
 
 Third-party applications install in separate hierarchy. A machine can keep `/usr` for that, or any other prefix.
 
+A project's packages install in its prefix: the `prefix` line of its
+`project` file, `/pos` without one. pos and pos-sdk install in `/pos`;
+pos-extras in `/apps/pos-extras/<version>`. `<version>` is `<product
+version>.<revision>` of `VERSION` (1.0.0): it stays the same while
+developing, so builds of the same sources stay comparable (the prefix is
+compiled into programs), and changes with a service release. A new
+build records its prefix in `info` (`prefix`), and a reference build's
+packages are found in the prefix its `info` names (`/pos` for builds
+from before prefixes). The recipes have it as `$prefix`; `$pos_prefix`
+is `/pos`, what every build links against, and `$sdk_prefix` is
+`/pos/sdk` in every project. A staging tree is a root holding the
+prefix (`dest/<name>/pos`, `dest/<name>/apps/pos-extras/1.0.0`).
+
 The sdk, the toolchain (see "SDK"), is one directory of the prefix,
 `/pos/sdk` (`$sdk_prefix` in `buildsys/pkg.sh`), with its own `bin`,
 `lib`, `libexec`, `include` and `share`. `/pos/bin` and `/pos/lib` are the
@@ -851,7 +868,8 @@ installs the tree has to preserve modes (`tar -x` as root, or `cp -a`, not
 `cp -r`; unprivileged `tar -x` needs `-p`).
 
 # Core libs stage
-Each package stages into `work/builds/<id>/dest/<name>` with `--prefix=/pos`.
+Each package stages into `work/builds/<id>/dest/<name>` with `--prefix=/pos`
+(the project's prefix; see "Prefix").
 
 With the sdk compiler, packages use `/pos/sdk/bin/gcc`, `/pos/sdk/bin/g++`,
 and `/pos/sdk/bin/ld`, whose defaults already search `/pos/include` and `/pos/lib`,

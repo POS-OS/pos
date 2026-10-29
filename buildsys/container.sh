@@ -108,7 +108,7 @@ tools_ensure() {
 # Run a step of the build in a container of its tools image. The step sees
 # the image and what it is given: ro:<path> and rw:<path> mount a path at
 # its host path, or at <target> as ro:<path>:<target>, read-only or
-# read-write, and pos:<path> mounts a composed root as /pos, read-only. The user is the caller and there is no network,
+# read-write. The user is the caller and there is no network,
 # unless given net (network) or root: the container's root, which is the
 # caller outside it, allowed to mount in the container's own namespaces
 # (SYS_ADMIN of rootless podman covers its user namespace only).
@@ -117,7 +117,7 @@ tools_ensure() {
 # Inputs:
 #   $1              container name suffix (<project>-$id-$name)
 #   <mount|opt>...  zero or more of: net, root, ro:<path>[:<target>],
-#                   rw:<path>[:<target>], pos:<path>
+#                   rw:<path>[:<target>]
 #   --              separator before command
 #   $@              command and arguments to execute inside the tools container
 step_run() {
@@ -136,7 +136,6 @@ step_run() {
       root) user=--cap-add=SYS_ADMIN ;;
       ro:*) mounts+=(-v "$h:$t:ro") ;;
       rw:*) mounts+=(-v "$h:$t") ;;
-      pos:*) mounts+=(-v "$h:/pos:ro") ;;
       *) die "step_run: unknown argument $a" ;;
     esac
   done

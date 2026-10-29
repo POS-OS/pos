@@ -50,6 +50,17 @@ ref_info() {
   awk -v k="$2" '$1 == k {print $2}' "$refs/$1/info"
 }
 
+# The prefix a restored reference's packages are installed in, from its
+# info; /pos for references from before prefixes.
+# Inputs:
+#   $1      reference ID
+#   refs    work/references directory
+ref_prefix() {
+  local p
+  p=$(ref_info "$1" prefix)
+  echo "${p:-/pos}"
+}
+
 # The references a new build of PIPELINE uses, restored: the settings (a
 # build ID or a release, reference_named), else
 # for a pos or extras build the pos reference its toolchain reference was
@@ -255,7 +266,7 @@ load_references() {
   for ref in "$TOOLCHAIN_REF" "$POS_REF"; do
     [[ $ref != none ]] || continue
     from=$(ref_info "$ref" pipeline)
-    for meta in "$refs/$ref"/dest/*/pos/lib/pos/packages/*/meta; do
+    for meta in "$refs/$ref"/dest/*"$(ref_prefix "$ref")"/lib/pos/packages/*/meta; do
       [[ -f $meta ]] || continue
       p=$(basename "$(dirname "$meta")")
       [[ -n ${KIND[$p]:-} && ${PIPE[$p]} == "${from:-pos}" ]] || continue
@@ -305,6 +316,7 @@ reference_pack() {
   local -A keep=()
   PIPELINE=$(build_info pipeline)
   PIPELINE=${PIPELINE:-pos}
+  PREFIX=$(build_prefix)
   load_built
   if [[ $PIPELINE != pos ]]; then
     REF_KIND=$PIPELINE

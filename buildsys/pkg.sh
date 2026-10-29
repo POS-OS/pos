@@ -3,7 +3,8 @@
 #
 # buildsys/build.sh runs this script in a build container. The builder
 # resolves the package's requirements, composes exactly that set as the
-# container's /pos (read-only), and passes the result in the environment.
+# container's /pos, and the build's prefix where it is another (read-only),
+# and passes the result in the environment.
 # Of the checkout, the container has the recipes (buildsys, the package
 # directories pos/<tree>/packages), the package's source tree, and the
 # build's build, dest and debug directories. Each package's build.sh
@@ -12,16 +13,19 @@
 #   POS_BASE        the POS checkout
 #   POS_PACKAGE     the package being built
 #   POS_RECIPE_DIR  its package directory, with build.sh
+#   POS_PREFIX      the prefix the package installs in: /pos, or the
+#                   project's (/apps/pos-extras/<version>)
 #   POS_SRC_DIR     its source tree (pos/<tree>/src/<source>, or prepared)
 #   POS_WITH_SRC_DIRS  further source trees (meta "with-sources"), as
 #                   <source>=<dir> words; pkg_sync_src copies each into
 #                   the build tree
 #   POS_BUILD_DIR   scratch build directory
-#   POS_DEST_DIR    staging directory; the package installs into $POS_DEST_DIR/pos
+#   POS_DEST_DIR    staging directory; the package installs into
+#                   $POS_DEST_DIR$POS_PREFIX
 #   POS_OUTPUTS     further packages this build produces (meta "outputs");
 #                   the recipe installs each into $(pkg_output <name>)
 #   POS_DEBUG_DIR   where _pkg_finish puts the package's separate debug
-#                   info, $POS_DEBUG_DIR/pos/lib/debug; an output's goes
+#                   info, $POS_DEBUG_DIR$POS_PREFIX/lib/debug; an output's goes
 #                   next to it, as with the staging directories
 #   SOURCE_DATE_EPOCH  the time of the package's source, for the dates
 #                   tools write, as in man pages
@@ -55,10 +59,11 @@ _require_container() {
 
 # Initialize the package build environment and directory layout before pkg() runs.
 # Inputs (environment):
-#   POS_BASE, POS_PACKAGE, POS_RECIPE_DIR, POS_SRC_DIR, POS_BUILD_DIR,
-#   POS_DEST_DIR, POS_DEBUG_DIR, POS_OUTPUTS, POS_ENV_SCRIPTS
+#   POS_BASE, POS_PACKAGE, POS_RECIPE_DIR, POS_PREFIX, POS_SRC_DIR,
+#   POS_BUILD_DIR, POS_DEST_DIR, POS_DEBUG_DIR, POS_OUTPUTS, POS_ENV_SCRIPTS
 # Outputs (shell variables set for pkg()):
-#   base, recipe_dir, src_dir, build_dir, dest_dir, debug_dir, prefix (/pos),
+#   base, recipe_dir, src_dir, build_dir, dest_dir, debug_dir, prefix (the
+#   build's: /pos, or /apps/pos-extras/<version>), pos_prefix (/pos),
 #   sdk_prefix (/pos/sdk), sysconfdir (/etc), localstatedir (/var), nproc,
 #   CFLAGS, CXXFLAGS, LDFLAGS
 _pkg_setup() {
@@ -68,10 +73,12 @@ _pkg_setup() {
   src_dir=${POS_SRC_DIR:?}
   build_dir=${POS_BUILD_DIR:?}
   dest_dir=${POS_DEST_DIR:?}
-  prefix=/pos
-  # The sdk (the toolchain) is one directory in the prefix, which can be
+  prefix=${POS_PREFIX:?}
+  # The OS, which every build links against, whatever its own prefix.
+  pos_prefix=/pos
+  # The sdk (the toolchain) is one directory in pos's prefix, which can be
   # left out of an image or mounted on its own (BUILD.md "Prefix").
-  sdk_prefix=${prefix}/sdk
+  sdk_prefix=${pos_prefix}/sdk
   # Configuration is read from the machine's /etc, never from inside the
   # prefix. Variable data is /var. Files a package installs under either
   # are shipped defaults; _pkg_finish moves them to /pos/share/factory
@@ -385,7 +392,7 @@ _pkg_split() {
 
 # Split the debug info off the ELF programs and libraries of a staging
 # tree and strip them, as Fedora's debuginfo packages do. The debug info
-# goes to <debug>/pos/lib/debug/.build-id/<xx>/<rest>.debug, where gdb and
+# goes to <debug><prefix>/lib/debug/.build-id/<xx>/<rest>.debug, where gdb and
 # debuginfod look it up by build ID. The loader keeps its symbol table
 # (valgrind needs it) and static libraries lose only their debug info.
 # strip writes archives deterministically (-D: members with zero dates and
@@ -415,7 +422,7 @@ _pkg_strip() {
       if [[ $type == EXEC || $type == DYN ]]; then
         id=$(readelf -n "$f" 2>/dev/null | awk '$1 == "Build" && $2 == "ID:" {print $3}')
         if [[ -n $id ]]; then
-          dbg=$debug/pos/lib/debug/.build-id/${id:0:2}/${id:2}.debug
+          dbg=$debug${prefix}/lib/debug/.build-id/${id:0:2}/${id:2}.debug
           if [[ ! -e $dbg ]]; then
             mkdir -p "$(dirname "$dbg")"
             objcopy --only-keep-debug "$f" "$dbg"

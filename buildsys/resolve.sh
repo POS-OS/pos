@@ -99,6 +99,8 @@ declare -A PROVIDERS=() BOOTCAP=() TPROV=()
 declare -A BUILT=() REF=() POSREF=() REF_REQ=() FOREIGN=()
 declare -a TARGETS=()
 PIPELINE=pos
+# The prefix the build's packages install in (build.sh: project_prefix).
+PREFIX=/pos
 
 die() {
   echo "$*" >&2
@@ -242,7 +244,7 @@ foreign_load() {
   local meta p key vals line pipe
   [[ $1 != none ]] || return 0
   pipe=$(ref_info "$1" pipeline)
-  for meta in "$refs/$1"/dest/*/pos/lib/pos/packages/*/meta; do
+  for meta in "$refs/$1"/dest/*"$(ref_prefix "$1")"/lib/pos/packages/*/meta; do
     [[ -f $meta ]] || continue
     p=$(basename "$(dirname "$meta")")
     [[ -z ${KIND[$p]:-} || -n ${FOREIGN[$p]:-} ]] || continue
@@ -568,15 +570,16 @@ env_scripts() {
 }
 
 # The env.sh of an environment entry (env_scripts) in the build container,
-# where the reference's package is in /pos and the recipes at their host
-# path. Returns 1 when it has none.
+# where the reference's package is in its prefix (env_prefix) and the
+# recipes at their host path. Returns 1 when it has none.
 # Inputs:
 #   $1      environment entry
 #   [$2]    host path of base (default base)
 env_script() {
-  local q=$1 p=${1%@*}
-  if is_ref "$q" && [[ -f $(env_tree "$q")/lib/pos/packages/$p/env.sh ]]; then
-    echo "/pos/lib/pos/packages/$p/env.sh"
+  local q=$1 p=${1%@*} pre
+  pre=$(env_prefix "$q")
+  if is_ref "$q" && [[ -f $(env_tree "$q")$pre/lib/pos/packages/$p/env.sh ]]; then
+    echo "$pre/lib/pos/packages/$p/env.sh"
   elif [[ -n ${PKGDIR[$p]:-} && -f $base/${PKGDIR[$p]}/env.sh ]]; then
     echo "${2:-$base}/${PKGDIR[$p]}/env.sh"
   else
