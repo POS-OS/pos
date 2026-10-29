@@ -1,7 +1,0 @@
-# libgcc_s, libstdc++, libatomic and libgomp: what C and C++ programs need
-# at run time, and the run-time libraries of the sanitizers, libitm,
-# libquadmath and libssp, for programs built with them. Produced by the gcc build (pos/toolchain/packages/gcc/build.sh); a pos
-# build takes it from its toolchain reference, in lockstep with the compiler.
-kind output
-output-of gcc
-requires glibc

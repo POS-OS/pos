@@ -105,7 +105,7 @@ _pkg_setup() {
 # Compiler and linker flags every package is built with (BUILD.md "Build
 # flags"): optimized with debug info, which _pkg_finish splits off, and the
 # hardening Fedora and Arch build with. -fPIE and -fstack-protector-strong
-# are the POS compiler's defaults (pos/toolchain/packages/gcc/build.sh). env.sh files add
+# are the POS compiler's defaults (pos-sdk's gcc recipe). env.sh files add
 # to these; recipes whose own build sets flags (glibc, gcc) replace them
 # with pos_optflags.
 # Inputs: pos_optflags

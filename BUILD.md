@@ -8,8 +8,7 @@ reaches through `flatpak-spawn --host` from inside a toolbox, as the
 (see "Build containers").
 
     $ ./build plan                 # what run would build, in order
-    $ ./build run --new --toolchain  # build the toolchain (see "Toolchain")
-    $ ./build reference            # store it as the toolchain reference of later builds
+    $ ./build run --new            # a new build, with the toolchain reference pos-sdk made
     $ ./build run                  # build and assemble every stage
     $ ./build run core-libs        # one stage
     $ ./build run zlib             # one package (and what it needs)
@@ -208,16 +207,14 @@ list of the stage named after the tree.
 | --- | --- |
 | `core-libs`, `system`, `sdk` | the stages: their member lists, and the packages and sources of their members |
 | `network`, `container` | the optional stages (see "Network stage", "Container stage"), as the stages above |
-| `toolchain` | the toolchain pipeline (see "Toolchain"): binutils, gcc with gcc-runtime, and gcc-gmp, gcc-mpfr and mpc, which gcc builds in its tree; release archives, no `src` |
 | `common` | sources of packages of several trees: gnulib |
 | `build-env` | the host and profile packages builds require (host-base, host-toolchain, gcc-host, pos-link) |
 
 A package lives in the tree of the stage that ships it, and one no stage
 ships by its role. The toolchain is the exception: the sdk stage (and
 core-libs, gcc-runtime) lists toolchain packages, which a pos build takes
-from its toolchain reference, while their recipes and sources are the `toolchain`
-tree, so that tree is exactly what toolchain builds build. A stage's
-`stage` file lists packages of any tree.
+from its toolchain reference; their recipes are pos-sdk's (see
+"Toolchain"). A stage's `stage` file lists packages of any tree.
 
 Package names are unique across trees, and so are source names; meta and
 stage files name packages without their tree, so a package moves between
@@ -284,8 +281,8 @@ soname (`libseccomp.so.2`) and `SCMP_VER_*`.
 
 ### Release archives
 A source can instead be an upstream release archive, for what follows
-upstream releases rather than its development (the toolchain, see
-"Toolchain"). The meta of the package named after the source has
+upstream releases rather than its development (pos-sdk's toolchain,
+see "Toolchain"). The meta of the package named after the source has
 `archive <url> <sha256>`, and the source has no `src/<source>` and no
 prepare recipe: a release archive is what prepare makes of a tree.
 Patches go in the package directory's `patches/`, `*.patch` applied with
@@ -379,11 +376,14 @@ environment: gcc requires gcc-runtime, which it produces.
 
 ## Toolchain
 The toolchain is gcc (with its gcc-runtime output) and binutils: the
-packages whose meta says `pipeline toolchain`. It is built apart from the rest, and a build is one of two
+packages whose meta says `pipeline toolchain`. Their recipes are the
+pos-sdk project's, which builds them with this engine (see "Engine"); pos
+has no toolchain package of its own and knows them from its toolchain
+reference. It is built apart from the rest, and a build is one of two
 kinds (`info`: `pipeline`):
 
-* A toolchain build (`run --new --toolchain`) builds the toolchain
-  packages only. Its compiler is the toolchain reference's gcc, or
+* A toolchain build (`run --new --toolchain`, in pos-sdk) builds the
+  toolchain packages only. Its compiler is the toolchain reference's gcc, or
   Fedora's without one; it builds on the glibc of a pos reference, a
   stored pos build, with its kernel headers (linux-headers), and never
   builds either. `./build reference` stores it
@@ -398,8 +398,8 @@ kinds (`info`: `pipeline`):
   `./build reference` stores its core-libs as the pos reference of later
   toolchain builds.
 
-The interface between the two is a built pos: the toolchain tree builds
-nothing of pos, and pos nothing of the toolchain (see "Reference builds").
+The interface between the two is a built pos: pos-sdk builds nothing of
+pos, and pos nothing of the toolchain (see "Reference builds").
 
 A build without a toolchain reference uses Fedora's compiler, the
 `gcc-host` profile, which provides `gcc`: it runs Fedora's gcc with
@@ -408,16 +408,17 @@ A build without a toolchain reference uses Fedora's compiler, the
 obsoletes is not available, so with a toolchain reference its gcc is the
 compiler. A pos build without one is the bootstrap of the first pos
 reference: it builds packages, not stages: glibc, and linux-headers,
-which glibc requires. From nothing, POS is built in four builds:
+which glibc requires. From nothing, POS is built in four builds, two of
+them in pos-sdk:
 
-    $ POS_TOOLCHAIN_REFERENCE=none ./build run --new glibc        # glibc, linux-headers by Fedora's gcc
-    $ ./build reference                                           # the first pos reference
-    $ POS_TOOLCHAIN_REFERENCE=none ./build run --new --toolchain  # by Fedora's gcc
-    $ ./build reference
-    $ ./build run --new --toolchain                               # by itself
-    $ ./build reference
-    $ ./build run --new                                           # the stages
-    $ ./build reference                                           # pos reference of later toolchains
+    pos$     POS_TOOLCHAIN_REFERENCE=none ./build run --new glibc        # glibc, linux-headers by Fedora's gcc
+    pos$     ./build reference                                           # the first pos reference
+    pos-sdk$ POS_TOOLCHAIN_REFERENCE=none ./build run --new --toolchain  # by Fedora's gcc
+    pos-sdk$ ./build reference
+    pos-sdk$ ./build run --new --toolchain                               # by itself
+    pos-sdk$ ./build reference
+    pos$     ./build run --new                                           # the stages
+    pos$     ./build reference                                           # pos reference of later toolchains
 
 The second toolchain build is the one released: its gcc is built by a POS
 gcc of the same sources. The bootstrap glibc is only what the first
@@ -437,7 +438,7 @@ The toolchain runs on glibc only. gcc builds gmp, mpfr and mpc in its tree
 (`with-sources`) and links them statically, as it does libstdc++ and libgcc
 (`--with-static-standard-libraries`); gcc and binutils use their bundled
 zlib and no zstd, and binutils links its own libraries (libbfd,
-libopcodes, libctf, libsframe) statically. The gcc recipe fails if a
+libopcodes, libctf, libsframe) statically. pos-sdk's gcc recipe fails if a
 compiler program needs another library. So a pos build can change any library but glibc, whose ABI is
 backward compatible, under the toolchain it builds with: the toolchain
 reference's gcc runs on the pos build's glibc as soon as that is built.
@@ -574,7 +575,8 @@ others are built has an `env.sh`, and `pkg_setup` sources the `env.sh` of
 every package in the resolved requirements. What a build gets therefore
 follows from what it requires, never from what is found on disk:
 
-* `gcc/env.sh`: the POS compiler, `/pos/sdk/bin/gcc`, `g++` and `ld`.
+* `gcc/env.sh`: the POS compiler, `/pos/sdk/bin/gcc`, `g++` and `ld`;
+  pos-sdk's recipe, installed with gcc (see "Engine").
 * `host-toolchain/env.sh` and `gcc-host/env.sh`: the Fedora compiler,
   searching `/pos` ahead of `/usr` (`gcc-host`, standing in for gcc).
 * `pos-link/env.sh`: link against `/pos` with the build's compiler.
