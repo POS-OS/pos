@@ -5,7 +5,7 @@
 # "Images made with podman"). The image is tagged with the release and
 # with its product version, which moves to the release made last:
 #
-#   release-toolbox.sh <release>     (a directory in release-dir, or its path)
+#   release-toolbox.sh <release>     (a directory in release-dir/pos, or its path)
 #   toolbox create -i localhost/pos-fedora-toolbox:<product version>
 #
 # Runs on the host or in a toolbox, where podman is the host's (through
@@ -40,7 +40,7 @@ meta() {
 }
 
 release=${1:?usage: release-toolbox.sh <release>}
-[[ -d $release ]] || release=$(config release-dir)/$release
+[[ -d $release ]] || release=$(config release-dir)/pos/$release
 [[ -f $release/info ]] || { echo "no release $release" >&2; exit 1; }
 name=$(build_stem "$release")
 version=$(info_get "$release" product-version)

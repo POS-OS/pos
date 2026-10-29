@@ -61,9 +61,11 @@ with `./build tag`, or `./build publish`, which also publishes it (see
    leaves neither. A default `run` that finishes records `complete`;
    `rebuild` drops the records of the dropped packages and of everything
    made from packages.
-   The build is an OS build when it is a pos build with `complete`, every
-   record names its commit (and engine) with a clean tree, and its BUILD (`VERSION` at
-   its commit) is above every `main-*` tag.
+   The build can be numbered when it is a build of the project's
+   pipeline (a pos build in pos, a toolchain build in pos-sdk) with
+   `complete`, every record names its commit (and engine) with a clean
+   tree, and its BUILD (`VERSION` at its commit) is above every `main-*`
+   tag.
 2. The build's commit is tagged `main-<BUILD>`, an annotated tag with the
    build ID, its identifier, the references and whether checks were
    skipped.
@@ -126,11 +128,15 @@ that build. Neither command pushes.
 ## Releases
 `./build publish [--unchecked]` numbers the current build as `tag` does
 and copies its artifacts into the release library, the `release-dir`
-setting (a local directory for now), as `<release-dir>/<release>`, the
-release named as the artifacts are (`1.0-3.main.20261017-1524`): the
+setting (a local directory for now), which holds a directory per
+project: `<release-dir>/<project>/<release>`, the release named as the
+artifacts are (`pos/1.0-3.main.20261017-1524`). The release holds the
 build's `info`, everything named after it (stage and debug archives,
-image archives with their package lists, disks, the recipes archive), its
-source archives, its RPM packages in `rpm/`, and `SHA256SUMS`. It refuses
+image archives with their package lists, disks, the recipes and engine
+archives), its source archives, its RPM packages in `rpm/`, its
+reference archive (`pos-ref-<kind>-<id>.tar.zst`, as `./build reference`
+writes it: a pos release's core-libs, a pos-sdk release's toolchain
+packages, which is what a pos-sdk release ships), and `SHA256SUMS`. It refuses
 a release that is there already, and one whose RPM packages would not
 update those of a release of the same product version there (the same
 version-release, or a lower RPM release number). The release is filled
@@ -149,8 +155,7 @@ product version:
 Settings of `./build` are lines of `<key> <value>` in
 `~/.config/pos/build.conf`, or in the file `POS_BUILD_CONFIG` names, and
 in `<project>.conf` next to it (`pos.conf`, see "Engine"), whose lines
-replace the shared file's for that project: `release-dir` differs
-between projects, the reference store and the downloads need not.
+replace the shared file's for that project.
 `build.conf.dist` lists them; copy it there and edit. Each setting's
 environment variable overrides the file, for a single run. Only a new
 build reads them: what it uses is recorded in its `info`, so a build
@@ -164,7 +169,7 @@ an unknown key is an error.
 | `reference-dir` | `POS_REFERENCE_DIR` | none: no reference store |
 | `toolchain-reference` | `POS_TOOLCHAIN_REFERENCE` | the store's default (see "Reference builds"); `none`: a build with Fedora's compiler |
 | `pos-reference` | `POS_POS_REFERENCE` | a pos build: its toolchain reference's; a toolchain build: the store's default |
-| `release-dir` | `POS_RELEASE_DIR` | none: `publish` needs it; read by `publish`, not recorded by builds |
+| `release-dir` | `POS_RELEASE_DIR` | none: `publish` needs it; the release library of every project, a directory each; read by `publish`, not recorded by builds |
 | `download-dir` | `POS_DOWNLOAD_DIR` | `work/downloads`: the sources' release archives (see "Release archives"); not recorded by builds |
 | `engine-checkout` | `POS_ENGINE_CHECKOUT` | none: the pos checkout another project's `./build` takes the engine from (see "Engine"); read by that `./build` |
 

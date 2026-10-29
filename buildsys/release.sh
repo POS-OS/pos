@@ -53,18 +53,19 @@ version_info() {
   echo "rpm-release $rpmrel"
 }
 
-# Check that build id is an OS build (BUILD.md "Build numbers"): a pos
-# build with a complete run, whose every record (step_made) was made from
+# Check that build id is a numbered build (BUILD.md "Build numbers"): a
+# build of the project's pipeline with a complete run, whose every record (step_made) was made from
 # its commit (and engine), clean, with its checks unless unchecked is yes; its BUILD
 # (VERSION at that commit) above every main-* tag. Lists every problem and
 # exits, or sets BUILD_NUMBER and UNCHECKED (the records made unchecked).
 # Inputs:
 #   $1    whether to accept unchecked steps ("yes" or "no")
 #   id    build ID to validate
+#   PIPELINE  the project's pipeline
 # Outputs:
 #   BUILD_NUMBER, UNCHECKED[]
 validate() {
-  local unchecked=$1 commit made f r last
+  local unchecked=$1 commit made f r last pipe
   local -a problems=()
   bdir=$builds/$id
   [[ -f $bdir/info ]] || die "no build $id"
@@ -72,7 +73,8 @@ validate() {
   made="$commit clean"
   [[ -z $(build_info engine) ]] || made+=" engine $(build_info engine)"
   UNCHECKED=()
-  [[ $(build_info pipeline) == pos ]] || problems+=("not a pos build")
+  pipe=$(build_info pipeline)
+  [[ ${pipe:-pos} == "$PIPELINE" ]] || problems+=("a ${pipe:-pos} build, not one of this project's pipeline, $PIPELINE")
   [[ -f $bdir/made/complete ]] || problems+=("no complete run since it was created or last rebuilt")
   for f in "$bdir"/made/*; do
     [[ -f $f ]] || continue
@@ -93,7 +95,7 @@ validate() {
     ((BUILD_NUMBER > ${last:-0})) || problems+=("BUILD $BUILD_NUMBER is not above the last tag, main-$last")
   fi
   if ((${#problems[@]})); then
-    echo "build $id is not an OS build:" >&2
+    echo "build $id is not a numbered build:" >&2
     printf '  %s\n' "${problems[@]}" >&2
     exit 1
   fi
@@ -110,7 +112,7 @@ checks_said() {
   fi
 }
 
-# CLI command: validate that a build is a clean, complete OS release build.
+# CLI command: validate that a build is a clean, complete build to number.
 # Inputs:
 #   $@    [--unchecked] [<build-id>]
 cmd_validate() {
@@ -151,7 +153,7 @@ tag_check() {
 tag_make() {
   local commit
   commit=$(build_info commit)
-  git -C "$base" tag -a "main-$BUILD_NUMBER" -m "POS BUILD $BUILD_NUMBER
+  git -C "$base" tag -a "main-$BUILD_NUMBER" -m "$project BUILD $BUILD_NUMBER
 
 build $id
 version $(build_identifier "$bdir")
@@ -198,18 +200,20 @@ publish_check() {
 }
 
 # Copy the build's artifacts into a release directory: its info, what is
-# named after the build (pos-*-<stem>.*: stage and debug archives, image
-# archives and their package lists, disks, the recipes archive), its
-# source archives and its RPM packages in rpm/, and SHA256SUMS of them.
+# named after the build (*-<stem>.*: stage and debug archives, image archives and their package lists, disks, the
+# recipes and engine archives), its source archives, its RPM packages in
+# rpm/, its reference archive (reference_pack: a pos-sdk release's
+# toolchain packages, a pos release's core-libs), and SHA256SUMS of them.
 # Inputs:
 #   $1      the release directory to fill
-#   bdir
+#   id, bdir
 publish_copy() {
   local dir=$1 stem f
   stem=$(build_stem "$bdir")
   mkdir -p "$dir/rpm"
   cp "$bdir/info" "$dir/info"
-  for f in "$bdir"/pos-*-"$stem".* "$bdir"/pos-src-*; do
+  reference_pack "$dir"
+  for f in "$bdir"/*-"$stem".* "$bdir"/pos-src-*; do
     [[ ! -f $f ]] || cp --reflink=auto "$f" "$dir/"
   done
   for f in "$bdir"/rpm/*.rpm; do
@@ -219,9 +223,10 @@ publish_copy() {
 }
 
 # Publish the current build: number it as tag does, and copy its
-# artifacts into the release library, <release-dir>/<release>, named as
-# the artifacts are (build_stem). The release is filled under a temporary
-# name and appears when the tag is made; then VERSION is bumped.
+# artifacts into the project's directory of the release library,
+# <release-dir>/<project>/<release>, named as the artifacts are
+# (build_stem). The release is filled under a temporary name and appears
+# when the tag is made; then VERSION is bumped.
 # Inputs:
 #   $@    [--unchecked]
 cmd_publish() {
@@ -231,7 +236,9 @@ cmd_publish() {
   store=$(config release-dir)
   [[ -n $store ]] || die "release-dir is not set (POS_RELEASE_DIR; build.conf.dist)"
   [[ -d $store ]] || die "release-dir $store is not a directory"
+  store+=/$project
   tag_check "$unchecked"
+  mkdir -p "$store"
   publish_check "$store"
   name=$(build_stem "$bdir")
   rm -rf "${store:?}/.$name.tmp"

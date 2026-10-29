@@ -6,7 +6,7 @@
 # default. The build configuration is
 # ${POS_BUILD_CONFIG:-~/.config/pos/build.conf}, made from build.conf.dist:
 # "<key> <value>" lines and # comments; the project's is <name>.conf next
-# to it, for the settings that differ between projects (release-dir).
+# to it, for the settings that differ between projects.
 # Both are read as data, never sourced. Only new builds read settings; a
 # build records what it uses in its info.
 

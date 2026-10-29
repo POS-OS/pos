@@ -232,30 +232,26 @@ build_references() {
   foreign_load "$POS_REF"
 }
 
-# Store a build in the reference store (reference-dir) and mark it the
-# default reference of its kind for new builds, as
-# pos-ref-<kind>-<id>.tar.zst (reference_archive). The archive holds the
-# build's info and the staging trees and debug info of what it stores: a
-# complete toolchain build's toolchain packages, or a pos build's core-libs
-# packages, which must include what the toolchain packages require of pos
-# (glibc, linux-headers).
+# The reference archive of a build: its info and the staging trees and
+# debug info of what a reference of it holds: a complete toolchain build's
+# toolchain packages, or a pos build's core-libs packages, which must
+# include what the toolchain packages require of pos (glibc,
+# linux-headers). Written as <dir>/pos-ref-<kind>-<id>.tar.zst
+# (reference_archive), for the reference store and for a release.
 # Inputs:
-#   [$1]    build ID (defaults to current_id)
-cmd_reference() {
-  local store out p t kind
+#   $1      directory to write the archive into
+#   id, bdir
+# Outputs:
+#   REF_OUT (the archive), REF_KIND (toolchain or pos), REF_COUNT (packages)
+reference_pack() {
+  local p t
   local -a trees=() debug=() args=()
   local -A keep=()
-  id=${1:-$(current_id)} || die "no current build"
-  bdir=$builds/$id
-  [[ -f $bdir/info ]] || die "no build $id"
   PIPELINE=$(build_info pipeline)
   PIPELINE=${PIPELINE:-pos}
-  store=$(config reference-dir)
-  [[ -n $store ]] || die "reference-dir is not set (build.conf.dist)"
-  [[ -d $store ]] || die "reference-dir $store does not exist"
   load_built
   if [[ $PIPELINE == toolchain ]]; then
-    kind=toolchain
+    REF_KIND=toolchain
     mapfile -t args < <(pipeline_targets)
     targets_expand "${args[@]}"
     for t in "${TARGETS[@]}"; do
@@ -265,7 +261,7 @@ cmd_reference() {
       ! in_pipeline "$p" || keep[$p]=1
     done
   else
-    kind=pos
+    REF_KIND=pos
     targets_expand core-libs
     for p in $(toolchain_needs); do
       [[ -n ${BUILT[$p]:-} ]] ||
@@ -280,13 +276,29 @@ cmd_reference() {
     trees+=("dest/$p")
     [[ ! -d $bdir/debug/$p ]] || debug+=("debug/$p")
   done
-  # Written again when it is there: what a build stores follows the
-  # checkout's stages, which may have changed since. A copy restored from
-  # the archive before goes, so the next build restores this one.
-  out=$store/$(reference_archive "$id" "$kind")
-  tar --zstd -cf "$out.tmp" -C "$bdir" info "${trees[@]}" "${debug[@]}"
-  mv "$out.tmp" "$out"
+  REF_OUT=$1/$(reference_archive "$id" "$REF_KIND")
+  REF_COUNT=${#trees[@]}
+  tar --zstd -cf "$REF_OUT.tmp" -C "$bdir" info "${trees[@]}" "${debug[@]}"
+  mv "$REF_OUT.tmp" "$REF_OUT"
+}
+
+# Store a build in the reference store (reference-dir) and mark it the
+# default reference of its kind for new builds (reference_pack). Written
+# again when it is there: what a build stores follows the checkout's
+# stages, which may have changed since. A copy restored from the archive
+# before goes, so the next build restores this one.
+# Inputs:
+#   [$1]    build ID (defaults to current_id)
+cmd_reference() {
+  local store
+  id=${1:-$(current_id)} || die "no current build"
+  bdir=$builds/$id
+  [[ -f $bdir/info ]] || die "no build $id"
+  store=$(config reference-dir)
+  [[ -n $store ]] || die "reference-dir is not set (build.conf.dist)"
+  [[ -d $store ]] || die "reference-dir $store does not exist"
+  reference_pack "$store"
   rm -rf "${refs:?}/$id"
-  echo "$id" >"$store/default-$kind"
-  echo "$out (${#trees[@]} packages), the default $kind reference"
+  echo "$id" >"$store/default-$REF_KIND"
+  echo "$REF_OUT ($REF_COUNT packages), the default $REF_KIND reference"
 }
