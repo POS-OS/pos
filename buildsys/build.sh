@@ -106,7 +106,7 @@ usage: ./build plan [--new] [<target>...]
 A target is a stage (pos/<stage>/stage) or a package. The default is
 every stage. run continues the current build; --new starts another, of
 the project's pipeline: a toolchain build (pos-sdk) builds the toolchain
-packages (meta: pipeline toolchain) and what they need; a pos build
+packages (project: pipeline toolchain) and what they need; a pos build
 builds the rest, and takes the toolchain from its toolchain reference. An output
 (outputs/<output>: images, disks, RPM packages) is made when run
 assembles all the stages it requires, after the outputs it requires.

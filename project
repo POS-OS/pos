@@ -2,3 +2,5 @@
 # name: names the project's settings (<name>.conf), tools images and
 # containers, and recipes archive.
 name pos
+# pipeline: the pipeline of the project's packages and builds, pos or
+# toolchain (BUILD.md "Toolchain"); pos without the line.

@@ -189,11 +189,12 @@ engine's `buildsys/` makes such a build's records dirty, as one to the
 project does. `buildsys/compare-builds.sh` takes build IDs of the
 project the same way.
 
-A project may have the packages of one pipeline only: pos-sdk has the
-toolchain's. The other pipeline's packages are known from the
-references, by the `meta` each installed in
-`/pos/lib/pos/packages/<package>/`, and taken from them as any reference
-package is; a capability nothing in the project provides is checked when
+A project has the packages of one pipeline, which a `pipeline` line of
+its `project` file names: `pipeline toolchain` in pos-sdk, none (pos) in
+pos. The other pipeline's packages are known from the references, by the
+`meta` each installed in `/pos/lib/pos/packages/<package>/`, of the
+pipeline the reference's `info` names, and taken from them as any
+reference package is; a capability nothing in the project provides is checked when
 a build resolves it. A package's `env.sh` is installed beside its `meta`,
 and a build that takes the package from a reference sources that copy.
 
@@ -347,7 +348,7 @@ scripts and proc-macros, links with the host's `cc` instead
 image's glibc, which may be older than POS's. `pkg_cargo` passes an
 explicit `--target` for that, which keeps RUSTFLAGS to the target's crates.
 
-`pipeline toolchain` marks a package of the toolchain (see "Toolchain").
+A package is of its project's pipeline (see "Engine", "Toolchain").
 `kind source` is a directory with only what makes a source, a prepare
 recipe or an `archive`, for a source other packages copy into their tree
 (mpc).
@@ -376,11 +377,11 @@ environment: gcc requires gcc-runtime, which it produces.
 
 ## Toolchain
 The toolchain is gcc (with its gcc-runtime output) and binutils: the
-packages whose meta says `pipeline toolchain`. Their recipes are the
-pos-sdk project's, which builds them with this engine (see "Engine"); pos
+packages of the toolchain pipeline. Their recipes are the
+pos-sdk project's, whose `project` file says `pipeline toolchain`, which builds them with this engine (see "Engine"); pos
 has no toolchain package of its own and knows them from its toolchain
 reference. It is built apart from the rest, and a build is one of two
-kinds (`info`: `pipeline`), the one of its project's packages:
+kinds (`info`: `pipeline`), its project's:
 
 * A toolchain build (`run --new` in pos-sdk) builds the
   toolchain packages only. Its compiler is the toolchain reference's gcc, or

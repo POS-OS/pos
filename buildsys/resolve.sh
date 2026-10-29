@@ -70,11 +70,12 @@
 # in a build without a toolchain reference, and in the toolchain build
 # that builds gcc with it.
 #
-# A project has the packages of one pipeline, and its builds are of that
-# one (pos-sdk has the toolchain, pos the rest): the other's are known
-# from its reference, by the meta each package installs
-# (lib/pos/packages/<package>/meta), and taken from it as below. They are
-# FOREIGN; a capability nothing in the project provides is checked when a
+# A project has the packages of one pipeline, which its project file names
+# (pipeline; pos without one), and its builds are of that one (pos-sdk has
+# the toolchain, pos the rest): the other's are known from its reference,
+# by the meta each package installs (lib/pos/packages/<package>/meta), of
+# the pipeline the reference's info names, and taken from it as below.
+# They are FOREIGN; a capability nothing in the project provides is checked when a
 # build resolves it.
 #
 # Where nothing available provides a capability, a build falls back to a
@@ -145,9 +146,15 @@ sources_load() {
 #   PKGS, PKGDIR, KIND, REQ, BREQ, HREQ, PREQ, PROV, OBS, SRC, WSRC,
 #   SRCREFS (source and with-sources as written), SRCPATH, ARCHIVE, OUTS,
 #   PARENT, PIPE, PROVIDERS, BOOTCAP
-#   PIPELINE    the project's pipeline, of its packages
+#   PIPELINE    the project's pipeline, from its project file
 meta_load() {
   local dir p key vals line r
+  PIPELINE=$(awk '$1 == "pipeline" {print $2}' "$base/project" 2>/dev/null) || true
+  PIPELINE=${PIPELINE:-pos}
+  case $PIPELINE in
+    pos|toolchain) ;;
+    *) die "$base/project: unknown pipeline: $PIPELINE" ;;
+  esac
   sources_load
   for dir in "$base"/pos/*/packages/*/; do
     dir=${dir%/}
@@ -157,7 +164,7 @@ meta_load() {
     [[ -f $dir/meta ]] || die "${PKGDIR[$p]}: missing meta"
     PKGS+=("$p")
     KIND[$p]=package REQ[$p]= BREQ[$p]= HREQ[$p]= PREQ[$p]= PROV[$p]=$p OBS[$p]= SRC[$p]=$p
-    WSRC[$p]= OUTS[$p]= PARENT[$p]= PIPE[$p]=pos
+    WSRC[$p]= OUTS[$p]= PARENT[$p]= PIPE[$p]=$PIPELINE
     while read -r line; do
       line=${line%%#*}
       read -r key vals <<<"$line"
@@ -172,10 +179,10 @@ meta_load() {
         source) SRC[$p]=$vals ;;
         with-sources) WSRC[$p]+=" $vals" ;;
         archive) ARCHIVE[$p]=$vals ;;
-        pipeline) PIPE[$p]=$vals ;;
         kind) KIND[$p]=$vals ;;
         outputs) OUTS[$p]+=" $vals" ;;
         output-of) PARENT[$p]=$vals ;;
+        pipeline) die "${PKGDIR[$p]}/meta: pipeline is the project's, in its project file" ;;
         *) die "${PKGDIR[$p]}/meta: unknown key: $key" ;;
       esac
     done <"$dir/meta"
@@ -192,23 +199,21 @@ meta_load() {
         [[ -n ${SRCPATH[${r##*/}]:-} ]] || SRCPATH[${r##*/}]=pos/${r%/*}/src/${r##*/}
       done
     fi
-    [[ ${KIND[$p]} != package ]] || PIPELINE=${PIPE[$p]}
   done
   meta_index
 }
 
-# Sort PKGS and index them: the pipeline of outputs, PROVIDERS and
-# BOOTCAP (the capabilities of obsoleted packages).
+# Sort PKGS and index them: PROVIDERS and BOOTCAP (the capabilities of
+# obsoleted packages).
 # Inputs:
-#   PKGS, KIND, PARENT, PROV, OBS
+#   PKGS, PROV, OBS
 # Outputs:
-#   PKGS (sorted), PIPE of outputs, PROVIDERS, BOOTCAP
+#   PKGS (sorted), PROVIDERS, BOOTCAP
 meta_index() {
   local p cap q
   mapfile -t PKGS < <(printf '%s\n' "${PKGS[@]}" | sort)
   PROVIDERS=() BOOTCAP=()
   for p in "${PKGS[@]}"; do
-    [[ ${KIND[$p]} != output ]] || PIPE[$p]=${PIPE[${PARENT[$p]}]:-pos}
     for cap in ${PROV[$p]}; do
       PROVIDERS[$cap]+=" $p"
     done
@@ -222,15 +227,18 @@ meta_index() {
 
 # Add the packages of a restored reference the checkout has no recipe for
 # (FOREIGN, see the top), from the meta each installed: what the resolver
-# needs of a package it takes from a reference.
+# needs of a package it takes from a reference. Their pipeline is the
+# reference's (pos for builds from before pipelines); a pipeline line in
+# a meta, from before the project named it, is not read.
 # Inputs:
 #   $1      reference ID, or none
 #   refs    work/references directory
 # Outputs:
 #   PKGS, KIND, PIPE, REQ, PROV, OBS, OUTS, PARENT, FOREIGN; meta_index
 foreign_load() {
-  local meta p key vals line
+  local meta p key vals line pipe
   [[ $1 != none ]] || return 0
+  pipe=$(ref_info "$1" pipeline)
   for meta in "$refs/$1"/dest/*/pos/lib/pos/packages/*/meta; do
     [[ -f $meta ]] || continue
     p=$(basename "$(dirname "$meta")")
@@ -238,7 +246,7 @@ foreign_load() {
     FOREIGN[$p]=1
     PKGS+=("$p")
     KIND[$p]=package REQ[$p]='' BREQ[$p]='' HREQ[$p]='' PREQ[$p]='' PROV[$p]=$p OBS[$p]='' SRC[$p]=$p
-    WSRC[$p]='' OUTS[$p]='' PARENT[$p]='' PIPE[$p]=pos
+    WSRC[$p]='' OUTS[$p]='' PARENT[$p]='' PIPE[$p]=${pipe:-pos}
     while read -r line; do
       line=${line%%#*}
       read -r key vals <<<"$line"
@@ -246,7 +254,6 @@ foreign_load() {
         requires) REQ[$p]+=" $vals" ;;
         provides) PROV[$p]+=" $vals" ;;
         obsoletes) OBS[$p]+=" $vals" ;;
-        pipeline) PIPE[$p]=$vals ;;
         kind) KIND[$p]=$vals ;;
         outputs) OUTS[$p]+=" $vals" ;;
         output-of) PARENT[$p]=$vals ;;
@@ -260,7 +267,7 @@ foreign_load() {
 # Validate all loaded package metadata for missing recipes, broken output-of
 # links, missing capability providers, and incomplete obsoletes coverage.
 # Inputs:
-#   base, PKGS, PKGDIR, KIND, PARENT, OUTS, REQ, BREQ, PROVIDERS, PIPE, WSRC,
+#   base, PKGS, PKGDIR, KIND, PARENT, OUTS, REQ, BREQ, PROVIDERS, WSRC,
 #   SRCREFS, SRCPATH, ARCHIVE, OBS, PROV
 meta_validate() {
   local p m cap q t err=0
@@ -282,14 +289,6 @@ meta_validate() {
     for cap in ${REQ[$p]} ${BREQ[$p]}; do
       required[$cap]=1
     done
-    case ${PIPE[$p]} in
-      pos|toolchain) ;;
-      *) echo "$m: unknown pipeline: ${PIPE[$p]}" >&2; err=1 ;;
-    esac
-    if [[ ${KIND[$p]} == package && ${PIPE[$p]} != "$PIPELINE" ]]; then
-      echo "$m: a ${PIPE[$p]} package; the project's packages are of one pipeline" >&2
-      err=1
-    fi
     if [[ -n ${ARCHIVE[$p]:-} ]]; then
       if [[ ! ${ARCHIVE[$p]} =~ ^[a-z]+://[^[:space:]]+/[^/[:space:]]+[[:space:]]+[0-9a-f]{64}$ ]]; then
         echo "$m: archive: expected <url> <sha256>" >&2

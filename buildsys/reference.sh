@@ -92,7 +92,7 @@ references_choose() {
 toolchain_needs() {
   local p cap q
   for p in "${PKGS[@]}"; do
-    [[ ${PIPE[$p]} == toolchain ]] || continue
+    [[ ${PIPE[$p]} == toolchain && (${KIND[$p]} == package || ${KIND[$p]} == output) ]] || continue
     for cap in ${REQ[$p]}; do
       for q in ${PROVIDERS[$cap]:-}; do
         [[ ${PIPE[$q]} == pos && ${KIND[$q]} == package ]] && echo "$q"
