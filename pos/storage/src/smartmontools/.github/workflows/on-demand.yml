@@ -1,0 +1,88 @@
+name: Build and publish on demand
+
+on:
+  workflow_dispatch:
+    inputs:
+      builds-1:
+        description: >-
+          Default CI builds:
+          linux-x86_64-static linux-i686-static darwin freebsd windows cygwin
+        default: ''
+        type: string
+      builds-2:
+        description: >-
+          Extra builds:
+          netbsd-x86_64 openbsd-x86_64 omnios-x86_64 os2emx
+          windows-signed windows-test-signed
+        default: ''
+        type: string
+      configure-override:
+        description: >-
+          Override 'configure' options
+        default: ''
+        type: string
+      make-override:
+        description: >-
+          Override 'make' options
+        default: ''
+        type: string
+      run-checks:
+        description: >-
+          Run checks if cross-compiling
+        default: 'no'
+        type: choice
+        options:
+          - 'no'
+          - 'yes'
+      upload-all:
+        description: >-
+          Upload 'smartmontools-all' with all builds
+        default: 'no'
+        type: choice
+        options:
+          - 'no'
+          - 'yes'
+      publish:
+        description: >-
+          Publish in repository 'smartmontools-builds'
+        default: 'no'
+        type: choice
+        options:
+          - 'no'
+          - 'yes'
+
+jobs:
+  build:
+    uses: ./.github/workflows/build.yml
+    with:
+      builds: >-
+        ${{ inputs.builds-1 }} ${{ inputs.builds-2 }}
+      configure-override: ${{ inputs.configure-override }}
+      make-override: ${{ inputs.make-override }}
+      run-checks:  ${{ inputs.run-checks }}
+      retention-days: ${{ case(inputs.publish == 'yes', 1, 90) }}
+    secrets: inherit
+
+  upload-all:
+    if: ${{ inputs.upload-all == 'yes' }}
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          merge-multiple: true
+          pattern: smartmontools-*
+          path: artifacts
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: smartmontools-all
+          path: artifacts/*
+          retention-days: 1
+
+  publish:
+    if: ${{ inputs.publish == 'yes' }}
+    needs: build
+    uses: ./.github/workflows/publish.yml
+    secrets: inherit
