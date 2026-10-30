@@ -3,3 +3,5 @@ build-requires gcc pos-link
 # fabrics (kmod), nvme-discoverd's sd_notify (systemd).
 requires glibc json-c openssl kmod systemd
 host-requires meson ninja-build
+# prepare.sh: the man pages, as for a release.
+prepare-requires meson ninja-build gcc asciidoc xmlto python3-sphinx perl
