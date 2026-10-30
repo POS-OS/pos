@@ -1,0 +1,483 @@
+#!/bin/bash
+# We use some bash-isms (getopts?)
+
+# Copyright (C) 2007-2026 Red Hat, Inc. All rights reserved.
+#
+# This file is part of LVM2.
+#
+# This copyrighted material is made available to anyone wishing to use,
+# modify, copy, or redistribute it subject to the terms and conditions
+# of the GNU General Public License v.2.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software Foundation,
+# Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+
+# lvm_dump: This script is used to collect pertinent information for
+#           the debugging of lvm issues.
+
+set -euE -o pipefail
+
+umask 077
+
+PATH="/sbin:/usr/sbin:/bin:/usr/bin"
+
+# following external commands are used throughout the script
+# echo and test are internal in bash at least
+MKDIR="mkdir" # need -p
+TAR="tar" # need czf
+RM="rm" # need -rf
+CP="cp"
+TAIL="tail" # we need -n
+LS="ls" # need -la
+PS="ps" # need alx
+SED="sed"
+DD="dd"
+CUT="cut"
+GREP="grep"
+DATE="date"
+UDEVADM="udevadm"
+UNAME="uname"
+READLINK="readlink"
+STAT="stat"
+SOCAT="socat" # either socat or nc is needed for dumping lvmpolld state
+NC="nc"
+
+if test "@ODIRECT@" = yes; then
+	DDFLAGS=(iflag=direct oflag=direct bs=4096)
+else
+	DDFLAGS=(bs=4096)
+fi
+
+usage() {
+	cat <<-EOF
+	${0##*/} [options]
+	    -h print this message
+	    -a advanced collection - warning: if lvm is already hung,
+	       then this script may hang as well if -a is used
+	    -c gather lvmlockd state and DLM info if running
+	    -d <directory> dump into a directory instead of tarball
+	    -p gather lvmpolld state if running
+	    -m gather LVM metadata from the PVs
+	    -s gather system info and context
+	    -u gather udev info and context
+	    -A collect everything (may hang if system is unresponsive)
+	EOF
+}
+
+advanced=0
+clustered=0
+lvmpolld=0
+metadata=0
+sysreport=0
+udev=0
+userdir=
+while getopts :Aacd:hlpmus opt; do
+	case $opt in
+		A)	advanced=1; clustered=1; lvmpolld=1; metadata=1; sysreport=1; udev=1 ;;
+		a)	advanced=1 ;;
+		c)	clustered=1 ;;
+		d)	userdir=$OPTARG ;;
+		h)	usage; exit 0 ;;
+		l)	: ;; # ignored, lvmetad removed
+		p)	lvmpolld=1 ;;
+		m)	metadata=1 ;;
+		s)	sysreport=1 ;;
+		u)	udev=1 ;;
+		:)	echo "$0: $OPTARG requires a value:"; usage; exit 1 ;;
+		\?)	echo "$0: unknown option $OPTARG"; usage; exit 1 ;;
+		*)	usage; exit 1 ;;
+	esac
+done
+
+die() {
+	local RET=$1; shift
+	printf '%s\n' "${0##*/}: $*" 1>&2
+	exit "$RET"
+}
+
+# TRUSTED_PATH: keep validate_path() in sync with scripts/fsadm.sh.
+# Reject a path a non-root user could modify or replace between this
+# check and its use: every component of the canonical path must be
+# root-owned and must not be group or world writable.  The sticky bit
+# is accepted for directories (e.g. /tmp), where other users cannot
+# remove entries owned by root.
+validate_path() {
+	local NAME=$1
+	local NODE=$2
+	local MODE
+
+	while :; do
+		MODE=$("$STAT" -c '%u %a' "$NODE") ||
+			die 2 "$NAME \"$NODE\" is not accessible."
+		test "${MODE%% *}" = "0" ||
+			die 2 "$NAME \"$NODE\" must be owned by root."
+		MODE=${MODE##* }
+		test $(( 0$MODE & 022 )) -eq 0 ||
+			{ test -d "$NODE" && test $(( 0$MODE & 01000 )) -ne 0; } ||
+			die 2 "$NAME \"$NODE\" must not be group or world writable."
+		test "$NODE" = "/" && break
+		NODE=${NODE%/*}
+		test -n "$NODE" || NODE=/
+	done
+}
+
+# Validate an override path.  $2 is the expected type: "executable"
+# (default) or "socket".  Only the name is expanded by eval; a value
+# is never parsed as code.
+validate_override() {
+	local TYPE=${2:-executable}
+	local OPATH
+	local VAL
+
+	eval "VAL=\${$1-}" # bash: VAL="${!1-}"
+	test -z "$VAL" && return 0
+	test "${VAL#/}" != "$VAL" ||
+		die 2 "$1 must be an absolute path."
+
+	OPATH=$("$READLINK" -f "$VAL") ||
+		die 2 "$1 \"$VAL\" must be accessible and owned by root."
+
+	validate_path "$1" "$OPATH"
+
+	case "$TYPE" in
+	  executable)
+		if ! test -f "$OPATH" || ! test -x "$OPATH"; then
+			die 2 "$1 \"$OPATH\" must be an executable file."
+		fi ;;
+	  socket)
+		test -S "$OPATH" ||
+			die 2 "$1 \"$OPATH\" must be a socket." ;;
+	esac
+
+	# Run the validated canonical path, not the original one, so that a
+	# symlink cannot be repointed at a different file after this check.
+	eval "$1=\$OPATH"
+}
+
+validate_override DMSETUP_BINARY
+validate_override LVM_BINARY
+validate_override LVMLOCKCTL_BINARY
+validate_override LVM_LVMPOLLD_SOCKET socket
+
+# user may override lvm, dmsetup and lvmlockctl location by setting
+# LVM_BINARY, DMSETUP_BINARY and LVMLOCKCTL_BINARY respectively
+LVM=${LVM_BINARY:-lvm}
+DMSETUP=${DMSETUP_BINARY:-dmsetup}
+LVMLOCKCTL=${LVMLOCKCTL_BINARY:-lvmlockctl}
+LVMPOLLD_SOCKET=${LVM_LVMPOLLD_SOCKET:-/var/run/lvm/lvmpolld.socket}
+
+"$DMSETUP" version >/dev/null 2>&1 || DMSETUP=:
+"$LVM" version >/dev/null 2>&1 || die 2 "Could not run lvm binary \"$LVM\"."
+
+NOW=$("$DATE" -u +%Y%m%d%H%M%S)
+if test -n "$userdir"; then
+	dir=$userdir
+else
+	# ${HOME-} avoids set -u abort when HOME is unset.
+	test -n "${HOME-}" && test -d "${HOME-}" ||
+		die 2 "HOME is not set to a valid directory."
+	dirbase="${HOSTNAME:-$(hostname)}"
+	dirbase="lvmdump-${dirbase:-unknown}-$NOW"
+	# sanitize filename, strip slashes or special character
+	dirbase="${dirbase//[^a-zA-Z0-9._-]/}"
+	dir="$HOME/$dirbase"
+fi
+
+if test -d "$dir" ; then
+	test -L "$dir" && die 5 "Fatal: directory $dir is a symlink"
+
+	dir_owner=$(stat -Lc '%u' "$dir" 2>/dev/null) || die 5 "Fatal: cannot stat $dir"
+	test "$dir_owner" = "0" || die 5 "Fatal: directory $dir is not owned by root"
+
+	dir_perms=$(stat -Lc '%a' "$dir" 2>/dev/null) || die 5 "Fatal: cannot stat $dir"
+	test $((8#$dir_perms & 8#022)) -eq 0 || die 5 "Fatal: directory $dir is writable by group or others"
+
+	# Check if directory is accessible and empty
+	if ! test -r "$dir" || ! test -w "$dir" || ! test -x "$dir"; then
+		die 5 "Fatal: directory $dir already exists and is not accessible."
+	fi
+
+	# Check if directory is empty (including hidden files)
+	if ! (shopt -s nullglob dotglob; cd "$dir" && files=(*) && [ ${#files[@]} -eq 0 ]); then
+		die 5 "Fatal: directory $dir already exists and is not empty."
+	fi
+else
+	test -e "$dir" && die 3 "Fatal: $dir already exists."
+	"$MKDIR" -p "$dir" || die 4 "Fatal: could not create $dir."
+fi
+
+log="$dir/lvmdump.log"
+
+cleanup() {
+	local RET=${1:-0}
+	if test -z "$userdir" && test -n "$dir" && test "$dir" != "/"; then
+		"$RM" -rf "$dir"
+	fi
+	trap '' EXIT HUP INT QUIT ABRT TERM
+	exit "$RET"
+}
+trap 'cleanup $?' EXIT
+trap 'cleanup 2' HUP INT QUIT ABRT TERM
+
+myecho() {
+	printf '%s\n' "$*"
+	printf '%s\n' "$*" >> "$log"
+}
+
+run() {
+	printf '%s\n' "$*" >> "$log"
+	"$@" || true
+}
+
+collect() {
+	local OUT="$1"; shift
+	printf '%s\n' "$*" >> "$log"
+	"$@" >> "$OUT" 2>> "$log" || true
+}
+
+warnings() {
+	if test "$UID" != 0 && test "$EUID" != 0; then
+		myecho "WARNING! Running as non-privileged user, dump is likely incomplete!"
+	elif test "$DMSETUP" = ":"; then
+		myecho "WARNING! Could not run dmsetup, dump is likely incomplete."
+	fi
+}
+
+warnings
+
+myecho "Creating dump directory: $dir."
+echo
+
+if (( advanced )); then
+	myecho "Gathering LVM volume info..."
+
+	myecho "  vgscan..."
+	echo "$LVM vgscan -vvvv" >> "$log"
+	"$LVM" vgscan -vvvv >> "$dir/vgscan" 2>&1 || true
+
+	myecho "  pvscan..."
+	collect "$dir/pvscan" "$LVM" pvscan -v
+
+	myecho "  lvs..."
+	collect "$dir/lvs" "$LVM" lvs -a -H -o +devices,kernel_major,kernel_minor
+
+	myecho "  pvs..."
+	collect "$dir/pvs" "$LVM" pvs -a -o +major,minor -v
+
+	myecho "  vgs..."
+	collect "$dir/vgs" "$LVM" vgs -v
+fi
+
+if (( clustered )); then
+	myecho "Gathering lvmlockd cluster info..."
+
+	if command -v "$LVMLOCKCTL" >/dev/null 2>&1; then
+		collect "$dir/lvmlockd_info" "$LVMLOCKCTL" -i
+		collect "$dir/lvmlockd_dump" "$LVMLOCKCTL" -d
+	else
+		myecho "WARNING: lvmlockctl not found."
+	fi
+
+	if test -d /sys/kernel/debug/dlm; then
+		run "$MKDIR" -p "$dir/dlm"
+		for f in /sys/kernel/debug/dlm/*; do
+			test -f "$f" || continue
+			run "$CP" "$f" "$dir/dlm/" 2>> "$log"
+		done
+	fi
+fi
+
+myecho "Gathering LVM & device-mapper version info..."
+{
+	echo "LVM VERSION:"
+	run "$LVM" version
+	echo "DEVICE MAPPER VERSION:"
+	run "$DMSETUP" --version
+	echo "KERNEL VERSION:"
+	run "$UNAME" -a
+	echo "DM TARGETS VERSIONS:"
+	run "$DMSETUP" targets
+} >> "$dir/versions" 2>> "$log"
+
+myecho "Gathering dmsetup info..."
+collect "$dir/dmsetup_info" "$DMSETUP" info -c
+collect "$dir/dmsetup_table" "$DMSETUP" table
+collect "$dir/dmsetup_status" "$DMSETUP" status
+
+# cat as workaround to avoid tty ioctl (selinux)
+echo "$DMSETUP ls --tree" >> "$log"
+"$DMSETUP" ls --tree 2>> "$log" | cat >> "$dir/dmsetup_ls_tree" || true
+
+myecho "Gathering process info..."
+collect "$dir/ps_info" "$PS" alx
+
+myecho "Gathering console messages..."
+collect "$dir/messages" "$TAIL" -n 75 /var/log/messages
+
+myecho "Gathering /etc/lvm info..."
+collect "$dir/etc_lvm_listing" "$LS" -laR /etc/lvm
+# -RL: dereference symlinks to capture actual config content for debugging
+run "$CP" -RL --preserve=all /etc/lvm "$dir/lvm" 2>> "$log"
+run "$LVM" dumpconfig --type diff --file "$dir/config_diff" 2>> "$log"
+run "$LVM" dumpconfig --type missing --file "$dir/config_missing" 2>> "$log"
+
+myecho "Gathering /dev listing..."
+# ls -I tty?* and vcs?* must be quoted or the shell expands ? in $PWD.
+collect "$dir/dev_listing" "$LS" -laR\
+ -I accel\
+ -I bus\
+ -I char\
+ -I cpu\
+ -I dma_heap\
+ -I dri\
+ -I hugepages\
+ -I input\
+ -I mqueue\
+ -I net\
+ -I pts\
+ -I shm\
+ -I snd\
+ -I 'tty?*'\
+ -I v4l\
+ -I 'vcs?*'\
+ -I vfio\
+ /dev
+
+myecho "Gathering /sys/block listing..."
+# Both real block devices (/sys/block) and virtual ones
+# (/sys/devices/virtual/block) are appended to the same file.
+collect "$dir/sysblock_listing" "$LS" -laR /sys/block
+echo "" >> "$dir/sysblock_listing"
+collect "$dir/sysblock_listing" "$LS" -laR /sys/devices/virtual/block
+
+if (( metadata )); then
+	myecho "Gathering LVM metadata from Physical Volumes..."
+
+	run "$MKDIR" -p "$dir/metadata"
+
+	{
+	"$LVM" pvs --separator , --noheadings --units s --nosuffix -o \
+	    name,pe_start 2>> "$log" | "$SED" -e 's/^ *//' |
+	while IFS=, read -r pv pe_start || test -n "$pv"; do
+		test -z "$pv" && continue
+		case "$pe_start" in
+		""|*[!0-9]*) myecho "  WARNING: skipping $pv (invalid pe_start: $pe_start)."; continue ;;
+		esac
+		# 33554432 sectors = 16GB, anything above is likely corrupt metadata
+		if [ "$pe_start" -gt 33554432 ]; then
+			myecho "  WARNING: skipping $pv (pe_start $pe_start too large)."
+			continue
+		fi
+		myecho "  $pv"
+		run "$DD" "if=$pv" "of=$dir/metadata/${pv##*/}" "${DDFLAGS[@]}" count="$(( (pe_start + 7) / 8 ))" 2>> "$log"
+	done
+	} || true
+fi
+
+if (( sysreport )); then
+	myecho "Gathering system info..."
+
+	sysreport_dir="$dir/sysreport"
+	log_lines=10000
+
+	SYSTEMCTL=$(command -v systemctl 2>/dev/null) || true
+	JOURNALCTL=$(command -v journalctl 2>/dev/null) || true
+	LSBLK=$(command -v lsblk 2>/dev/null) || true
+
+	run "$MKDIR" -p "$sysreport_dir"
+
+	if test -z "$LSBLK"; then
+		myecho "WARNING: lsblk not found."
+	else
+		if "$LSBLK" --help 2>&1 | "$GREP" -- --output-all >/dev/null; then
+			collect "$sysreport_dir/lsblk_O" "$LSBLK" -O
+		else
+			collect "$sysreport_dir/lsblk" "$LSBLK"
+		fi
+		if "$LSBLK" --help 2>&1 | "$GREP" -- --inverse >/dev/null; then
+			collect "$sysreport_dir/lsblk_s" "$LSBLK" -s
+		fi
+	fi
+
+	if test -z "$SYSTEMCTL"; then
+		myecho "WARNING: systemctl not found."
+	elif test -z "$JOURNALCTL"; then
+		myecho "WARNING: journalctl not found."
+	else
+		collect "$sysreport_dir/journal_content" "$JOURNALCTL" -b --no-pager -o short-precise
+		collect "$sysreport_dir/systemd_lvm2_services_status" \
+			"$SYSTEMCTL" status -l --no-pager -n "$log_lines" -o short-precise \
+			dm-event.socket dm-event.service \
+			lvm2-monitor.service \
+			lvm2-lvmpolld.socket lvm2-lvmpolld.service \
+			lvmlockd.service lvmlocks.service \
+			lvm2-activation-early.service \
+			lvm2-activation.service \
+			lvm2-activation-net.service
+		collect "$sysreport_dir/systemd_unit_list" "$SYSTEMCTL" list-units -l -a --no-legend --no-pager
+		for unit in $("$GREP" lvm2-pvscan "$sysreport_dir/systemd_unit_list" 2>/dev/null | "$CUT" -d " " -f 1 || true); do
+			collect "$sysreport_dir/systemd_lvm2_pvscan_service_status" \
+				"$SYSTEMCTL" status -l --no-pager -n "$log_lines" -o short-precise "$unit"
+		done
+	fi
+fi
+
+if (( udev )); then
+	if ! command -v "$UDEVADM" >/dev/null 2>&1; then
+		myecho "WARNING: $UDEVADM not found, skipping udev collection."
+	else
+		myecho "Gathering udev info..."
+
+		udev_dir="$dir/udev"
+
+		run "$MKDIR" -p "$udev_dir"
+		collect "$udev_dir/version" "$UDEVADM" info --version
+		collect "$udev_dir/db" "$UDEVADM" info --export-db
+		run "$CP" -a /etc/udev/udev.conf "$udev_dir/conf" 2>> "$log"
+		collect "$udev_dir/lib_dir" "$LS" -la /lib/udev
+		# -RL: dereference symlinks to capture actual rule content for debugging
+		run "$CP" -RL --preserve=all /etc/udev/rules.d "$udev_dir/rules_etc" 2>> "$log"
+		run "$CP" -RL --preserve=all /lib/udev/rules.d "$udev_dir/rules_lib" 2>> "$log"
+	fi
+fi
+
+if (( lvmpolld )); then
+	(echo 'request="dump"'; echo '##') | {
+		if command -v "$SOCAT" >/dev/null 2>&1; then
+			run "$SOCAT" "unix-connect:$LVMPOLLD_SOCKET" -
+		elif echo | "$NC" -U "$LVMPOLLD_SOCKET" >/dev/null 2>&1; then
+			run "$NC" -U "$LVMPOLLD_SOCKET"
+		else
+			myecho "WARNING: Neither $SOCAT nor $NC -U seems to be available."
+			echo "# DUMP FAILED" >&2
+		fi
+	} > "$dir/lvmpolld.txt" || true
+fi
+
+if test -z "$userdir"; then
+	lvm_dump="$dirbase.tgz"
+	myecho "Creating report tarball in $HOME/$lvm_dump..."
+fi
+
+warnings
+
+if test -z "$userdir"; then
+	cd "$HOME" || exit 1
+	test -e "$lvm_dump" &&
+		die 3 "Fatal: tarball $HOME/$lvm_dump already exists."
+	# Do not redirect tar stderr to $log, as writing to a file inside the
+	# directory being archived causes tar to report "file changed as we read it"
+	# and exit with an error, leading to the tarball being deleted.
+	"$TAR" czf "$lvm_dump" "$dirbase" 2>/dev/null || {
+		echo "Failed to create tarball \"$lvm_dump\"." >&2
+		echo "Not enough space? Rerun with \"-d <directory>\" on a filesystem with room." >&2
+		"$RM" -f "$lvm_dump"
+		# Do not fall through to exit 0 below after a failed tarball.
+		exit 4
+	}
+fi
+
+# cleanup() through EXIT trap
+
+exit 0

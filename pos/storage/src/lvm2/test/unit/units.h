@@ -1,0 +1,89 @@
+/*
+ * Copyright (C) 2018-2026 Red Hat, Inc. All rights reserved.
+ *
+ * This file is part of LVM2.
+ *
+ * This copyrighted material is made available to anyone wishing to use,
+ * modify, copy, or redistribute it subject to the terms and conditions
+ * of the GNU General Public License v.2.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software Foundation,
+ * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+ */
+
+#ifndef TEST_UNIT_UNITS_H
+#define TEST_UNIT_UNITS_H
+
+#include "framework.h"
+
+//-----------------------------------------------------------------
+
+// Set by the --extended runner option or LVM_TEST_EXTENDED; suites omit
+// timing-sensitive tests unless it is enabled.
+extern bool extended_tests;
+
+// Declare the function that adds tests suites here ...
+void blkio_engine_tests(struct dm_list *all_tests);
+void blkio_tests(struct dm_list *all_tests);
+void blkio_byterange_tests(struct dm_list *all_tests);
+void bitset_tests(struct dm_list *all_tests);
+void config_tests(struct dm_list *all_tests);
+void config_cascade_tests(struct dm_list *all_tests);
+void daemon_stray_tests(struct dm_list *all_tests);
+void dev_cache_tests(struct dm_list *all_tests);
+void dmeventd_tests(struct dm_list *all_tests);
+void dm_list_tests(struct dm_list *all_tests);
+void dm_hash_tests(struct dm_list *all_tests);
+void dmstats_list_tests(struct dm_list *all_tests);
+void dm_status_tests(struct dm_list *all_tests);
+void dmeventd_mirror_tests(struct dm_list *all_tests);
+void dmeventd_raid_tests(struct dm_list *all_tests);
+void dmeventd_thin_tests(struct dm_list *all_tests);
+void dmeventd_vdo_tests(struct dm_list *all_tests);
+void dmeventd_snapshot_tests(struct dm_list *all_tests);
+void metadata_security_tests(struct dm_list *all_tests);
+void parse_rx_tests(struct dm_list *all_tests);
+void percent_tests(struct dm_list *all_tests);
+void radix_tree_tests(struct dm_list *all_tests);
+void raid_region_tests(struct dm_list *all_tests);
+void regex_tests(struct dm_list *all_tests);
+void string_tests(struct dm_list *all_tests);
+void vdo_tests(struct dm_list *all_tests);
+void vdo_stats_tests(struct dm_list *all_tests);
+
+// ... and call it in here.
+static inline void register_all_tests(struct dm_list *all_tests)
+{
+	blkio_engine_tests(all_tests);
+	blkio_tests(all_tests);
+	blkio_byterange_tests(all_tests);
+	bitset_tests(all_tests);
+	config_tests(all_tests);
+	config_cascade_tests(all_tests);
+	daemon_stray_tests(all_tests);
+	dev_cache_tests(all_tests);
+	dmeventd_tests(all_tests);
+	dm_list_tests(all_tests);
+	dm_hash_tests(all_tests);
+	dmstats_list_tests(all_tests);
+	dm_status_tests(all_tests);
+	dmeventd_mirror_tests(all_tests);
+	dmeventd_raid_tests(all_tests);
+	dmeventd_thin_tests(all_tests);
+	dmeventd_vdo_tests(all_tests);
+	dmeventd_snapshot_tests(all_tests);
+	metadata_security_tests(all_tests);
+	parse_rx_tests(all_tests);
+	percent_tests(all_tests);
+	radix_tree_tests(all_tests);
+	raid_region_tests(all_tests);
+	regex_tests(all_tests);
+	string_tests(all_tests);
+	vdo_tests(all_tests);
+	vdo_stats_tests(all_tests);
+}
+
+//-----------------------------------------------------------------
+
+#endif

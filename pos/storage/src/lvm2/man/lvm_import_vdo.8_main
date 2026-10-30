@@ -1,0 +1,119 @@
+.TH "LVM_IMPORT_VDO" "8" "LVM TOOLS #VERSION#" "Red Hat, Inc." \" -*- nroff -*-
+.
+.SH NAME
+.
+lvm_import_vdo \(em Utility to import VDO volumes into a new volume group
+.
+.SH SYNOPSIS
+.
+.B lvm_import_vdo
+.RI [ options ]
+.I device
+.
+.SH DESCRIPTION
+.
+The lvm_import_vdo utility imports VDO volumes created and managed by the
+.BR vdo (8)
+manager into a VDO LV managed by
+.BR lvm2 (8).
+This is done by moving the VDO superblock by 2 MiB
+and creating LVM2 metadata at the front of the device.
+The operation is not reversible;
+therefore, after conversion to LVM2, access to VDO data is only possible with
+.BR lvm2 (8)
+commands, and the
+.BR vdo (8)
+manager no longer controls such a volume.
+.
+.SH OPTIONS
+.
+.TP
+.BR -f | --force
+Bypass some sanity checks.
+.
+.TP
+.BR -h | --help
+Display the help text.
+.
+.TP
+.BR -n | --name
+Specifies the name of the converted VDO LV. When the name is not specified,
+a name is selected automatically. If the converted VDO volume is already
+using an LV as a backend device, the name of that LV is used for the VDO LV.
+In this case, the name of the volume group must also stay the same.
+The automatic name may change between releases and currently selects
+"vdolv" as the LV name, and the VG name is selected from the sequence
+"vdovg", "vdovg1", \&...
+.
+.TP
+.BR -v | --verbose
+Be more verbose.
+.
+.TP
+.BR -y | --yes
+Answer "yes" at any prompts.
+.
+.TP
+.B --dry-run
+Print a shell-escaped preview of commands without running storage-changing commands.
+.
+.TP
+.B --no-snapshot
+With this option, the conversion tool will not use a snapshot (COW storage)
+for conversion in your $TMPDIR filesystem and will directly manipulate
+the VDO device in-place.
+Warning: using a snapshot makes the whole conversion transactional and
+the snapshot can simply be merged once the conversion
+has completed successfully. If an error occurs, the snapshot is just removed.
+Without a snapshot, there is a higher risk of problems
+with recoverability in case some unexpected error occurs.
+.
+.TP
+.B --vdo-config
+Specifies the configuration file for the vdo manager.
+.
+.
+.SH DIAGNOSTICS
+.
+On successful completion, the status code is 0.
+A status code of 1 is used for failure.
+.
+.SH EXAMPLES
+.
+Convert VDO volume created by vdo manager into logical volume LV1
+within volume group VG1.
+.P
+#
+.B lvm_import_vdo --name VG1/LV1 /dev/mapper/vdo-volume
+.
+.SH ENVIRONMENT VARIABLES
+.
+.TP
+.B TMPDIR
+The temporary directory name for mount points. Defaults to "\fI/tmp\fP".
+.
+.TP
+.B DM_DEV_DIR
+The device directory name.
+Defaults to "\fI/dev\fP" and must be an absolute path.
+.
+.TP
+.B DM_UUID_PREFIX
+Specify a UUID prefix for the snapshot volume used during VDO conversion.
+.
+.TP
+.B LVM_BINARY
+Overrides the command used to run lvm. Defaults to "\fIlvm\fP".
+.
+.TP
+.B VDO_BINARY
+Overrides the command used to run vdo. Defaults to "\fIvdo\fP".
+.
+.SH SEE ALSO
+.
+.nh
+.na
+.BR lvm (8),
+.BR lvm.conf (5),
+.P
+.BR vdo (8)
