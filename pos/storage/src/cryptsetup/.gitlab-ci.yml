@@ -1,0 +1,17 @@
+stages:
+  - test
+  - test-opal
+
+.fail_if_coredump_generated:
+  after_script:
+    - '[ "$(ls -A /var/coredumps)" ] && exit 1 || true'
+
+include:
+  - local: .gitlab/ci/default_test_suite.yml
+    rules:
+      - if: $TEST_VALGRIND != "true"
+  - local: .gitlab/ci/valgrind.yml
+    rules:
+      # the variable TEST_VALGRIND needs to be set in gitlab UI - either when
+      # running a new pipeline or in a pipeline schedule
+      - if: $TEST_VALGRIND == "true"
