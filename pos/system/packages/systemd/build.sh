@@ -33,7 +33,7 @@ pkg() {
   pkg_meson \
         -Dmode=release \
         -Dsplit-bin=true \
-        -Dextra-exec-search-path="${prefix}/sbin:${prefix}/bin:${sdk_prefix}/bin" \
+        -Dextra-exec-search-path="${prefix}/sbin:${prefix}/bin" \
         -Dcompat-sysv-interfaces=false \
         -Dkmod-path="${prefix}/bin/kmod" \
         -Dmount-path="${prefix}/bin/mount" \

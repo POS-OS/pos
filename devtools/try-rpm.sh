@@ -4,8 +4,8 @@
 # dnf runs in a throwaway toolbox pos-<id>-try, which ./build clean also
 # removes.
 #
-#   try-rpm.sh [-b <id>] pos              install pos and pos-sdk into the
-#                                         toolbox: /pos next to Fedora, which
+#   try-rpm.sh [-b <id>] pos              install pos into the toolbox:
+#                                         /pos next to Fedora, which
 #                                         is unchanged
 #   try-rpm.sh [-b <id>] root [<pkg>...]  make a root with pos-fedora and
 #                                         the given Fedora packages
@@ -19,7 +19,7 @@
 # The default build is the current one. The root is work/builds/<id>/rpm-root.
 #
 # Examples:
-#   ./build output rpm-pos rpm-pos-sdk rpm-pos-fedora
+#   ./build output rpm-pos rpm-pos-fedora
 #   devtools/try-rpm.sh root vim-minimal procps-ng curl
 #   devtools/try-rpm.sh dnf repoquery --installed      what got installed
 #   devtools/try-rpm.sh run                            a shell in the root
@@ -92,8 +92,8 @@ tb_run() {
   (cd "$HOME" && toolbox run -c "$tb" "$@")
 }
 
-# dnf, with the build's RPM packages named as files: pos, pos-sdk,
-# pos-fedora and their debuginfo are taken from the build, other names from
+# dnf, with the build's RPM packages named as files: pos, pos-fedora
+# and their debuginfo are taken from the build, other names from
 # Fedora.
 dnf_pos() {
   local -a args=()
@@ -109,7 +109,7 @@ dnf_pos() {
 
 need_repo() {
   [[ -f $repo/pos-$evr.x86_64.rpm ]] || {
-    echo "no RPM packages in $bdir; run ./build output rpm-pos rpm-pos-sdk rpm-pos-fedora" >&2
+    echo "no RPM packages in $bdir; run ./build output rpm-pos rpm-pos-fedora" >&2
     exit 1
   }
 }
@@ -125,7 +125,7 @@ cmd=${1:-}
 case $cmd in
   pos)
     need_repo
-    dnf_pos -y install pos pos-sdk
+    dnf_pos -y install pos
     tb_run rpm -q --whatprovides 'libc.so.6()(64bit)'
     tb_run /pos/bin/bash -c 'echo "POS bash $BASH_VERSION in /pos; /usr is Fedora"'
     ;;
@@ -133,7 +133,7 @@ case $cmd in
     need_repo
     tb_run sudo rm -rf "$(tb_path "$root")"
     dnf_pos -y --installroot="$(tb_path "$root")" --releasever="$fedora_release" \
-      --use-host-config --setopt=install_weak_deps=False install pos pos-sdk pos-fedora "$@"
+      --use-host-config --setopt=install_weak_deps=False install pos pos-fedora "$@"
     ;;
   dnf)
     need_repo

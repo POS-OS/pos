@@ -9,6 +9,11 @@ pam.d/  POS's PAM configuration: system-auth, the stack services
         denies the rest. Installed into pam's vendor directory
         (/pos/share/pam/pam.d); /etc/pam.d overrides it per service.
 
+profile  /etc/profile, for login shells: reads the drop-ins of
+        /etc/profile.d, where software installed outside /pos (pos-sdk
+        in /apps/pos-sdk/<version>) adds itself to PATH. Installed into
+        the factory tree, with an empty /etc/profile.d.
+
 os-release  The system's identity (ID=pos), installed as /pos/lib/os-release.
         /usr/lib/os-release and /etc/os-release link to it: an image's
         layout, or pos-fedora, which stands in for Fedora's fedora-release.

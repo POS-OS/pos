@@ -10,8 +10,8 @@
 #   $1      output name
 #   id, bdir
 podman_import() {
-  local o=$1 path=/usr/local/bin:/usr/bin:/pos/bin:/pos/sbin:/pos/sdk/bin
-  [[ $(output_meta "$o" path-priority) != pos ]] || path=/pos/bin:/pos/sbin:/pos/sdk/bin:/usr/local/bin:/usr/bin
+  local o=$1 path=/usr/local/bin:/usr/bin:/pos/bin:/pos/sbin
+  [[ $(output_meta "$o" path-priority) != pos ]] || path=/pos/bin:/pos/sbin:/usr/local/bin:/usr/bin
   host_podman import --change "ENV PATH=$path" --change 'CMD ["/usr/bin/bash"]' \
     --change "LABEL pos.build=$id" --change "LABEL pos.version=$(build_identifier "$bdir")" \
     "$(host_path "$(output_file tar.zst "$o")")" "$(output_meta "$o" tag):$id"

@@ -219,10 +219,10 @@ list of the stage named after the tree.
 | `build-env` | the host and profile packages builds require (host-base, host-toolchain, gcc-host, pos-link) |
 
 A package lives in the tree of the stage that ships it, and one no stage
-ships by its role. The toolchain is the exception: the sdk stage (and
-core-libs, gcc-runtime) lists toolchain packages, which a pos build takes
-from its toolchain reference; their recipes are pos-sdk's (see
-"Toolchain"). A stage's `stage` file lists packages of any tree.
+ships by its role. The toolchain is the exception: core-libs lists
+gcc-runtime, which a pos build takes from its toolchain reference; its
+recipe is pos-sdk's (see "Toolchain"). binutils and gcc are pos-sdk's
+alone, in `/apps/pos-sdk/<version>`; no pos stage lists them. A stage's `stage` file lists packages of any tree.
 
 Package names are unique across trees, and so are source names; meta and
 stage files name packages without their tree, so a package moves between
@@ -402,9 +402,8 @@ kinds (`info`: `pipeline`), its project's:
   reference it was built on.
 * A pos build (`run --new` in pos) builds every stage with the toolchain
   reference's toolchain, and never builds a toolchain package. Its own
-  packages are all built from the checkout; the stages that list
-  toolchain packages (sdk, and core-libs' gcc-runtime) are assembled with
-  the toolchain reference's. Until it has built them, core-libs is the
+  packages are all built from the checkout; core-libs, which lists
+  gcc-runtime, is assembled with the toolchain reference's. Until it has built them, core-libs is the
   pos reference's: by default the one the toolchain was built on.
   `./build reference` stores its core-libs as the pos reference of later
   toolchain builds.
@@ -637,7 +636,7 @@ others are built has an `env.sh`, and `pkg_setup` sources the `env.sh` of
 every package in the resolved requirements. What a build gets therefore
 follows from what it requires, never from what is found on disk:
 
-* `gcc/env.sh`: the POS compiler, `/pos/sdk/bin/gcc`, `g++` and `ld`,
+* `gcc/env.sh`: the POS compiler, `$sdk_prefix/bin/gcc`, `g++` and `ld`,
   and binutils' `ar`, `ranlib` and `nm`, which write archives with zero
   dates; pos-sdk's recipe, installed with gcc (see "Engine").
 * `host-toolchain/env.sh` and `gcc-host/env.sh`: the Fedora compiler,
@@ -705,7 +704,7 @@ kept.
 The debug trees are not part of build roots. Each stage's is
 archived next to it as `pos-debug-<stage>-<stem>.tar.zst`, which extracts
 on top of the stage into `/pos/lib/debug`, and the RPM outputs make it the
-`pos-debuginfo` and `pos-sdk-debuginfo` packages. gdb looks in `/usr/lib/debug` unless told
+`pos-debuginfo` package. gdb looks in `/usr/lib/debug` unless told
 otherwise, and reads the directory before it loads the program:
 
     $ gdb -iex 'set debug-file-directory /usr/lib/debug:/pos/lib/debug' /pos/bin/bash
@@ -748,20 +747,16 @@ directories). A program then loads the libraries of the tree it comes
 from, wherever that tree is and whichever versions sit beside it, as
 apps bundle theirs. `/pos` keeps no runpath.
 
-The sdk, the toolchain (see "SDK"), is one directory of the prefix,
-`/pos/sdk` (`$sdk_prefix` in `buildsys/pkg.sh`), with its own `bin`,
-`lib`, `libexec`, `include` and `share`. `/pos/bin` and `/pos/lib` are the
-system's; what the sdk installs elsewhere in `/pos` is pos's: gcc-runtime
-in core-libs, and the sdk stage's other tools. So an image can leave the
-sdk out, or have it as one more layer: a stage image merged over `/pos`,
-or a filesystem mounted on `/pos/sdk` when `/pos` itself is read-only.
-The root layouts of `container-fs` and `vm-disk` make an empty `/pos/sdk`
-for that (a package cannot ship an empty directory). Nothing in `/pos/sdk`
-is written at run time. The loader does not search `/pos/sdk/lib`: the
-sdk's programs link only glibc and gcc-runtime, and link anything else
-statically. `/pos/sdk/bin` follows POS's other bin directories in the
-search paths below, in an imported image's `PATH`, and as `/usr/bin` links
-on pos-fedora.
+The sdk, the toolchain (see "SDK"), is not part of pos: pos-sdk installs
+it in `/apps/pos-sdk/<version>`, the whole prefix its own (`bin`, `lib`,
+`libexec`, `include`, `share`); only gcc-runtime, which it builds, is in
+`/pos/lib`. Nothing in the sdk is written at run time. The loader does
+not search its `lib`: the sdk's programs link only glibc and gcc-runtime,
+and link anything else statically. pos names no sdk path: the search
+paths below, an imported image's `PATH` and pos-fedora's `/usr/bin` links
+are pos's. Software installed outside `/pos` goes on `PATH` when it is
+installed on a machine, by a drop-in of `/etc/profile.d`, which
+pos-integration's `/etc/profile` reads.
 
 Configuration and mutable data stay outside the prefix:
 
@@ -829,7 +824,7 @@ outside `/pos` (`buildsys/build.sh` warns on it).
   `sysctl.d/50-kmod.conf` sets `kernel.modprobe` to `/pos/sbin/modprobe`.
 * systemd: programs a unit names without a path, and the `PATH` of
   services and user sessions, are looked up in `/usr/local` and `/usr`, with
-  `/pos/sbin:/pos/bin:/pos/sdk/bin` appended (`-Dextra-exec-search-path`).
+  `/pos/sbin:/pos/bin` appended (`-Dextra-exec-search-path`).
   sudo's `secure_path`, login's (shadow's `login.defs`) and sshd's are the
   same list.
 * util-linux: `--enable-fs-paths-default=/pos/sbin` for mount helpers.
@@ -895,8 +890,8 @@ installs the tree has to preserve modes (`tar -x` as root, or `cp -a`, not
 Each package stages into `work/builds/<id>/dest/<name>` with `--prefix=/pos`
 (the project's prefix; see "Prefix").
 
-With the sdk compiler, packages use `/pos/sdk/bin/gcc`, `/pos/sdk/bin/g++`,
-and `/pos/sdk/bin/ld`, whose defaults already search `/pos/include` and `/pos/lib`,
+With the sdk compiler, packages use `gcc`, `g++` and `ld` of
+`$sdk_prefix/bin`, whose defaults already search `/pos/include` and `/pos/lib`,
 and `pos-link` adds only
 `-L/pos/lib` and `PKG_CONFIG_LIBDIR`. No rpath: the POS loader finds
 `/pos/lib` through its own cache or its default search path (below).
@@ -1008,8 +1003,8 @@ made from, and `output.sh`, its recipe (format in `buildsys/outputs.sh`):
 
 `requires` names stages and other outputs: an output is made from the
 stages of the build once they are assembled, and from what the outputs it
-requires made (container-fs-dnf from the RPM packages of rpm-pos,
-rpm-pos-sdk and rpm-pos-fedora; fedora-toolbox from container-fs-dnf).
+requires made (container-fs-dnf from the RPM packages of rpm-pos and
+rpm-pos-fedora; fedora-toolbox from container-fs-dnf).
 `host-requires` are Fedora packages its steps need in the tools image.
 
 | output | requires | makes |
@@ -1018,8 +1013,7 @@ rpm-pos-sdk and rpm-pos-fedora; fedora-toolbox from container-fs-dnf).
 | `stage-images` | core-libs, system, network, container | `pos-<stage>-<stem>.raw` and `.requires` of network and container |
 | `vm-disk` | core-libs, system, stage-images | `pos-vm-disk-<stem>.qcow2` |
 | `rpm-pos` | core-libs, system | `rpm/pos`, `rpm/pos-debuginfo` |
-| `rpm-pos-sdk` | sdk | `rpm/pos-sdk`, `rpm/pos-sdk-debuginfo` |
-| `rpm-pos-fedora` | core-libs, system, sdk | `rpm/pos-fedora` |
+| `rpm-pos-fedora` | core-libs, system | `rpm/pos-fedora` |
 | `container-fs-dnf` | the rpm-pos outputs | `pos-container-fs-dnf-<stem>.tar.zst` |
 | `vm-disk-dnf` | the rpm-pos outputs | `pos-vm-disk-dnf-<stem>.qcow2` |
 | `fedora-toolbox` | container-fs-dnf | `localhost/pos-fedora-toolbox` in podman |
@@ -1065,12 +1059,11 @@ pick up from the build directory, is removed except on sticky directories.
 
 `container-fs` is core-libs, system and the sdk, for `podman import` or
 `docker import`. It has no `/etc/pos/ld.so.cache`; the loader searches
-`/pos/lib`. Programs are in `/pos/bin`, `/pos/sbin` and `/pos/sdk/bin`,
-which are not in a container engine's default `PATH`, so the import sets
-it:
+`/pos/lib`. Programs are in `/pos/bin` and `/pos/sbin`, which are not in
+a container engine's default `PATH`, so the import sets it:
 
     $ podman import \
-        --change 'ENV PATH=/pos/bin:/pos/sbin:/pos/sdk/bin:/usr/local/bin:/usr/bin' \
+        --change 'ENV PATH=/pos/bin:/pos/sbin:/usr/local/bin:/usr/bin' \
         --change 'CMD ["/bin/bash"]' \
         work/builds/<id>/pos-container-fs-<stem>.tar.zst pos:<id>
 
@@ -1096,7 +1089,7 @@ the path kernel packages and dracut use, and that to
 ## Images made with dnf
 `fs_dnf` makes the tree with `dnf --installroot`: POS as the base of an
 RPM system (see "RPM packages"). A package named `pos` or `pos-*` is the
-build's own RPM file (`pos`, `pos-sdk`, `pos-fedora` and their debuginfo),
+build's own RPM file (`pos`, `pos-fedora` and their debuginfo),
 anything else comes from Fedora's repositories. Next to the output's
 artifact, `pos-<output>-<stem>.packages` lists the packages installed. The
 tree's files belong to users the packages create, which only the
@@ -1119,7 +1112,7 @@ mount namespace of the step's container (which runs as the container's
 root, allowed to mount there) and are gone when dnf is done; what was
 written to `/boot` is kept in the tree.
 
-`container-fs-dnf` is `pos`, `pos-sdk`, `pos-fedora` and `dnf`: a
+`container-fs-dnf` is `pos`, `pos-fedora` and `dnf`: a
 container with POS as its base in which `dnf install` adds Fedora
 packages, which use POS for what it replaces:
 
@@ -1353,29 +1346,26 @@ making the toolbox again, from the image of that build.
     $ devtools/import-image.sh -o fedora-toolbox <id>   # back to build <id>
 
 # RPM packages (experimental)
-The outputs rpm-pos, rpm-pos-sdk and rpm-pos-fedora make the RPM packages
+The outputs rpm-pos and rpm-pos-fedora make the RPM packages
 of the build's assembled stages, when `run` assembles their stages or with
-`./build output rpm-pos rpm-pos-sdk rpm-pos-fedora`. Each recipe says what
+`./build output rpm-pos rpm-pos-fedora`. Each recipe says what
 its packages are; `buildsys/output-plugins.d/rpm.sh` has what they share:
-`rpm_stages` packages the merged trees of the output's stages (`pos`,
-`pos-sdk` and their debug info), `rpm_spec_head` and `rpm_build` make a
+`rpm_stages` packages the merged trees of the output's stages (`pos`
+and its debug info), `rpm_spec_head` and `rpm_build` make a
 package of a spec, which rpm-pos-fedora writes itself. They are versioned with the build ID and written to
 `work/builds/<id>/rpm`. dnf installs them as files, next to packages from
 Fedora's repositories:
 
     $ sudo dnf --installroot=<root> --releasever=44 --use-host-config \
-        install work/builds/<id>/rpm/pos{,-sdk,-fedora}-1.0.0-1.main.202610171524.x86_64.rpm dnf
+        install work/builds/<id>/rpm/pos{,-fedora}-1.0.0-1.main.202610171524.x86_64.rpm dnf
 
 * `pos` is the `/pos` tree of the stages other than sdk: the OS, as one
   package. It installs nothing outside `/pos` and provides nothing Fedora
   packages require, so it installs on any Fedora system without touching
   it, and is removed again with dnf.
-* `pos-sdk` is the `/pos` tree of the sdk stage, and requires `pos` of the
-  same build.
-* `pos-debuginfo` and `pos-sdk-debuginfo` are the debug info of each in
-  `/pos/lib/debug` (see "Debug info"); made when the build has any.
-* `pos-fedora` makes a Fedora hybrid: it requires `pos` and `pos-sdk`
-  (the systems it is for build with POS) and stands in for the Fedora
+* `pos-debuginfo` is its debug info in `/pos/lib/debug` (see "Debug
+  info"); made when the build has any.
+* `pos-fedora` makes a Fedora hybrid: it requires `pos` and stands in for the Fedora
   packages POS replaces. On a system built with it, dnf resolves Fedora
   packages against POS and installs only what POS does not have.
 
@@ -1452,20 +1442,19 @@ where Fedora packages install them (see "Prefix"); generators only from
 replaced.
 
 # SDK
-The sdk stage (`pos/sdk/stage`) is the compiler, the assembler and linker
-(binutils, gcc), plus developer tools moved out of the system stage
-(diffutils, patch, man-pages). The first two are the toolchain, built by
-toolchain builds (see "Toolchain"); a pos build assembles the stage with
-its toolchain reference's. The sdk is a component POS ships, so it
-installs under `/pos` like the base system, the toolchain in its own
-directory, `/pos/sdk` (see "Prefix"). A base system image does not
-include it; the builds of other packages require it.
+The sdk is the compiler, the assembler and linker (binutils, gcc): the
+toolchain, built by toolchain builds of pos-sdk (see "Toolchain") and
+installed in `/apps/pos-sdk/<version>` (see "Prefix"), apart from pos.
+A pos build compiles with its toolchain reference's, and pos ships only
+its gcc-runtime. pos's sdk stage (`pos/sdk/stage`) holds the developer
+tools moved out of the system stage (diffutils, patch), until they move
+to pos-extras.
 
 binutils is what makes the sdk compiler self-contained. gcc execs `as` and
 `ld`; without POS copies it would run the build container's, whose ld
 searches `/usr/lib64` on its own. binutils is configured
 `--with-lib-path=/pos/lib` so ld searches only `/pos/lib`, and gcc is given
-`--with-as=/pos/sdk/bin/as --with-ld=/pos/sdk/bin/ld`.
+the sdk's own (`--with-as=<sdk>/bin/as --with-ld=<sdk>/bin/ld`).
 
 The compiler's own programs (cc1, cc1plus, lto1) are ordinary `/pos`
 binaries, built without gcc's own staged bootstrap (`--disable-bootstrap`)
@@ -1490,15 +1479,15 @@ directory `lib/gcc/<target>/<version>` (crt files, `libgcc.a`, `unwind.h`,
 `omp.h`), the static libraries (Fedora's `-static` packages), the
 unversioned `lib*.so` names the linker looks up, `libgomp.spec` and
 `libstdc++.modules.json`. The `.la` files are deleted, as Fedora does.
-gcc links its LTO plugin into `/pos/sdk/lib/bfd-plugins`, as Fedora does,
+gcc links its LTO plugin into `<sdk>/lib/bfd-plugins`, as Fedora does,
 so binutils' `ar`, `nm` and `ranlib` read LTO objects as `gcc-ar`,
 `gcc-nm` and `gcc-ranlib` do.
 
 The compiler searches `/pos/include` as its system header directory, so gcc
 requires linux-headers, which core-libs ships with glibc's headers.
 
-The sdk archive ships the gcc of the toolchain reference, a toolchain build made
-with the previous toolchain. Two toolchain builds in a row from the same
+A pos-sdk release ships the gcc of a toolchain build made with the
+previous toolchain (its toolchain reference). Two toolchain builds in a row from the same
 sources should produce the same compiler; comparing them would be the
 check gcc's own `make bootstrap` does. The pos package gmp is
 `--enable-fat` because the archive is installed on other machines; gcc's

@@ -1,8 +1,8 @@
-# pos and pos-sdk as the base of a Fedora system, in place of the Fedora
-# packages POS replaces: pos-fedora provides what they provide, links their
-# paths in /usr to /pos, and conflicts with them. On a system built with
-# it, dnf installs only what POS does not have. The systems it is for
-# build with POS's own tools, so it requires the sdk too.
+# pos as the base of a Fedora system, in place of the Fedora packages POS
+# replaces: pos-fedora provides what they provide, links their paths in
+# /usr to /pos, and conflicts with them. On a system built with it, dnf
+# installs only what POS does not have. The sdk is pos-sdk's, in
+# /apps/pos-sdk/<version>, and not part of it.
 #
 # fedora lists the Fedora packages by POS package; a line counts when its
 # POS package is in the stages:
@@ -87,13 +87,12 @@ output() {
     awk '{p = substr($0, 3)} $1 == "c" {c[p] = 1; next} {u[p] = 1}
          END {for (p in u) if (!c[p]) print p}' | sort -u >"$work/fedora.taken"
 
-  # The links: programs, the sdk's too, into /usr/bin (Fedora's /usr/sbin
+  # The links: programs into /usr/bin (Fedora's /usr/sbin
   # is a link to it), libraries and the loader into /usr/lib64 (/lib64 is a
   # link to it). The loader link is what makes Fedora's binaries, which
   # request /lib64/ld-linux-x86-64.so.2, run on POS glibc.
   awk '$1 != "d" {print $2}' "$work/paths" | awk -F/ '
     ($3 == "bin" || $3 == "sbin") && NF == 4 {print "/usr/bin/" $4, "../../pos/" $3 "/" $4}
-    $3 == "sdk" && $4 == "bin" && NF == 5 {print "/usr/bin/" $5, "../../pos/sdk/bin/" $5}
     $3 == "lib" && NF == 4 && ($4 ~ /\.so\./ || $4 ~ /^ld-linux/) {print "/usr/lib64/" $4, "../../pos/lib/" $4}
   ' | sort -u -k1,1 | join -v1 - "$work/fedora.taken" >"$work/links"
 
@@ -153,7 +152,7 @@ ln -s ../../../pos/share/ca-certificates/ca-bundle.crt %{buildroot}/etc/pki/tls/
 
   {
     rpm_spec_head pos-fedora "POS as the base of a Fedora system" \
-      "Requires: pos = $evr" "Requires: pos-sdk = $evr" "Requires: filesystem"
+      "Requires: pos = $evr" "Requires: filesystem"
     [[ -z $osrel_tags ]] || echo "$osrel_tags"
     sed 's/^/Provides: /' "$work/pos-fedora.provides"
     sed 's/^/Conflicts: /' "$work/claimed"

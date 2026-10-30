@@ -9,7 +9,7 @@ pkg() {
     --with-rundir=/run/sudo \
     --with-vardir="${localstatedir}/db/sudo" \
     --with-tzdir="${prefix}/share/zoneinfo" \
-    --with-secure-path="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${prefix}/sbin:${prefix}/bin:${sdk_prefix}/bin" \
+    --with-secure-path="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${prefix}/sbin:${prefix}/bin" \
     --with-env-editor \
     --with-pam \
     --with-passprompt="[sudo] password for %p: " \

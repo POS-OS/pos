@@ -1,14 +1,9 @@
-# Compiler, assembler and linker.
-# Installed in build toolboxes. Not part of a base system image:
-# end-user installs can omit this stage.
-# gcc-runtime (libgcc_s, libstdc++), gmp, and mpfr are core-libs: programs
-# in the base link them. gcc has its own copies of gmp and mpfr, and mpc,
-# built in its tree (BUILD.md "Toolchain").
-# A pos build takes binutils and gcc from its toolchain reference.
-binutils
-gcc
 # Developer tools and documentation, moved here from the system stage
-# (BUILD.md "System stage", OS boundary).
+# (BUILD.md "System stage", OS boundary). Not part of a base system
+# image: end-user installs can omit this stage. The toolchain (binutils,
+# gcc) is pos-sdk's, in /apps/pos-sdk/<version>; a pos build takes it from
+# its toolchain reference. diffutils and patch are to move to pos-extras,
+# and the stage to go.
 diffutils
 patch
 #man-pages

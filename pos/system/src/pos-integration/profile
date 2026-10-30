@@ -1,0 +1,11 @@
+# /etc/profile: read by login shells (bash, sh). POS's default, from the
+# factory tree; a local copy replaces it.
+#
+# Software installed outside /pos (/apps/<name>/<version>, as pos-sdk)
+# puts what it adds to the environment, such as its bin directory on
+# PATH, in a drop-in of /etc/profile.d when it is installed.
+
+for f in /etc/profile.d/*.sh; do
+  [ -r "$f" ] && . "$f"
+done
+unset f

@@ -18,9 +18,6 @@ dir /var/tmp 1777
 dir /var/lib 0755
 dir /var/log 0755
 dir /var/cache 0755
-# The sdk's place in /pos (BUILD.md "Prefix"), for an sdk mounted there
-# when /pos is not writable. A package cannot ship an empty directory.
-dir /pos/sdk 0755
 dir /var/spool 0755
 dir /var/spool/mail 0755
 

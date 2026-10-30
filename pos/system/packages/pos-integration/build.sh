@@ -8,7 +8,9 @@
 # /pos (its drop-in). pos-preferences keeps the global system preferences,
 # POS's defaults in /pos/lib/pos/preferences. pos-kernel installs kernels
 # from the channels in /pos/lib/pos/kernel, its archive's directories are
-# made by tmpfiles.
+# made by tmpfiles. /etc/profile reads the drop-ins of /etc/profile.d,
+# where software installed outside /pos adds itself to PATH (pos-sdk); both
+# come from the factory tree (_pkg_factory).
 
 pkg() {
   install -d "$dest_dir$prefix/share/pam/pam.d"
@@ -28,6 +30,8 @@ pkg() {
   install -D -m 0644 "$src_dir/tmpfiles/pos-kernel.conf" "$dest_dir$prefix/lib/tmpfiles.d/pos-kernel.conf"
   install -D -m 0644 "$src_dir/systemd/pos-kernel-modules.service" \
     "$dest_dir$prefix/lib/systemd/system/pos-kernel-modules.service"
+  install -D -m 0644 "$src_dir/profile" "$dest_dir/etc/profile"
+  install -d "$dest_dir/etc/profile.d"
   install -D -m 0644 "$src_dir/systemd/systemd-sysext.service.d/pos.conf" \
     "$dest_dir$prefix/lib/systemd/system/systemd-sysext.service.d/pos.conf"
 }

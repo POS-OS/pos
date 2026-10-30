@@ -1,3 +1,3 @@
 # The pos-fedora RPM package. BUILD.md "RPM packages".
-requires core-libs system sdk
+requires core-libs system
 host-requires rpm-build

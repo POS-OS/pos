@@ -6,7 +6,7 @@
 output() {
   fs_layout "$(output_dir)/layout"
   fs_copy "$(output_dir vm-disk)/root"
-  fs_dnf pos pos-sdk pos-fedora dnf kernel-core kernel-modules
+  fs_dnf pos pos-fedora dnf kernel-core kernel-modules
   fs_factory
   disk_make "$(output_dir vm-disk)/repart.d"
 }
