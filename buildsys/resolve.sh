@@ -91,10 +91,13 @@
 # and are met by this build's packages where they are built, otherwise by
 # the references', whether or not they are targets: the reference's gcc
 # builds glibc, which gcc itself requires.
+# A requirement of a toolchain reference package that this build installs
+# in another prefix is met by the reference's: its gcc runs its own as and
+# ld, by the paths it was built with.
 
 declare -a PKGS=()
 declare -A KIND=() REQ=() BREQ=() HREQ=() PREQ=() PROV=() OBS=() SRC=() WSRC=() OUTS=() PARENT=()
-declare -A PIPE=() PKGDIR=() SRCPATH=() SRCREFS=() ARCHIVE=() VERSION=()
+declare -A PIPE=() PKGDIR=() SRCPATH=() SRCREFS=() ARCHIVE=() VERSION=() PFX=()
 declare -A PROVIDERS=() BOOTCAP=() TPROV=()
 declare -A BUILT=() REF=() POSREF=() REF_REQ=() FOREIGN=()
 declare -a TARGETS=()
@@ -184,6 +187,7 @@ meta_load() {
         with-sources) WSRC[$p]+=" $vals" ;;
         archive) ARCHIVE[$p]=$vals ;;
         version) VERSION[$p]=$vals ;;
+        prefix) PFX[$p]=$vals ;;
         kind) KIND[$p]=$vals ;;
         outputs) OUTS[$p]+=" $vals" ;;
         output-of) PARENT[$p]=$vals ;;
@@ -239,13 +243,12 @@ meta_index() {
 #   $1      reference ID, or none
 #   refs    work/references directory
 # Outputs:
-#   PKGS, KIND, PIPE, REQ, PROV, OBS, OUTS, PARENT, FOREIGN; meta_index
+#   PKGS, KIND, PIPE, REQ, PROV, OBS, OUTS, PARENT, PFX, FOREIGN; meta_index
 foreign_load() {
   local meta p key vals line pipe
   [[ $1 != none ]] || return 0
   pipe=$(ref_info "$1" pipeline)
-  for meta in "$refs/$1"/dest/*"$(ref_prefix "$1")"/lib/pos/packages/*/meta; do
-    [[ -f $meta ]] || continue
+  while read -r meta; do
     p=$(basename "$(dirname "$meta")")
     [[ -z ${KIND[$p]:-} || -n ${FOREIGN[$p]:-} ]] || continue
     FOREIGN[$p]=1
@@ -262,9 +265,10 @@ foreign_load() {
         kind) KIND[$p]=$vals ;;
         outputs) OUTS[$p]+=" $vals" ;;
         output-of) PARENT[$p]=$vals ;;
+        prefix) PFX[$p]=$vals ;;
       esac
     done <"$meta"
-  done
+  done < <(ref_metas "$1")
   mapfile -t PKGS < <(printf '%s\n' "${PKGS[@]}" | sort -u)
   meta_index
 }
@@ -294,6 +298,12 @@ meta_validate() {
     for cap in ${REQ[$p]} ${BREQ[$p]}; do
       required[$cap]=1
     done
+    # A package of another project's prefix can install in pos's: pos-sdk's
+    # gcc-runtime, which pos ships (BUILD.md "Prefix").
+    if [[ -n ${PFX[$p]:-} && ${PFX[$p]} != /pos ]]; then
+      echo "$m: prefix: only /pos, pos's prefix, where the project's is another" >&2
+      err=1
+    fi
     if [[ -n ${ARCHIVE[$p]:-} && -z ${VERSION[$p]:-} || -z ${ARCHIVE[$p]:-} && -n ${VERSION[$p]:-} ]]; then
       echo "$m: archive and version go together: the release and its version" >&2
       err=1
@@ -456,7 +466,16 @@ provider() {
   done
   case ${#chosen[@]} in
     0) provider_ref "$cap" "$ref" ;;
-    1) PROVIDER=${chosen[0]} ;;
+    1)
+      PROVIDER=${chosen[0]}
+      # The reference's compiler runs the tools at the paths it was built
+      # with (gcc's --with-as): where this build installs them in another
+      # prefix (a new sdk version), it gets the reference's.
+      p=$PROVIDER
+      if [[ -n $ref && -n ${REF[$p]:-} && $(pkg_prefix "$p") != "$(env_prefix "$p@ref")" ]]; then
+        PROVIDER=$p@ref
+      fi
+      ;;
     *) die "ambiguous providers of $cap: ${chosen[*]} (add obsoletes to pick one)" ;;
   esac
 }

@@ -375,7 +375,9 @@ package directory, with a `meta` of `kind output` and `output-of`, and no
 `build.sh`. After the build, an output is a package like any other: its
 own `dest/<name>`, requirements, provides, obsoletes and metadata, and a
 stage lists it on its own. Wanting an output builds its main package;
-`rebuild` of the main package drops its outputs too.
+`rebuild` of the main package drops its outputs too. An output installs
+in the project's prefix, or in pos's with `prefix /pos` in its meta:
+pos-sdk's gcc-runtime, which pos ships (see "Prefix").
 
 The recipe installs each output into `$(pkg_output <name>)`. `pkg_finish`
 then removes from the main package every file an output holds, so each file
@@ -461,13 +463,14 @@ gawk use and which follow upstream's development as the rest of pos.
 
 gcc-runtime (libstdc++, libgcc_s) ships in core-libs but is an output of
 the gcc build, so the C++ headers a program is compiled with and the
-libstdc++ it runs on always come from the same gcc. gcc installs in
-`/pos/sdk`; its recipe moves the runtime's libraries to `/pos/lib` and
-points the names the linker looks up (`/pos/sdk/lib/libstdc++.so`) at
-them. gcc-runtime also has the run-time libraries of gcc's other target
-libraries (the sanitizers, libitm, libquadmath, libssp), as Arch's
-gcc-libs: in `/pos/sdk/lib` the loader would not find them, and a program
-built with `-fsanitize=address` would not run.
+libstdc++ it runs on always come from the same gcc. gcc installs in the
+sdk's prefix, `/apps/pos-sdk/<version>`; its recipe moves the runtime's
+libraries to `/pos/lib` (gcc-runtime's meta: `prefix /pos`) and points
+the names the linker looks up (`<sdk>/lib/libstdc++.so`) at their
+sonames there. gcc-runtime also has the run-time libraries of gcc's
+other target libraries (the sanitizers, libitm, libquadmath, libssp), as
+Arch's gcc-libs: in the sdk's lib the loader would not find them, and a
+program built with `-fsanitize=address` would not run.
 
 `util-linux-bootstrap` breaks a cycle with a bootstrap package: it is
 util-linux without libsystemd; systemd requires it, and
@@ -584,7 +587,12 @@ gcc requires glibc, and builds it, running on the pos reference's glibc
 until then. Where a package is ready with a reference's copy of a
 package the run builds, it waits while another is ready without one: a
 package built with the reference's gcc gets the build's glibc, which gcc
-requires, once it is built, not the pos reference's.
+requires, once it is built, not the pos reference's. A package this
+build installs in another prefix than the reference's copy is not used
+for it: the reference's gcc runs the binutils of its own sdk prefix
+(`--with-as`), so a pos-sdk build of a new sdk version gives gcc's build
+both binutils, the reference's for the compiler and its own to configure
+against.
 
 `./build reference [<id>]` (default: the current build) stores a build in
 the reference store, the `reference-dir` setting, as
@@ -712,17 +720,21 @@ dependencies outside the prefix.
 Third-party applications install in separate hierarchy. A machine can keep `/usr` for that, or any other prefix.
 
 A project's packages install in its prefix: the `prefix` line of its
-`project` file, `/pos` without one. pos and pos-sdk install in `/pos`;
-pos-extras in `/apps/pos-extras/<version>`. `<version>` is `<product
+`project` file, `/pos` without one. pos installs in `/pos`, pos-sdk in
+`/apps/pos-sdk/<version>` and pos-extras in `/apps/pos-extras/<version>`. `<version>` is `<product
 version>.<revision>` of `VERSION` (1.0.0): it stays the same while
 developing, so builds of the same sources stay comparable (the prefix is
 compiled into programs), and changes with a service release. A new
 build records its prefix in `info` (`prefix`), and a reference build's
 packages are found in the prefix its `info` names (`/pos` for builds
-from before prefixes). The recipes have it as `$prefix`; `$pos_prefix`
-is `/pos`, what every build links against, and `$sdk_prefix` is
-`/pos/sdk` in every project. A staging tree is a root holding the
-prefix (`dest/<name>/pos`, `dest/<name>/apps/pos-extras/1.0.0`).
+from before prefixes). A package can install in `/pos` instead (meta
+`prefix /pos`; its record is there too). The recipes have it as
+`$prefix`; `$pos_prefix` is `/pos`, what every build links against, and
+`$sdk_prefix` the sdk the build compiles with: its toolchain
+reference's prefix (`/pos/sdk` for toolchains from before prefixes),
+also in a pos-sdk build, which installs the new sdk in `$prefix`. A
+staging tree is a root holding the prefix (`dest/<name>/pos`,
+`dest/<name>/apps/pos-extras/1.0.0`).
 
 The sdk, the toolchain (see "SDK"), is one directory of the prefix,
 `/pos/sdk` (`$sdk_prefix` in `buildsys/pkg.sh`), with its own `bin`,

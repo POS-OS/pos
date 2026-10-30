@@ -51,21 +51,24 @@ b=$(build_dir "$2")
 shift 2
 declare -A prefix=([$a]=$(prefix_of "$a") [$b]=$(prefix_of "$b"))
 
-# The record directory of a package in a build (pkg_record).
+# The record directory of a package in a build (pkg_record): in the
+# build's prefix, or in /pos for a package that installs there (meta
+# prefix /pos).
 # Inputs:
 #   $1    build directory
 #   $2    package name
 record() {
-  echo "$1/dest/$2${prefix[$1]}/lib/pos/packages/$2"
+  local r=$1/dest/$2${prefix[$1]}/lib/pos/packages/$2
+  [[ -f $r/meta ]] || r=$1/dest/$2/pos/lib/pos/packages/$2
+  echo "$r"
 }
 
 # A package is built when its metadata is there (pkg_record writes it last).
 built() {
   local f
-  for f in "$1"/dest/*"${prefix[$1]}"/lib/pos/packages/*/meta; do
+  for f in "$1"/dest/*"${prefix[$1]}"/lib/pos/packages/*/meta "$1"/dest/*/pos/lib/pos/packages/*/meta; do
     [[ -f $f ]] && basename "$(dirname "$f")"
-  done
-  return 0
+  done | sort -u
 }
 
 files() {

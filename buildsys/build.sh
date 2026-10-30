@@ -250,6 +250,37 @@ project_prefix() {
   echo "${p//<version>/$v}"
 }
 
+# The sdk's prefix in a project of prefix $1: /pos/sdk in pos's prefix
+# (toolchains from before prefixes), else the whole prefix
+# (/apps/pos-sdk/<version>).
+# Inputs:
+#   $1      a toolchain build's prefix
+sdk_of() {
+  if [[ $1 == /pos ]]; then echo /pos/sdk; else echo "$1"; fi
+}
+
+# The sdk prefix of the build's compiler, its toolchain reference's, also
+# in a toolchain build, which installs the new one in its own prefix
+# (/pos/sdk without one: Fedora's compiler does not use it).
+# Inputs:
+#   TOOLCHAIN_REF
+sdk_prefix() {
+  if [[ $TOOLCHAIN_REF != none ]]; then
+    sdk_of "$(ref_prefix "$TOOLCHAIN_REF")"
+  else
+    echo /pos/sdk
+  fi
+}
+
+# The prefix a package of this build installs in: the build's, or /pos for
+# one whose meta says so (PFX).
+# Inputs:
+#   $1      package or output name
+#   PREFIX, PFX
+pkg_prefix() {
+  echo "${PFX[$1]:-$PREFIX}"
+}
+
 # The prefix the build in bdir installs its packages in; /pos for builds
 # from before prefixes.
 # Inputs:
@@ -542,9 +573,9 @@ unpack_source() {
 # Inputs:
 #   $1      package name
 #   bdir    active build directory
-#   PREFIX  the build's prefix (build_prefix)
+#   PREFIX  the build's prefix (build_prefix), PFX
 marker() {
-  echo "$bdir/dest/$1${PREFIX}/lib/pos/packages/$1/meta"
+  echo "$bdir/dest/$1$(pkg_prefix "$1")/lib/pos/packages/$1/meta"
 }
 
 # Populate BUILT[] for every package whose marker exists in $bdir.
@@ -569,22 +600,24 @@ load_built() {
 # Inputs:
 #   $1      package or output name
 #   bdir    active build directory
-#   PREFIX  the build's prefix
+#   PREFIX  the build's prefix, PFX
 #   SOURCE_ID, SOURCE_VER, WITH_SOURCE_IDS (build_one)
 pkg_record() {
-  local p=$1 dest=$bdir/dest/$1 dir extra s rel=${PREFIX#/}
-  [[ -d $dest$PREFIX ]] || die "$p: nothing installed into $dest$PREFIX"
+  local p=$1 dest=$bdir/dest/$1 dir extra s pre rel
+  pre=$(pkg_prefix "$p")
+  rel=${pre#/}
+  [[ -d $dest$pre ]] || die "$p: nothing installed into $dest$pre"
   extra=$(cd "$dest" && find . -mindepth 1 -path "./$rel" -prune -o ! -type d -print)
   if [[ -n $extra ]]; then
-    echo "warning: $p installed paths outside $PREFIX:" >&2
+    echo "warning: $p installed paths outside $pre:" >&2
     echo "$extra" >&2
   fi
   # <prefix>/lib is the only library directory (BUILD.md "Library
   # directory"). lib64 comes from build tools that look at the tools
   # image's /usr/lib64 (meson, cmake GNUInstallDirs, Fedora's gcc).
-  extra=$(find "$dest$PREFIX" -mindepth 1 -maxdepth 1 \( -name lib64 -o -name lib32 -o -name libx32 \) -print)
-  [[ -z $extra ]] || die "$p: installed into $(echo "$extra" | xargs -n1 basename | xargs); set libdir to $PREFIX/lib"
-  dir=$dest$PREFIX/lib/pos/packages/$p
+  extra=$(find "$dest$pre" -mindepth 1 -maxdepth 1 \( -name lib64 -o -name lib32 -o -name libx32 \) -print)
+  [[ -z $extra ]] || die "$p: installed into $(echo "$extra" | xargs -n1 basename | xargs); set libdir to $pre/lib"
+  dir=$dest$pre/lib/pos/packages/$p
   mkdir -p "$dir"
   (cd "$dest" && find "$rel" -mindepth 1 ! -type d ! -path "$rel/lib/pos/packages/*" | sed 's|^|/|' | sort) >"$dir/files"
   {
@@ -623,11 +656,16 @@ env_tree() {
 }
 
 # The prefix of an environment entry's package: a reference's
-# (ref_prefix), or this build's.
+# (ref_prefix), or this build's; /pos for one whose meta says so (PFX).
 # Inputs:
 #   $1    environment entry (<pkg>, <pkg>@ref or <pkg>@pos)
-#   TOOLCHAIN_REF, POS_REF, PREFIX
+#   TOOLCHAIN_REF, POS_REF, PREFIX, PFX
 env_prefix() {
+  local p=${1%@*}
+  if [[ -n ${PFX[$p]:-} ]]; then
+    echo "${PFX[$p]}"
+    return
+  fi
   case $1 in
     *@ref) ref_prefix "$TOOLCHAIN_REF" ;;
     *@pos) ref_prefix "$POS_REF" ;;
@@ -740,7 +778,7 @@ source_of() {
 #   BUILT[$p] and BUILT[$q] for each output q in OUTS[$p]
 build_one() {
   local p=$1 q scripts log root env_files=
-  local hbase hbdir src_dir s epoch with_dirs=
+  local hbase hbdir src_dir s epoch with_dirs='' outpfx=''
   hbase=$(host_path "$base")
   env_of "$p" || die "$p: unresolved: ${MISSING[*]}"
   scripts=
@@ -754,6 +792,9 @@ build_one() {
   hbdir=$(host_path "$bdir")
   for q in "$p" ${OUTS[$p]}; do
     step_start "package-$q"
+  done
+  for q in ${OUTS[$p]}; do
+    outpfx+=" $q=$(pkg_prefix "$q")"
   done
   source_of "${SRC[$p]}"
   src_dir=$SOURCE_DIR
@@ -786,6 +827,8 @@ build_one() {
     POS_PACKAGE="$p" \
     POS_RECIPE_DIR="$hbase/${PKGDIR[$p]}" \
     POS_PREFIX="$PREFIX" \
+    POS_SDK_PREFIX="$(sdk_prefix)" \
+    POS_OUTPUT_PREFIXES="${outpfx# }" \
     POS_SRC_DIR="/src/${SRC[$p]}" \
     POS_WITH_SRC_DIRS="${with_dirs# }" \
     POS_BUILD_DIR="/build/$p" \
@@ -833,6 +876,7 @@ cmd_plan() {
     build_load
   else
     id="<new>"
+    PREFIX=$(project_prefix "$(version_info HEAD - 000000000000)")
     references_choose
     load_references
   fi
