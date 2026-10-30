@@ -1,4 +1,7 @@
 build-requires gcc pos-link
-requires glibc gcc-runtime
-host-requires rust cargo gcc
+# libudev (systemd), the udev crate; libdevmapper (lvm2-bootstrap, which
+# lvm2 replaces), the devicemapper crate. libgcc_s (gcc-runtime).
+requires glibc gcc-runtime systemd lvm2-bootstrap
+# devicemapper-sys makes its bindings with bindgen, which loads libclang.
+host-requires rust cargo gcc clang-libs
 prepare-requires cargo
