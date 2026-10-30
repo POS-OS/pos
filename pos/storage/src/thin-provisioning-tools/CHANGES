@@ -1,0 +1,323 @@
+v1.3.4
+======
+
+- Fix panics in thin_dump when btree nodes point beyond the metadata device
+- Fix overflows in IoEngine block range tracking and offset calculation, which
+  caused panics or reads at wrong offsets on damaged metadata in thin_check,
+  cache_check and other tools.
+- Fix integer overflow in space map boundary checks
+- Remove redundant leaf insertions in LeafWalker
+
+v1.3.3
+======
+
+- Fix missing era array traversal in era_invalidate when no writesets exist
+- Fix panics in thin_explore when navigating empty btrees
+- Ensure data consistency by flushing the output file when closing
+  thin_metadata_pack and thin_metadata_unpack.
+
+v1.3.2
+======
+
+- Address security advisories RUSTSEC-2026-0002 and RUSTSEC-2026-0097
+- Enhance thin_repair robustness against bit rot
+
+v1.3.1
+======
+
+- Improve thin_ls performance using the optimized approach from thin_check
+
+v1.3.0
+======
+
+- Improve thin_check performance with an optimized I/O strategy and more
+  memory-efficient data structures.
+- Rewrite AsyncIoEngine using tokio IoUring, removing the rio dependency
+- Enhance thin_check with edge-case fixes, including space map boundary checks
+- Update thin_explore to use ratatui, replacing the archived tui crate
+
+v1.2.2
+=======
+
+- Fix command line parsing for era_invalidate --metadata-snapshot
+
+v1.2.1
+=======
+
+- Fix incorrect number of data blocks in thin_shrink's output superblock
+
+v1.2.0
+=======
+
+- Remove atty and safemem dependencies due to security concerns
+- Remove unused threaded btree walk code
+- Change BTreeWalker constructor to take IoEngine by reference for simplicity
+  (breaking change)
+- Update fixedbitset and few other dependencies with required code changes
+
+v1.1.0
+=======
+
+- Correct the use case and update instructions in thin_migrate's man page
+- Ensure that the source device for thin_migrate is read-only
+
+v1.0.14
+=======
+
+- Introduce thin_migrate for volume migration (technical preview)
+- Fix thin_check's overriding roots not working if the original one broke
+- Improve error tolerance of ref counting in building space maps
+
+v1.0.13
+=======
+
+- Extend cache_check --clear-needs-check-flag to fix leaked blocks
+- Suppress error messages from cache/era_dump on broken pipe error
+- Add BTreeIterator
+- Support listing the highest mapped block in thin_ls
+- Support repairing device details tree from thin_repair
+- Support vectored write in SyncIoEngine
+- Fix missing version option in thin_explore
+- Fix subcommand parsing in dev-tools
+
+v1.0.12
+=======
+
+- Update license to SPDX identifier
+- Suppress error messages from thin_dump on broken pipe error
+- Fix version string compatibility issue with LVM
+
+v1.0.11
+=======
+
+- Fix bitset index out-of-bounds error in cache_check
+- Improve the hint messages from thin/cache_check for error resolution
+
+v1.0.10
+=======
+
+- Support long options in thin_metadata_pack/unpack
+- Make the space map formatting backward compatible to kernel's expansion behavior
+- Support overriding the details tree root in thin_check
+- Enhance thin_repair to detect a corner case involving incompatible child nodes
+- Improve compatibility of thin_check against unexpected bytes in the index block
+
+v1.0.9
+======
+
+- Extend thin_check --clear-needs-check-flag to fix leaked blocks
+
+v1.0.8
+======
+
+- Stop reusing the same gap buffer in SyncIoEngine
+
+v1.0.7
+======
+
+- Fix ioctl request code for PowerPC architecture
+- Fix era_invalidate command parsing
+
+v1.0.6
+======
+
+- Fix thin_delta command line parsing
+- Fix range mappings preprocessing in thin_delta
+
+v1.0.5
+======
+
+- Fix thin_dump output that doesn't keep shared mappings
+- Fix build error on Musl
+- Allow overriding PDATA_TOOLS in Makefile
+- Ensure thin_dump/repair never fail with repairable metadata
+- Use flatten output in stderr if it is not a tty
+- thin_dump/repair now prefers non-empty roots while searching for roots
+- Check the input values for thin_rmap
+- Update dependencies: clap v4.4 and quick-xml v0.29
+- Improve xml value parsing and error handling
+- Fix value wrapping issue in thin_metadata_pack/unpack
+
+v1.0.4
+======
+
+- Fix incorrect crc32c outputs on big endian targets
+- Fix compilation errors on 32-bit platforms
+
+v1.0.3
+======
+
+- Fix thin/cache_repair command line compatibility issue with lvconvert
+
+v1.0.2
+======
+
+- Fix reading metadata snapshot in thin_ls
+- Fix opening live metadata in era_invalidate
+
+v1.0.1
+======
+
+- Fix checking metadata snapshot in thin_check
+
+v1.0
+====
+
+- Rewrite in Rust
+- Multithreaded tools
+- Higher performance io engines (optional io_uring async engine)
+- thin_dump/restore now retains sharing
+- thin_metadata_pack/unpack
+
+v0.9.0
+======
+
+- New support tools: thin_metadata_{pack,unpack}.
+- thin_check can now check metadata snapshots.
+- some metadata space map bug fixes.
+- thin_check --auto-repair
+- Stop thin_dump --repair/thin_repair ignoring under populated nodes.
+
+
+v0.7.5
+======
+
+- Fix a bug that stopped cache_restore working with metadata version 2.
+
+v0.7.4
+======
+
+- Update this file ;)
+
+v0.7.3
+======
+
+- Improve error messages if XML given as input to tools that expect metadata.
+  There seems to be some confusion between XML and the metadata.
+
+- Add --override-mapping-root debug option to thin_dump.  This can be useful
+  when investigating damaged metadata.
+
+- More functional tests.
+
+v0.7.2
+======
+
+- Fix segfault in restore tools when given a tiny metadata file (< 4k).
+
+- Lots more work on the functional tests.
+
+- Fix a couple of unit test regressions
+
+- Man page updates.
+
+- Rewrite man pages in a text format.  Simpler than writing directly in nroff.
+
+v0.7.1
+======
+
+- Fix a few bugs in block_cache.
+
+- Ditch Ruby/Cucumber for the functional tests.  Now written in Scheme.
+
+- Be more aggressive about flushing dirty blocks from the block cache.  Very
+  little performance impact.
+
+- Optimisations in space_map_disk (small performance improvement for restore
+  tools).
+
+v0.7.0
+======
+
+- switch to C++11.  This may cause problems with v. old versions of g++.
+
+- support cache metadata format 2
+
+- support custom emitter plugins for thin_dump.
+
+- thin_dump --dev-id; allows the user to dump just the devices they're
+  interested in.
+
+- cache_writeback; Use for offline decommission of a cache.
+
+- thin_scan/thin_ll_dump/restore dev tools.
+
+- --enable-dev-tools configure option.  Use this for the extra tools.
+
+- thin_delta, various bug fixes.
+
+- various changes to the block cache.
+
+- thin_show_duplicates; a development only tool that scans block devices to
+  calculate the level of data duplication.  Uses either fixed block sizes or
+  context sensitive.
+
+v0.6.3
+======
+
+- Improve error messages if output file doesn't exist or is tiny.
+
+v0.6.2
+======
+
+- Fix bug in thin_delta
+- Fix recent regression in thin_repair.
+- Force g++-98 dialect
+- Fix bug in thin_trim
+
+v0.6.1
+======
+
+Fix bug in thin_dump when using metadata snaps.
+
+v0.6.0
+======
+
+thin_ls
+
+v0.5.6
+======
+
+era_invalidate may be run on live metadata if the --metadata-snap option is given.
+
+v0.5.5
+======
+
+You may now give the --metadata_snap option to thin_delta without specifying where the snap is.
+
+Update man pages to make it clearer that most tools shouldn't be run on live metadata.
+
+Fix some bugs in the metadata reference counting for thin_check.
+
+v0.5.1
+======
+
+Fix bug where the tools would crash if given a very large metadata
+device to restore to.
+
+v0.5
+====
+
+- thin_delta, thin_trim
+- --clear-needs-check flag for cache_check
+- space map checking for thin check
+
+v0.4
+====
+
+- All tools switch to using libaio.  This gives a large performance
+  boost, especially to the write focused tools like thin_restore.
+
+- Added a progress monitor to thin_restore, cache_restore and era_restore
+
+- Added a --quiet/-q option to *_restore to turn off the progress bar
+
+- Removed variable hint size support from cache tools.  The kernel
+  still only supports a fixed 32bit width.  This will have a side
+  effect of reducing the executable sizes due to less template
+  instantiation.
+
+- Tools rolled into a single executable to save space.
+
+- Fixed some bugs when walking bitsets (possibly effecting cache_dump
+  and cache_check).
