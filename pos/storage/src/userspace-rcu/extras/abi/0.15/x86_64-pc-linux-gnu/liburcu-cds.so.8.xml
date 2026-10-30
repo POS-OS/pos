@@ -1,0 +1,2441 @@
+<abi-corpus version='2.4' architecture='elf-amd-x86_64' soname='liburcu-cds.so.8'>
+<!--
+SPDX-FileCopyrightText: 2026 EfficiOS Inc.
+
+SPDX-License-Identifier: CC0-1.0
+-->
+  <elf-needed>
+    <dependency name='libc.so.6'/>
+  </elf-needed>
+  <elf-function-symbols>
+    <!-- __cds_lfs_init -->
+    <elf-symbol name='__cds_lfs_init' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
+    <!-- __cds_lfs_pop -->
+    <elf-symbol name='__cds_lfs_pop' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
+    <!-- __cds_lfs_pop_all -->
+    <elf-symbol name='__cds_lfs_pop_all' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
+    <!-- _cds_lfht_new -->
+    <elf-symbol name='_cds_lfht_new' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
+    <!-- _cds_lfht_new_with_alloc -->
+    <elf-symbol name='_cds_lfht_new_with_alloc' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
+    <!-- cds_lfht_add -->
+    <elf-symbol name='cds_lfht_add' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
+    <!-- cds_lfht_add_replace -->
+    <elf-symbol name='cds_lfht_add_replace' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
+    <!-- cds_lfht_add_unique -->
+    <elf-symbol name='cds_lfht_add_unique' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
+    <!-- cds_lfht_count_nodes -->
+    <elf-symbol name='cds_lfht_count_nodes' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
+    <!-- cds_lfht_del -->
+    <elf-symbol name='cds_lfht_del' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
+    <!-- cds_lfht_destroy -->
+    <elf-symbol name='cds_lfht_destroy' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
+    <!-- cds_lfht_first -->
+    <elf-symbol name='cds_lfht_first' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
+    <!-- cds_lfht_fls_ulong -->
+    <elf-symbol name='cds_lfht_fls_ulong' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
+    <!-- cds_lfht_get_count_order_ulong -->
+    <elf-symbol name='cds_lfht_get_count_order_ulong' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
+    <!-- cds_lfht_is_node_deleted -->
+    <elf-symbol name='cds_lfht_is_node_deleted' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
+    <!-- cds_lfht_lookup -->
+    <elf-symbol name='cds_lfht_lookup' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
+    <!-- cds_lfht_next -->
+    <elf-symbol name='cds_lfht_next' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
+    <!-- cds_lfht_next_duplicate -->
+    <elf-symbol name='cds_lfht_next_duplicate' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
+    <!-- cds_lfht_node_init_deleted -->
+    <elf-symbol name='cds_lfht_node_init_deleted' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
+    <!-- cds_lfht_replace -->
+    <elf-symbol name='cds_lfht_replace' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
+    <!-- cds_lfht_resize -->
+    <elf-symbol name='cds_lfht_resize' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
+    <!-- cds_lfq_dequeue_rcu -->
+    <elf-symbol name='cds_lfq_dequeue_rcu' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
+    <!-- cds_lfq_destroy_rcu -->
+    <elf-symbol name='cds_lfq_destroy_rcu' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
+    <!-- cds_lfq_enqueue_rcu -->
+    <elf-symbol name='cds_lfq_enqueue_rcu' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
+    <!-- cds_lfq_init_rcu -->
+    <elf-symbol name='cds_lfq_init_rcu' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
+    <!-- cds_lfq_node_init_rcu -->
+    <elf-symbol name='cds_lfq_node_init_rcu' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
+    <!-- cds_lfs_destroy -->
+    <elf-symbol name='cds_lfs_destroy' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
+    <!-- cds_lfs_empty -->
+    <elf-symbol name='cds_lfs_empty' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
+    <!-- cds_lfs_init -->
+    <elf-symbol name='cds_lfs_init' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
+    <!-- cds_lfs_init_rcu -->
+    <elf-symbol name='cds_lfs_init_rcu' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
+    <!-- cds_lfs_node_init -->
+    <elf-symbol name='cds_lfs_node_init' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
+    <!-- cds_lfs_node_init_rcu -->
+    <elf-symbol name='cds_lfs_node_init_rcu' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
+    <!-- cds_lfs_pop_all_blocking -->
+    <elf-symbol name='cds_lfs_pop_all_blocking' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
+    <!-- cds_lfs_pop_blocking -->
+    <elf-symbol name='cds_lfs_pop_blocking' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
+    <!-- cds_lfs_pop_lock -->
+    <elf-symbol name='cds_lfs_pop_lock' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
+    <!-- cds_lfs_pop_rcu -->
+    <elf-symbol name='cds_lfs_pop_rcu' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
+    <!-- cds_lfs_pop_unlock -->
+    <elf-symbol name='cds_lfs_pop_unlock' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
+    <!-- cds_lfs_push -->
+    <elf-symbol name='cds_lfs_push' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
+    <!-- cds_lfs_push_rcu -->
+    <elf-symbol name='cds_lfs_push_rcu' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
+    <!-- compat_futex_async -->
+    <elf-symbol name='compat_futex_async' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
+    <!-- compat_futex_noasync -->
+    <elf-symbol name='compat_futex_noasync' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
+    <!-- urcu_workqueue_create -->
+    <elf-symbol name='urcu_workqueue_create' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
+    <!-- urcu_workqueue_create_completion -->
+    <elf-symbol name='urcu_workqueue_create_completion' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
+    <!-- urcu_workqueue_create_worker -->
+    <elf-symbol name='urcu_workqueue_create_worker' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
+    <!-- urcu_workqueue_destroy -->
+    <elf-symbol name='urcu_workqueue_destroy' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
+    <!-- urcu_workqueue_destroy_completion -->
+    <elf-symbol name='urcu_workqueue_destroy_completion' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
+    <!-- urcu_workqueue_flush_queued_work -->
+    <elf-symbol name='urcu_workqueue_flush_queued_work' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
+    <!-- urcu_workqueue_pause_worker -->
+    <elf-symbol name='urcu_workqueue_pause_worker' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
+    <!-- urcu_workqueue_queue_completion -->
+    <elf-symbol name='urcu_workqueue_queue_completion' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
+    <!-- urcu_workqueue_queue_work -->
+    <elf-symbol name='urcu_workqueue_queue_work' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
+    <!-- urcu_workqueue_resume_worker -->
+    <elf-symbol name='urcu_workqueue_resume_worker' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
+    <!-- urcu_workqueue_wait_completion -->
+    <elf-symbol name='urcu_workqueue_wait_completion' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
+  </elf-function-symbols>
+  <elf-variable-symbols>
+    <!-- __urcu_compat_futex_cond -->
+    <elf-symbol name='__urcu_compat_futex_cond' size='48' type='object-type' binding='weak-binding' visibility='default-visibility' is-defined='yes'/>
+    <!-- __urcu_compat_futex_lock -->
+    <elf-symbol name='__urcu_compat_futex_lock' size='40' type='object-type' binding='weak-binding' visibility='default-visibility' is-defined='yes'/>
+    <!-- cds_lfht_mm_chunk -->
+    <elf-symbol name='cds_lfht_mm_chunk' size='32' type='object-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
+    <!-- cds_lfht_mm_mmap -->
+    <elf-symbol name='cds_lfht_mm_mmap' size='32' type='object-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
+    <!-- cds_lfht_mm_order -->
+    <elf-symbol name='cds_lfht_mm_order' size='32' type='object-type' binding='global-binding' visibility='default-visibility' is-defined='yes'/>
+  </elf-variable-symbols>
+  <undefined-elf-function-symbols>
+    <!-- __assert_fail -->
+    <elf-symbol name='__assert_fail' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='no'/>
+    <!-- __cxa_finalize -->
+    <elf-symbol name='__cxa_finalize' type='func-type' binding='weak-binding' visibility='default-visibility' is-defined='no'/>
+    <!-- __errno_location -->
+    <elf-symbol name='__errno_location' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='no'/>
+    <!-- __isoc23_strtol -->
+    <elf-symbol name='__isoc23_strtol' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='no'/>
+    <!-- __isoc23_strtoul -->
+    <elf-symbol name='__isoc23_strtoul' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='no'/>
+    <!-- abort -->
+    <elf-symbol name='abort' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='no'/>
+    <!-- calloc -->
+    <elf-symbol name='calloc' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='no'/>
+    <!-- close -->
+    <elf-symbol name='close' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='no'/>
+    <!-- closedir -->
+    <elf-symbol name='closedir' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='no'/>
+    <!-- fprintf -->
+    <elf-symbol name='fprintf' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='no'/>
+    <!-- free -->
+    <elf-symbol name='free' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='no'/>
+    <!-- getpagesize -->
+    <elf-symbol name='getpagesize' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='no'/>
+    <!-- malloc -->
+    <elf-symbol name='malloc' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='no'/>
+    <!-- memset -->
+    <elf-symbol name='memset' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='no'/>
+    <!-- mmap -->
+    <elf-symbol name='mmap' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='no'/>
+    <!-- munmap -->
+    <elf-symbol name='munmap' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='no'/>
+    <!-- open -->
+    <elf-symbol name='open' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='no'/>
+    <!-- opendir -->
+    <elf-symbol name='opendir' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='no'/>
+    <!-- perror -->
+    <elf-symbol name='perror' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='no'/>
+    <!-- poll -->
+    <elf-symbol name='poll' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='no'/>
+    <!-- posix_memalign -->
+    <elf-symbol name='posix_memalign' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='no'/>
+    <!-- pthread_cond_broadcast -->
+    <elf-symbol name='pthread_cond_broadcast' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='no'/>
+    <!-- pthread_cond_wait -->
+    <elf-symbol name='pthread_cond_wait' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='no'/>
+    <!-- pthread_create -->
+    <elf-symbol name='pthread_create' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='no'/>
+    <!-- pthread_join -->
+    <elf-symbol name='pthread_join' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='no'/>
+    <!-- pthread_mutex_destroy -->
+    <elf-symbol name='pthread_mutex_destroy' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='no'/>
+    <!-- pthread_mutex_init -->
+    <elf-symbol name='pthread_mutex_init' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='no'/>
+    <!-- pthread_mutex_lock -->
+    <elf-symbol name='pthread_mutex_lock' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='no'/>
+    <!-- pthread_mutex_unlock -->
+    <elf-symbol name='pthread_mutex_unlock' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='no'/>
+    <!-- pthread_sigmask -->
+    <elf-symbol name='pthread_sigmask' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='no'/>
+    <!-- read -->
+    <elf-symbol name='read' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='no'/>
+    <!-- readdir -->
+    <elf-symbol name='readdir' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='no'/>
+    <!-- realloc -->
+    <elf-symbol name='realloc' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='no'/>
+    <!-- sched_getcpu -->
+    <elf-symbol name='sched_getcpu' version='GLIBC_2.6' is-default-version='yes' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='no'/>
+    <!-- sched_setaffinity -->
+    <elf-symbol name='sched_setaffinity' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='no'/>
+    <!-- sigfillset -->
+    <elf-symbol name='sigfillset' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='no'/>
+    <!-- strerror -->
+    <elf-symbol name='strerror' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='no'/>
+    <!-- strncmp -->
+    <elf-symbol name='strncmp' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='no'/>
+    <!-- syscall -->
+    <elf-symbol name='syscall' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='no'/>
+    <!-- sysconf -->
+    <elf-symbol name='sysconf' type='func-type' binding='global-binding' visibility='default-visibility' is-defined='no'/>
+  </undefined-elf-function-symbols>
+  <undefined-elf-variable-symbols>
+    <!-- _ITM_deregisterTMCloneTable -->
+    <elf-symbol name='_ITM_deregisterTMCloneTable' type='no-type' binding='weak-binding' visibility='default-visibility' is-defined='no'/>
+    <!-- _ITM_registerTMCloneTable -->
+    <elf-symbol name='_ITM_registerTMCloneTable' type='no-type' binding='weak-binding' visibility='default-visibility' is-defined='no'/>
+    <!-- __gmon_start__ -->
+    <elf-symbol name='__gmon_start__' type='no-type' binding='weak-binding' visibility='default-visibility' is-defined='no'/>
+    <!-- stderr -->
+    <elf-symbol name='stderr' type='object-type' binding='global-binding' visibility='default-visibility' is-defined='no'/>
+  </undefined-elf-variable-symbols>
+  <abi-instr address-size='64' path='compat_futex.c' comp-dir-path='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src' language='LANG_C11'>
+    <!-- char[48] -->
+    <array-type-def dimensions='1' type-id='type-id-1' size-in-bits='384' hash='46395ec6e3501f5e' id='type-id-2'>
+      <!-- <anonymous range>[48] -->
+      <subrange length='48' lower-bound='0' upper-bound='47' type-id='type-id-3' size-in-bits='64' is-anonymous='yes' hash='c984f699f4a9c7be' id='type-id-4'/>
+    </array-type-def>
+    <!-- long long int -->
+    <type-decl name='long long int' size-in-bits='64' hash='5ae7f9eec1fc43d6#3' id='type-id-5'/>
+    <!-- struct __pthread_cond_s -->
+    <class-decl name='__pthread_cond_s' is-struct='yes' visibility='default' size-in-bits='384' filepath='/usr/include/x86_64-linux-gnu/bits/thread-shared-types.h' line='94' column='1' hash='d9e2565ba80dd9b7' id='type-id-6'>
+      <data-member access='public' layout-offset-in-bits='0'>
+        <!-- __atomic_wide_counter __pthread_cond_s::__wseq -->
+        <var-decl name='__wseq' type-id='type-id-7' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/thread-shared-types.h' line='96' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='64'>
+        <!-- __atomic_wide_counter __pthread_cond_s::__g1_start -->
+        <var-decl name='__g1_start' type-id='type-id-7' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/thread-shared-types.h' line='97' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='128'>
+        <!-- unsigned int __pthread_cond_s::__g_size[2] -->
+        <var-decl name='__g_size' type-id='type-id-8' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/thread-shared-types.h' line='98' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='192'>
+        <!-- unsigned int __pthread_cond_s::__g1_orig_size -->
+        <var-decl name='__g1_orig_size' type-id='type-id-9' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/thread-shared-types.h' line='99' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='224'>
+        <!-- unsigned int __pthread_cond_s::__wrefs -->
+        <var-decl name='__wrefs' type-id='type-id-9' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/thread-shared-types.h' line='100' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='256'>
+        <!-- unsigned int __pthread_cond_s::__g_signals[2] -->
+        <var-decl name='__g_signals' type-id='type-id-8' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/thread-shared-types.h' line='101' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='320'>
+        <!-- unsigned int __pthread_cond_s::__unused_initialized_1 -->
+        <var-decl name='__unused_initialized_1' type-id='type-id-9' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/thread-shared-types.h' line='102' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='352'>
+        <!-- unsigned int __pthread_cond_s::__unused_initialized_2 -->
+        <var-decl name='__unused_initialized_2' type-id='type-id-9' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/thread-shared-types.h' line='103' column='1'/>
+      </data-member>
+    </class-decl>
+    <!-- struct {unsigned int __low; unsigned int __high;} -->
+    <class-decl name='__anonymous_struct__' is-struct='yes' visibility='default' size-in-bits='64' is-anonymous='yes' filepath='/usr/include/x86_64-linux-gnu/bits/atomic_wide_counter.h' line='28' column='1' hash='6fe24ea039e73fed' id='type-id-10'>
+      <data-member access='public' layout-offset-in-bits='0'>
+        <!-- unsigned int __low -->
+        <var-decl name='__low' type-id='type-id-9' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/atomic_wide_counter.h' line='30' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='32'>
+        <!-- unsigned int __high -->
+        <var-decl name='__high' type-id='type-id-9' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/atomic_wide_counter.h' line='31' column='1'/>
+      </data-member>
+    </class-decl>
+    <!-- typedef __atomic_wide_counter __atomic_wide_counter -->
+    <typedef-decl name='__atomic_wide_counter' type-id='type-id-11' size-in-bits='64' filepath='/usr/include/x86_64-linux-gnu/bits/atomic_wide_counter.h' line='33' column='1' id='type-id-7'/>
+    <!-- typedef pthread_cond_t pthread_cond_t -->
+    <typedef-decl name='pthread_cond_t' type-id='type-id-12' size-in-bits='384' filepath='/usr/include/x86_64-linux-gnu/bits/pthreadtypes.h' line='80' column='1' id='type-id-13'/>
+    <!-- union __atomic_wide_counter -->
+    <union-decl name='__atomic_wide_counter' naming-typedef-id='type-id-7' visibility='default' size-in-bits='64' filepath='/usr/include/x86_64-linux-gnu/bits/atomic_wide_counter.h' line='25' column='1' hash='2a784d7816fb6e59' id='type-id-11'>
+      <data-member access='public'>
+        <!-- unsigned long long int __atomic_wide_counter::__value64 -->
+        <var-decl name='__value64' type-id='type-id-14' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/atomic_wide_counter.h' line='27' column='1'/>
+      </data-member>
+      <data-member access='public'>
+        <!-- struct {unsigned int __low; unsigned int __high;} __atomic_wide_counter::__value32 -->
+        <var-decl name='__value32' type-id='type-id-10' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/atomic_wide_counter.h' line='32' column='1'/>
+      </data-member>
+    </union-decl>
+    <!-- union pthread_cond_t -->
+    <union-decl name='pthread_cond_t' naming-typedef-id='type-id-13' visibility='default' size-in-bits='384' filepath='/usr/include/x86_64-linux-gnu/bits/pthreadtypes.h' line='75' column='1' hash='b7df87fe223aa2e5' id='type-id-12'>
+      <data-member access='public'>
+        <!-- __pthread_cond_s pthread_cond_t::__data -->
+        <var-decl name='__data' type-id='type-id-6' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/pthreadtypes.h' line='77' column='1'/>
+      </data-member>
+      <data-member access='public'>
+        <!-- char pthread_cond_t::__size[48] -->
+        <var-decl name='__size' type-id='type-id-2' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/pthreadtypes.h' line='78' column='1'/>
+      </data-member>
+      <data-member access='public'>
+        <!-- long long int pthread_cond_t::__align -->
+        <var-decl name='__align' type-id='type-id-5' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/pthreadtypes.h' line='79' column='1'/>
+      </data-member>
+    </union-decl>
+    <!-- unsigned int[2] -->
+    <array-type-def dimensions='1' type-id='type-id-9' size-in-bits='64' hash='27faccd2350aa96c' id='type-id-8'>
+      <!-- <anonymous range>[2] -->
+      <subrange length='2' lower-bound='0' upper-bound='1' type-id='type-id-3' size-in-bits='64' is-anonymous='yes' hash='95f31efc53154467' id='type-id-15'/>
+    </array-type-def>
+    <!-- unsigned long long int -->
+    <type-decl name='unsigned long long int' size-in-bits='64' hash='ebdfc4685a1e82df#3' id='type-id-14'/>
+    <!-- pthread_cond_t* -->
+    <pointer-type-def type-id='type-id-13' size-in-bits='64' hash='6b4cb0e5ee22bf45' id='type-id-16'/>
+    <!-- pthread_cond_t* restrict -->
+    <qualified-type-def type-id='type-id-16' restrict='yes' hash='6351e463515c18b0' id='type-id-17'/>
+    <!-- pthread_mutex_t* restrict -->
+    <qualified-type-def type-id='type-id-18' restrict='yes' hash='3c27ee6cf07361e3' id='type-id-19'/>
+    <!-- pthread_mutex_t __urcu_compat_futex_lock -->
+    <var-decl name='__urcu_compat_futex_lock' type-id='type-id-20' mangled-name='__urcu_compat_futex_lock' visibility='default' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/compat_futex.c' line='31' column='1' elf-symbol-id='__urcu_compat_futex_lock'/>
+    <!-- pthread_cond_t __urcu_compat_futex_cond -->
+    <var-decl name='__urcu_compat_futex_cond' type-id='type-id-13' mangled-name='__urcu_compat_futex_cond' visibility='default' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/compat_futex.c' line='33' column='1' elf-symbol-id='__urcu_compat_futex_cond'/>
+    <!-- int compat_futex_noasync(int32_t*, int, int32_t, const timespec*, int32_t*, int32_t) -->
+    <function-decl name='compat_futex_noasync' mangled-name='compat_futex_noasync' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/compat_futex.c' line='41' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='compat_futex_noasync' hash='83ce6319883e0cd9'>
+      <!-- parameter of type 'int32_t*' -->
+      <parameter type-id='type-id-21' name='uaddr' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/compat_futex.c' line='105' column='1'/>
+      <!-- parameter of type 'int' -->
+      <parameter type-id='type-id-22' name='op' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/compat_futex.c' line='105' column='1'/>
+      <!-- parameter of type 'typedef int32_t' -->
+      <parameter type-id='type-id-23' name='val' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/compat_futex.c' line='105' column='1'/>
+      <!-- parameter of type 'const timespec*' -->
+      <parameter type-id='type-id-24' name='timeout' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/compat_futex.c' line='106' column='1'/>
+      <!-- parameter of type 'int32_t*' -->
+      <parameter type-id='type-id-21' name='uaddr2' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/compat_futex.c' line='106' column='1'/>
+      <!-- parameter of type 'typedef int32_t' -->
+      <parameter type-id='type-id-23' name='val3' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/compat_futex.c' line='106' column='1'/>
+      <!-- int -->
+      <return type-id='type-id-22'/>
+    </function-decl>
+    <!-- int compat_futex_async(int32_t*, int, int32_t, const timespec*, int32_t*, int32_t) -->
+    <function-decl name='compat_futex_async' mangled-name='compat_futex_async' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/compat_futex.c' line='105' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='compat_futex_async' hash='83ce6319883e0cd9'>
+      <!-- parameter of type 'int32_t*' -->
+      <parameter type-id='type-id-21' name='uaddr' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/compat_futex.c' line='105' column='1'/>
+      <!-- parameter of type 'int' -->
+      <parameter type-id='type-id-22' name='op' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/compat_futex.c' line='105' column='1'/>
+      <!-- parameter of type 'typedef int32_t' -->
+      <parameter type-id='type-id-23' name='val' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/compat_futex.c' line='105' column='1'/>
+      <!-- parameter of type 'const timespec*' -->
+      <parameter type-id='type-id-24' name='timeout' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/compat_futex.c' line='106' column='1'/>
+      <!-- parameter of type 'int32_t*' -->
+      <parameter type-id='type-id-21' name='uaddr2' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/compat_futex.c' line='106' column='1'/>
+      <!-- parameter of type 'typedef int32_t' -->
+      <parameter type-id='type-id-23' name='val3' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/compat_futex.c' line='106' column='1'/>
+      <!-- int -->
+      <return type-id='type-id-22'/>
+    </function-decl>
+    <!-- void __assert_fail(const char*, const char*, unsigned int, const char*) -->
+    <function-decl name='__assert_fail' filepath='/usr/include/assert.h' line='69' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='__assert_fail' hash='f20e7a25b596c040'>
+      <!-- parameter of type 'const char*' -->
+      <parameter type-id='type-id-25'/>
+      <!-- parameter of type 'const char*' -->
+      <parameter type-id='type-id-25'/>
+      <!-- parameter of type 'unsigned int' -->
+      <parameter type-id='type-id-9'/>
+      <!-- parameter of type 'const char*' -->
+      <parameter type-id='type-id-25'/>
+      <!-- void -->
+      <return type-id='type-id-26'/>
+    </function-decl>
+    <!-- int* __errno_location() -->
+    <function-decl name='__errno_location' filepath='/usr/include/errno.h' line='37' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='__errno_location' hash='c0e4f5f42afc96e0'>
+      <!-- int* -->
+      <return type-id='type-id-27'/>
+    </function-decl>
+    <!-- int pthread_mutex_lock(pthread_mutex_t*) -->
+    <function-decl name='pthread_mutex_lock' filepath='/usr/include/pthread.h' line='794' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='pthread_mutex_lock' hash='0e581935b984ff36'>
+      <!-- parameter of type 'pthread_mutex_t*' -->
+      <parameter type-id='type-id-18'/>
+      <!-- int -->
+      <return type-id='type-id-22'/>
+    </function-decl>
+    <!-- int pthread_mutex_unlock(pthread_mutex_t*) -->
+    <function-decl name='pthread_mutex_unlock' filepath='/usr/include/pthread.h' line='835' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='pthread_mutex_unlock' hash='0e581935b984ff36'>
+      <!-- parameter of type 'pthread_mutex_t*' -->
+      <parameter type-id='type-id-18'/>
+      <!-- int -->
+      <return type-id='type-id-22'/>
+    </function-decl>
+    <!-- int pthread_cond_broadcast(pthread_cond_t*) -->
+    <function-decl name='pthread_cond_broadcast' filepath='/usr/include/pthread.h' line='1125' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='pthread_cond_broadcast' hash='829779ecc6d552dd'>
+      <!-- parameter of type 'pthread_cond_t*' -->
+      <parameter type-id='type-id-16'/>
+      <!-- int -->
+      <return type-id='type-id-22'/>
+    </function-decl>
+    <!-- int pthread_cond_wait(pthread_cond_t* restrict, pthread_mutex_t* restrict) -->
+    <function-decl name='pthread_cond_wait' filepath='/usr/include/pthread.h' line='1133' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='pthread_cond_wait' hash='cb51d671dff00bdc'>
+      <!-- parameter of type 'pthread_cond_t* restrict' -->
+      <parameter type-id='type-id-17'/>
+      <!-- parameter of type 'pthread_mutex_t* restrict' -->
+      <parameter type-id='type-id-19'/>
+      <!-- int -->
+      <return type-id='type-id-22'/>
+    </function-decl>
+    <!-- int poll(pollfd*, nfds_t, int) -->
+    <function-decl name='poll' filepath='/usr/include/x86_64-linux-gnu/sys/poll.h' line='54' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='poll' hash='cb135ed4cbf61b36'>
+      <!-- parameter of type 'pollfd*' -->
+      <parameter type-id='type-id-28'/>
+      <!-- parameter of type 'typedef nfds_t' -->
+      <parameter type-id='type-id-29'/>
+      <!-- parameter of type 'int' -->
+      <parameter type-id='type-id-22'/>
+      <!-- int -->
+      <return type-id='type-id-22'/>
+    </function-decl>
+  </abi-instr>
+  <abi-instr address-size='64' path='lfstack.c' comp-dir-path='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src' language='LANG_C11'>
+    <!-- bool -->
+    <type-decl name='bool' size-in-bits='8' hash='5ba96bb22f4237fb' id='type-id-30'/>
+    <!-- char[40] -->
+    <array-type-def dimensions='1' type-id='type-id-1' size-in-bits='320' hash='e7f9696e246a3049' id='type-id-31'>
+      <!-- <anonymous range>[40] -->
+      <subrange length='40' lower-bound='0' upper-bound='39' type-id='type-id-3' size-in-bits='64' is-anonymous='yes' hash='6281bd35fbce8744' id='type-id-32'/>
+    </array-type-def>
+    <!-- char[4] -->
+    <array-type-def dimensions='1' type-id='type-id-1' size-in-bits='32' hash='932523ac2c3bfb84' id='type-id-33'>
+      <!-- <anonymous range>[4] -->
+      <subrange length='4' lower-bound='0' upper-bound='3' type-id='type-id-3' size-in-bits='64' is-anonymous='yes' hash='cee611f4a73e486c' id='type-id-34'/>
+    </array-type-def>
+    <!-- long int -->
+    <type-decl name='long int' size-in-bits='64' hash='b119fe0931d2ee10#2' id='type-id-35'/>
+    <!-- short int -->
+    <type-decl name='short int' size-in-bits='16' hash='6c2352eccdcd3eea#4' id='type-id-36'/>
+    <!-- struct __cds_lfs_stack -->
+    <class-decl name='__cds_lfs_stack' is-struct='yes' visibility='default' size-in-bits='64' filepath='../include/urcu/lfstack.h' line='59' column='1' hash='25504d31d51d1571' id='type-id-37'>
+      <data-member access='public' layout-offset-in-bits='0'>
+        <!-- cds_lfs_head* __cds_lfs_stack::head -->
+        <var-decl name='head' type-id='type-id-38' visibility='default' filepath='../include/urcu/lfstack.h' line='60' column='1'/>
+      </data-member>
+    </class-decl>
+    <!-- struct __pthread_internal_list -->
+    <class-decl name='__pthread_internal_list' is-struct='yes' visibility='default' size-in-bits='128' filepath='/usr/include/x86_64-linux-gnu/bits/thread-shared-types.h' line='51' column='1' hash='5bcfb7f1ab39fa47' id='type-id-39'>
+      <data-member access='public' layout-offset-in-bits='0'>
+        <!-- __pthread_internal_list* __pthread_internal_list::__prev -->
+        <var-decl name='__prev' type-id='type-id-40' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/thread-shared-types.h' line='53' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='64'>
+        <!-- __pthread_internal_list* __pthread_internal_list::__next -->
+        <var-decl name='__next' type-id='type-id-40' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/thread-shared-types.h' line='54' column='1'/>
+      </data-member>
+    </class-decl>
+    <!-- struct __pthread_mutex_s -->
+    <class-decl name='__pthread_mutex_s' is-struct='yes' visibility='default' size-in-bits='320' filepath='/usr/include/x86_64-linux-gnu/bits/struct_mutex.h' line='22' column='1' hash='765d7e157ef2ec37' id='type-id-41'>
+      <data-member access='public' layout-offset-in-bits='0'>
+        <!-- int __pthread_mutex_s::__lock -->
+        <var-decl name='__lock' type-id='type-id-22' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/struct_mutex.h' line='24' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='32'>
+        <!-- unsigned int __pthread_mutex_s::__count -->
+        <var-decl name='__count' type-id='type-id-9' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/struct_mutex.h' line='25' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='64'>
+        <!-- int __pthread_mutex_s::__owner -->
+        <var-decl name='__owner' type-id='type-id-22' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/struct_mutex.h' line='26' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='96'>
+        <!-- unsigned int __pthread_mutex_s::__nusers -->
+        <var-decl name='__nusers' type-id='type-id-9' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/struct_mutex.h' line='28' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='128'>
+        <!-- int __pthread_mutex_s::__kind -->
+        <var-decl name='__kind' type-id='type-id-22' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/struct_mutex.h' line='32' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='160'>
+        <!-- short int __pthread_mutex_s::__spins -->
+        <var-decl name='__spins' type-id='type-id-36' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/struct_mutex.h' line='34' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='176'>
+        <!-- short int __pthread_mutex_s::__elision -->
+        <var-decl name='__elision' type-id='type-id-36' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/struct_mutex.h' line='35' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='192'>
+        <!-- __pthread_list_t __pthread_mutex_s::__list -->
+        <var-decl name='__list' type-id='type-id-42' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/struct_mutex.h' line='36' column='1'/>
+      </data-member>
+    </class-decl>
+    <!-- struct cds_lfs_head -->
+    <class-decl name='cds_lfs_head' is-struct='yes' visibility='default' size-in-bits='64' filepath='../include/urcu/lfstack.h' line='55' column='1' hash='531f8e5ed4bd94fa' id='type-id-43'>
+      <data-member access='public' layout-offset-in-bits='0'>
+        <!-- cds_lfs_node cds_lfs_head::node -->
+        <var-decl name='node' type-id='type-id-44' visibility='default' filepath='../include/urcu/lfstack.h' line='56' column='1'/>
+      </data-member>
+    </class-decl>
+    <!-- struct cds_lfs_node -->
+    <class-decl name='cds_lfs_node' is-struct='yes' visibility='default' size-in-bits='64' filepath='../include/urcu/lfstack.h' line='45' column='1' hash='ff5fb56fff849318' id='type-id-44'>
+      <data-member access='public' layout-offset-in-bits='0'>
+        <!-- cds_lfs_node* cds_lfs_node::next -->
+        <var-decl name='next' type-id='type-id-45' visibility='default' filepath='../include/urcu/lfstack.h' line='46' column='1'/>
+      </data-member>
+    </class-decl>
+    <!-- struct cds_lfs_stack -->
+    <class-decl name='cds_lfs_stack' is-struct='yes' visibility='default' size-in-bits='384' filepath='../include/urcu/lfstack.h' line='63' column='1' hash='6f1e99c2d4f859c0' id='type-id-46'>
+      <data-member access='public' layout-offset-in-bits='0'>
+        <!-- cds_lfs_head* cds_lfs_stack::head -->
+        <var-decl name='head' type-id='type-id-38' visibility='default' filepath='../include/urcu/lfstack.h' line='64' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='64'>
+        <!-- pthread_mutex_t cds_lfs_stack::lock -->
+        <var-decl name='lock' type-id='type-id-20' visibility='default' filepath='../include/urcu/lfstack.h' line='65' column='1'/>
+      </data-member>
+    </class-decl>
+    <!-- typedef __pthread_internal_list __pthread_list_t -->
+    <typedef-decl name='__pthread_list_t' type-id='type-id-39' size-in-bits='128' filepath='/usr/include/x86_64-linux-gnu/bits/thread-shared-types.h' line='55' column='1' id='type-id-42'/>
+    <!-- typedef cds_lfs_stack_const_ptr_t cds_lfs_stack_const_ptr_t -->
+    <typedef-decl name='cds_lfs_stack_const_ptr_t' type-id='type-id-47' size-in-bits='64' filepath='../include/urcu/lfstack.h' line='91' column='1' id='type-id-48'/>
+    <!-- typedef cds_lfs_stack_ptr_t cds_lfs_stack_ptr_t -->
+    <typedef-decl name='cds_lfs_stack_ptr_t' type-id='type-id-49' size-in-bits='64' filepath='../include/urcu/lfstack.h' line='86' column='1' id='type-id-50'/>
+    <!-- typedef pthread_mutex_t pthread_mutex_t -->
+    <typedef-decl name='pthread_mutex_t' type-id='type-id-51' size-in-bits='320' filepath='/usr/include/x86_64-linux-gnu/bits/pthreadtypes.h' line='72' column='1' id='type-id-20'/>
+    <!-- typedef pthread_mutexattr_t pthread_mutexattr_t -->
+    <typedef-decl name='pthread_mutexattr_t' type-id='type-id-52' size-in-bits='32' filepath='/usr/include/x86_64-linux-gnu/bits/pthreadtypes.h' line='36' column='1' id='type-id-53'/>
+    <!-- union cds_lfs_stack_const_ptr_t -->
+    <union-decl name='cds_lfs_stack_const_ptr_t' naming-typedef-id='type-id-48' visibility='default' size-in-bits='64' filepath='../include/urcu/lfstack.h' line='88' column='1' hash='673dd688e27a6dd5' id='type-id-47'>
+      <data-member access='public'>
+        <!-- const __cds_lfs_stack* cds_lfs_stack_const_ptr_t::_s -->
+        <var-decl name='_s' type-id='type-id-54' visibility='default' filepath='../include/urcu/lfstack.h' line='89' column='1'/>
+      </data-member>
+      <data-member access='public'>
+        <!-- const cds_lfs_stack* cds_lfs_stack_const_ptr_t::s -->
+        <var-decl name='s' type-id='type-id-55' visibility='default' filepath='../include/urcu/lfstack.h' line='90' column='1'/>
+      </data-member>
+    </union-decl>
+    <!-- union cds_lfs_stack_ptr_t -->
+    <union-decl name='cds_lfs_stack_ptr_t' naming-typedef-id='type-id-50' visibility='default' size-in-bits='64' filepath='../include/urcu/lfstack.h' line='83' column='1' hash='3361df7451c0aab9' id='type-id-49'>
+      <data-member access='public'>
+        <!-- __cds_lfs_stack* cds_lfs_stack_ptr_t::_s -->
+        <var-decl name='_s' type-id='type-id-56' visibility='default' filepath='../include/urcu/lfstack.h' line='84' column='1'/>
+      </data-member>
+      <data-member access='public'>
+        <!-- cds_lfs_stack* cds_lfs_stack_ptr_t::s -->
+        <var-decl name='s' type-id='type-id-57' visibility='default' filepath='../include/urcu/lfstack.h' line='85' column='1'/>
+      </data-member>
+    </union-decl>
+    <!-- union pthread_mutex_t -->
+    <union-decl name='pthread_mutex_t' naming-typedef-id='type-id-20' visibility='default' size-in-bits='320' filepath='/usr/include/x86_64-linux-gnu/bits/pthreadtypes.h' line='67' column='1' hash='8e3e5ddbcaed875f' id='type-id-51'>
+      <data-member access='public'>
+        <!-- __pthread_mutex_s pthread_mutex_t::__data -->
+        <var-decl name='__data' type-id='type-id-41' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/pthreadtypes.h' line='69' column='1'/>
+      </data-member>
+      <data-member access='public'>
+        <!-- char pthread_mutex_t::__size[40] -->
+        <var-decl name='__size' type-id='type-id-31' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/pthreadtypes.h' line='70' column='1'/>
+      </data-member>
+      <data-member access='public'>
+        <!-- long int pthread_mutex_t::__align -->
+        <var-decl name='__align' type-id='type-id-35' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/pthreadtypes.h' line='71' column='1'/>
+      </data-member>
+    </union-decl>
+    <!-- union pthread_mutexattr_t -->
+    <union-decl name='pthread_mutexattr_t' naming-typedef-id='type-id-53' visibility='default' size-in-bits='32' filepath='/usr/include/x86_64-linux-gnu/bits/pthreadtypes.h' line='32' column='1' hash='9efcb016ff95e817' id='type-id-52'>
+      <data-member access='public'>
+        <!-- char pthread_mutexattr_t::__size[4] -->
+        <var-decl name='__size' type-id='type-id-33' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/pthreadtypes.h' line='34' column='1'/>
+      </data-member>
+      <data-member access='public'>
+        <!-- int pthread_mutexattr_t::__align -->
+        <var-decl name='__align' type-id='type-id-22' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/pthreadtypes.h' line='35' column='1'/>
+      </data-member>
+    </union-decl>
+    <!-- __cds_lfs_stack* -->
+    <pointer-type-def type-id='type-id-37' size-in-bits='64' hash='a3753448bfd39a66' id='type-id-56'/>
+    <!-- __pthread_internal_list* -->
+    <pointer-type-def type-id='type-id-39' size-in-bits='64' hash='b83eb2deac70d470' id='type-id-40'/>
+    <!-- cds_lfs_head* -->
+    <pointer-type-def type-id='type-id-43' size-in-bits='64' hash='aad64ace9c637b42' id='type-id-38'/>
+    <!-- cds_lfs_node* -->
+    <pointer-type-def type-id='type-id-44' size-in-bits='64' hash='171768ee0be5d17e' id='type-id-45'/>
+    <!-- cds_lfs_stack* -->
+    <pointer-type-def type-id='type-id-46' size-in-bits='64' hash='42b84ccc3d0b097f' id='type-id-57'/>
+    <!-- const __cds_lfs_stack -->
+    <qualified-type-def type-id='type-id-37' const='yes' hash='4e94360fd77bdb66' id='type-id-58'/>
+    <!-- const __cds_lfs_stack* -->
+    <pointer-type-def type-id='type-id-58' size-in-bits='64' hash='69889d21a4ae7328' id='type-id-54'/>
+    <!-- const cds_lfs_stack -->
+    <qualified-type-def type-id='type-id-46' const='yes' hash='4fe5c1bdeff805c0' id='type-id-59'/>
+    <!-- const cds_lfs_stack* -->
+    <pointer-type-def type-id='type-id-59' size-in-bits='64' hash='406b8a22dd2ce39b' id='type-id-55'/>
+    <!-- const pthread_mutexattr_t -->
+    <qualified-type-def type-id='type-id-53' const='yes' hash='c2459df9f244e03e' id='type-id-60'/>
+    <!-- const pthread_mutexattr_t* -->
+    <pointer-type-def type-id='type-id-60' size-in-bits='64' hash='27684f07d936e645' id='type-id-61'/>
+    <!-- pthread_mutex_t* -->
+    <pointer-type-def type-id='type-id-20' size-in-bits='64' hash='8f341987365c3f23' id='type-id-18'/>
+    <!-- void cds_lfs_node_init(cds_lfs_node*) -->
+    <function-decl name='cds_lfs_node_init' mangled-name='cds_lfs_node_init' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/lfstack.c' line='19' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='cds_lfs_node_init' hash='35ffc648581e8f1e'>
+      <!-- parameter of type 'cds_lfs_node*' -->
+      <parameter type-id='type-id-45' name='node' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/lfstack.c' line='19' column='1'/>
+      <!-- void -->
+      <return type-id='type-id-26'/>
+    </function-decl>
+    <!-- void cds_lfs_init(cds_lfs_stack*) -->
+    <function-decl name='cds_lfs_init' mangled-name='cds_lfs_init' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/lfstack.c' line='24' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='cds_lfs_init' hash='83f47f0ced98c5f3'>
+      <!-- parameter of type 'cds_lfs_stack*' -->
+      <parameter type-id='type-id-57' name='s' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/lfstack.c' line='64' column='1'/>
+      <!-- void -->
+      <return type-id='type-id-26'/>
+    </function-decl>
+    <!-- void cds_lfs_destroy(cds_lfs_stack*) -->
+    <function-decl name='cds_lfs_destroy' mangled-name='cds_lfs_destroy' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/lfstack.c' line='29' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='cds_lfs_destroy' hash='83f47f0ced98c5f3'>
+      <!-- parameter of type 'cds_lfs_stack*' -->
+      <parameter type-id='type-id-57' name='s' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/lfstack.c' line='64' column='1'/>
+      <!-- void -->
+      <return type-id='type-id-26'/>
+    </function-decl>
+    <!-- void __cds_lfs_init(__cds_lfs_stack*) -->
+    <function-decl name='__cds_lfs_init' mangled-name='__cds_lfs_init' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/lfstack.c' line='34' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='__cds_lfs_init' hash='544c9cf504299dec'>
+      <!-- parameter of type '__cds_lfs_stack*' -->
+      <parameter type-id='type-id-56' name='s' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/lfstack.c' line='34' column='1'/>
+      <!-- void -->
+      <return type-id='type-id-26'/>
+    </function-decl>
+    <!-- bool cds_lfs_empty(cds_lfs_stack_const_ptr_t) -->
+    <function-decl name='cds_lfs_empty' mangled-name='cds_lfs_empty' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/lfstack.c' line='39' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='cds_lfs_empty' hash='c7c710e908194b91'>
+      <!-- parameter of type 'typedef cds_lfs_stack_const_ptr_t' -->
+      <parameter type-id='type-id-48' name='s' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/lfstack.c' line='39' column='1'/>
+      <!-- bool -->
+      <return type-id='type-id-30'/>
+    </function-decl>
+    <!-- bool cds_lfs_push(cds_lfs_stack_ptr_t, cds_lfs_node*) -->
+    <function-decl name='cds_lfs_push' mangled-name='cds_lfs_push' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/lfstack.c' line='44' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='cds_lfs_push' hash='e787ee28d3e3d29a'>
+      <!-- parameter of type 'typedef cds_lfs_stack_ptr_t' -->
+      <parameter type-id='type-id-50' name='s' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/lfstack.c' line='44' column='1'/>
+      <!-- parameter of type 'cds_lfs_node*' -->
+      <parameter type-id='type-id-45' name='node' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/lfstack.c' line='44' column='1'/>
+      <!-- bool -->
+      <return type-id='type-id-30'/>
+    </function-decl>
+    <!-- cds_lfs_node* cds_lfs_pop_blocking(cds_lfs_stack*) -->
+    <function-decl name='cds_lfs_pop_blocking' mangled-name='cds_lfs_pop_blocking' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/lfstack.c' line='49' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='cds_lfs_pop_blocking' hash='d13ca6863f34c852'>
+      <!-- parameter of type 'cds_lfs_stack*' -->
+      <parameter type-id='type-id-57' name='s' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/lfstack.c' line='49' column='1'/>
+      <!-- cds_lfs_node* -->
+      <return type-id='type-id-45'/>
+    </function-decl>
+    <!-- cds_lfs_head* cds_lfs_pop_all_blocking(cds_lfs_stack*) -->
+    <function-decl name='cds_lfs_pop_all_blocking' mangled-name='cds_lfs_pop_all_blocking' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/lfstack.c' line='54' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='cds_lfs_pop_all_blocking' hash='3f1768fbbbb08ba4'>
+      <!-- parameter of type 'cds_lfs_stack*' -->
+      <parameter type-id='type-id-57' name='s' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/lfstack.c' line='54' column='1'/>
+      <!-- cds_lfs_head* -->
+      <return type-id='type-id-38'/>
+    </function-decl>
+    <!-- void cds_lfs_pop_lock(cds_lfs_stack*) -->
+    <function-decl name='cds_lfs_pop_lock' mangled-name='cds_lfs_pop_lock' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/lfstack.c' line='59' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='cds_lfs_pop_lock' hash='83f47f0ced98c5f3'>
+      <!-- parameter of type 'cds_lfs_stack*' -->
+      <parameter type-id='type-id-57' name='s' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/lfstack.c' line='64' column='1'/>
+      <!-- void -->
+      <return type-id='type-id-26'/>
+    </function-decl>
+    <!-- void cds_lfs_pop_unlock(cds_lfs_stack*) -->
+    <function-decl name='cds_lfs_pop_unlock' mangled-name='cds_lfs_pop_unlock' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/lfstack.c' line='64' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='cds_lfs_pop_unlock' hash='83f47f0ced98c5f3'>
+      <!-- parameter of type 'cds_lfs_stack*' -->
+      <parameter type-id='type-id-57' name='s' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/lfstack.c' line='64' column='1'/>
+      <!-- void -->
+      <return type-id='type-id-26'/>
+    </function-decl>
+    <!-- cds_lfs_node* __cds_lfs_pop(cds_lfs_stack_ptr_t) -->
+    <function-decl name='__cds_lfs_pop' mangled-name='__cds_lfs_pop' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/lfstack.c' line='69' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='__cds_lfs_pop' hash='35ffc648581e8f1e'>
+      <!-- parameter of type 'typedef cds_lfs_stack_ptr_t' -->
+      <parameter type-id='type-id-50' name='s' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/lfstack.c' line='69' column='1'/>
+      <!-- cds_lfs_node* -->
+      <return type-id='type-id-45'/>
+    </function-decl>
+    <!-- cds_lfs_head* __cds_lfs_pop_all(cds_lfs_stack_ptr_t) -->
+    <function-decl name='__cds_lfs_pop_all' mangled-name='__cds_lfs_pop_all' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/lfstack.c' line='74' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='__cds_lfs_pop_all' hash='3150a433dc409bc3'>
+      <!-- parameter of type 'typedef cds_lfs_stack_ptr_t' -->
+      <parameter type-id='type-id-50' name='s' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/lfstack.c' line='74' column='1'/>
+      <!-- cds_lfs_head* -->
+      <return type-id='type-id-38'/>
+    </function-decl>
+    <!-- int pthread_mutex_init(pthread_mutex_t*, const pthread_mutexattr_t*) -->
+    <function-decl name='pthread_mutex_init' filepath='/usr/include/pthread.h' line='781' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='pthread_mutex_init' hash='f616842fe991fad1'>
+      <!-- parameter of type 'pthread_mutex_t*' -->
+      <parameter type-id='type-id-18'/>
+      <!-- parameter of type 'const pthread_mutexattr_t*' -->
+      <parameter type-id='type-id-61'/>
+      <!-- int -->
+      <return type-id='type-id-22'/>
+    </function-decl>
+    <!-- int pthread_mutex_destroy(pthread_mutex_t*) -->
+    <function-decl name='pthread_mutex_destroy' filepath='/usr/include/pthread.h' line='786' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='pthread_mutex_destroy' hash='0e581935b984ff36'>
+      <!-- parameter of type 'pthread_mutex_t*' -->
+      <parameter type-id='type-id-18'/>
+      <!-- int -->
+      <return type-id='type-id-22'/>
+    </function-decl>
+  </abi-instr>
+  <abi-instr address-size='64' path='rculfhash-mm-chunk.c' comp-dir-path='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src' language='LANG_C11'>
+    <!-- const cds_lfht_mm_type cds_lfht_mm_chunk -->
+    <var-decl name='cds_lfht_mm_chunk' type-id='type-id-62' visibility='default' filepath='../include/urcu/rculfhash.h' line='138' column='1'/>
+  </abi-instr>
+  <abi-instr address-size='64' path='rculfhash-mm-mmap.c' comp-dir-path='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src' language='LANG_C11'>
+    <!-- const cds_lfht_mm_type cds_lfht_mm_mmap -->
+    <var-decl name='cds_lfht_mm_mmap' type-id='type-id-62' visibility='default' filepath='../include/urcu/rculfhash.h' line='139' column='1'/>
+    <!-- void perror(const char*) -->
+    <function-decl name='perror' filepath='/usr/include/stdio.h' line='868' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='perror' hash='53885bde0aa65efe'>
+      <!-- parameter of type 'const char*' -->
+      <parameter type-id='type-id-25'/>
+      <!-- void -->
+      <return type-id='type-id-26'/>
+    </function-decl>
+    <!-- void abort() -->
+    <function-decl name='abort' filepath='/usr/include/stdlib.h' line='730' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='abort' hash='7f32ffea222edbe7'>
+      <!-- void -->
+      <return type-id='type-id-26'/>
+    </function-decl>
+    <!-- int getpagesize() -->
+    <function-decl name='getpagesize' filepath='/usr/include/unistd.h' line='1011' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='getpagesize' hash='388da3fa973fde78'>
+      <!-- int -->
+      <return type-id='type-id-22'/>
+    </function-decl>
+    <!-- void* mmap(void*, size_t, int, int, int, __off_t) -->
+    <function-decl name='mmap' filepath='/usr/include/x86_64-linux-gnu/sys/mman.h' line='57' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='mmap' hash='d89e6f5baae5273c'>
+      <!-- parameter of type 'void*' -->
+      <parameter type-id='type-id-63'/>
+      <!-- parameter of type 'typedef size_t' -->
+      <parameter type-id='type-id-64'/>
+      <!-- parameter of type 'int' -->
+      <parameter type-id='type-id-22'/>
+      <!-- parameter of type 'int' -->
+      <parameter type-id='type-id-22'/>
+      <!-- parameter of type 'int' -->
+      <parameter type-id='type-id-22'/>
+      <!-- parameter of type 'typedef __off_t' -->
+      <parameter type-id='type-id-65'/>
+      <!-- void* -->
+      <return type-id='type-id-63'/>
+    </function-decl>
+    <!-- int munmap(void*, size_t) -->
+    <function-decl name='munmap' filepath='/usr/include/x86_64-linux-gnu/sys/mman.h' line='76' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='munmap' hash='b6a97d07f8261bc0'>
+      <!-- parameter of type 'void*' -->
+      <parameter type-id='type-id-63'/>
+      <!-- parameter of type 'typedef size_t' -->
+      <parameter type-id='type-id-64'/>
+      <!-- int -->
+      <return type-id='type-id-22'/>
+    </function-decl>
+    <!-- int (void) -->
+    <function-type size-in-bits='64' hash='388da3fa973fde78' id='type-id-66'>
+      <!-- int -->
+      <return type-id='type-id-22'/>
+    </function-type>
+    <!-- void (void) -->
+    <function-type size-in-bits='64' hash='7f32ffea222edbe7' id='type-id-67'>
+      <!-- void -->
+      <return type-id='type-id-26'/>
+    </function-type>
+  </abi-instr>
+  <abi-instr address-size='64' path='rculfhash-mm-order.c' comp-dir-path='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src' language='LANG_C11'>
+    <!-- const cds_lfht_mm_type cds_lfht_mm_order -->
+    <var-decl name='cds_lfht_mm_order' type-id='type-id-62' visibility='default' filepath='../include/urcu/rculfhash.h' line='137' column='1'/>
+  </abi-instr>
+  <abi-instr address-size='64' path='rculfhash.c' comp-dir-path='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src' language='LANG_C11'>
+    <!-- cds_lfht_node*[64] -->
+    <array-type-def dimensions='1' type-id='type-id-68' size-in-bits='4096' hash='7b4b79cb7c664de1' id='type-id-69'>
+      <!-- <anonymous range>[64] -->
+      <subrange length='64' lower-bound='0' upper-bound='63' type-id='type-id-3' size-in-bits='64' is-anonymous='yes' hash='6066f2053fe47763' id='type-id-70'/>
+    </array-type-def>
+    <!-- cds_lfht_node*[] -->
+    <array-type-def dimensions='1' type-id='type-id-68' size-in-bits='unknown' hash='761385490f9a2597' id='type-id-71'>
+      <!-- <anonymous range>[] -->
+      <subrange length='unknown' lower-bound='0' upper-bound='0' type-id='type-id-3' size-in-bits='64' is-anonymous='yes' hash='eba0a2b392137dcb' id='type-id-72'/>
+    </array-type-def>
+    <!-- char[256] -->
+    <array-type-def dimensions='1' type-id='type-id-1' size-in-bits='2048' hash='b1acd4e4c2ca8eab' id='type-id-73'>
+      <!-- <anonymous range>[256] -->
+      <subrange length='256' lower-bound='0' upper-bound='255' type-id='type-id-3' size-in-bits='64' is-anonymous='yes' hash='5cb16198282e86c6' id='type-id-74'/>
+    </array-type-def>
+    <!-- struct cds_lfht -->
+    <class-decl name='cds_lfht' is-struct='yes' visibility='default' size-in-bits='5952' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash-internal.h' line='58' column='1' hash='b70326f503b4e62e' id='type-id-75'>
+      <data-member access='public' layout-offset-in-bits='0'>
+        <!-- unsigned long int cds_lfht::max_nr_buckets -->
+        <var-decl name='max_nr_buckets' type-id='type-id-3' visibility='default' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash-internal.h' line='60' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='64'>
+        <!-- const cds_lfht_mm_type* cds_lfht::mm -->
+        <var-decl name='mm' type-id='type-id-76' visibility='default' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash-internal.h' line='61' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='128'>
+        <!-- const cds_lfht_alloc* cds_lfht::alloc -->
+        <var-decl name='alloc' type-id='type-id-77' visibility='default' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash-internal.h' line='62' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='192'>
+        <!-- const rcu_flavor_struct* cds_lfht::flavor -->
+        <var-decl name='flavor' type-id='type-id-78' visibility='default' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash-internal.h' line='63' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='256'>
+        <!-- long int cds_lfht::count -->
+        <var-decl name='count' type-id='type-id-35' visibility='default' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash-internal.h' line='65' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='320'>
+        <!-- pthread_mutex_t cds_lfht::resize_mutex -->
+        <var-decl name='resize_mutex' type-id='type-id-20' visibility='default' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash-internal.h' line='74' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='640'>
+        <!-- pthread_attr_t* cds_lfht::caller_resize_attr -->
+        <var-decl name='caller_resize_attr' type-id='type-id-79' visibility='default' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash-internal.h' line='75' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='704'>
+        <!-- pthread_attr_t cds_lfht::resize_attr -->
+        <var-decl name='resize_attr' type-id='type-id-80' visibility='default' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash-internal.h' line='76' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='1152'>
+        <!-- unsigned int cds_lfht::in_progress_destroy -->
+        <var-decl name='in_progress_destroy' type-id='type-id-9' visibility='default' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash-internal.h' line='77' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='1216'>
+        <!-- unsigned long int cds_lfht::resize_target -->
+        <var-decl name='resize_target' type-id='type-id-3' visibility='default' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash-internal.h' line='78' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='1280'>
+        <!-- int cds_lfht::resize_initiated -->
+        <var-decl name='resize_initiated' type-id='type-id-22' visibility='default' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash-internal.h' line='79' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='1344'>
+        <!-- urcu_work cds_lfht::destroy_work -->
+        <var-decl name='destroy_work' type-id='type-id-81' visibility='default' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash-internal.h' line='80' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='1472'>
+        <!-- int cds_lfht::flags -->
+        <var-decl name='flags' type-id='type-id-22' visibility='default' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash-internal.h' line='85' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='1536'>
+        <!-- unsigned long int cds_lfht::min_alloc_buckets_order -->
+        <var-decl name='min_alloc_buckets_order' type-id='type-id-3' visibility='default' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash-internal.h' line='86' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='1600'>
+        <!-- unsigned long int cds_lfht::min_nr_alloc_buckets -->
+        <var-decl name='min_nr_alloc_buckets' type-id='type-id-3' visibility='default' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash-internal.h' line='87' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='1664'>
+        <!-- ht_items_count* cds_lfht::split_count -->
+        <var-decl name='split_count' type-id='type-id-82' visibility='default' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash-internal.h' line='88' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='1728'>
+        <!-- unsigned long int cds_lfht::size -->
+        <var-decl name='size' type-id='type-id-3' visibility='default' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash-internal.h' line='93' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='1792'>
+        <!-- cds_lfht_node* (* cds_lfht::bucket_at)(cds_lfht*, unsigned long int) -->
+        <var-decl name='bucket_at' type-id='type-id-83' visibility='default' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash-internal.h' line='98' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='1856'>
+        <!-- union {cds_lfht_node* tbl_order[64]; cds_lfht_node* tbl_chunk[]; cds_lfht_node* tbl_mmap;} -->
+        <var-decl name='' type-id='type-id-84' visibility='default'/>
+      </data-member>
+    </class-decl>
+    <!-- struct cds_lfht_alloc -->
+    <class-decl name='cds_lfht_alloc' is-struct='yes' visibility='default' size-in-bits='384' filepath='../include/urcu/rculfhash.h' line='74' column='1' hash='1407b2cae54e145b' id='type-id-85'>
+      <data-member access='public' layout-offset-in-bits='0'>
+        <!-- void* (* cds_lfht_alloc::malloc)(void*, size_t) -->
+        <var-decl name='malloc' type-id='type-id-86' visibility='default' filepath='../include/urcu/rculfhash.h' line='75' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='64'>
+        <!-- void* (* cds_lfht_alloc::calloc)(void*, size_t, size_t) -->
+        <var-decl name='calloc' type-id='type-id-87' visibility='default' filepath='../include/urcu/rculfhash.h' line='76' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='128'>
+        <!-- void* (* cds_lfht_alloc::realloc)(void*, void*, size_t) -->
+        <var-decl name='realloc' type-id='type-id-88' visibility='default' filepath='../include/urcu/rculfhash.h' line='77' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='192'>
+        <!-- void* (* cds_lfht_alloc::aligned_alloc)(void*, size_t, size_t) -->
+        <var-decl name='aligned_alloc' type-id='type-id-87' visibility='default' filepath='../include/urcu/rculfhash.h' line='78' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='256'>
+        <!-- void (* cds_lfht_alloc::free)(void*, void*) -->
+        <var-decl name='free' type-id='type-id-89' visibility='default' filepath='../include/urcu/rculfhash.h' line='79' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='320'>
+        <!-- void* cds_lfht_alloc::state -->
+        <var-decl name='state' type-id='type-id-63' visibility='default' filepath='../include/urcu/rculfhash.h' line='80' column='1'/>
+      </data-member>
+    </class-decl>
+    <!-- struct cds_lfht_iter -->
+    <class-decl name='cds_lfht_iter' is-struct='yes' visibility='default' size-in-bits='128' filepath='../include/urcu/rculfhash.h' line='55' column='1' hash='d6904d9c93672d48' id='type-id-90'>
+      <data-member access='public' layout-offset-in-bits='0'>
+        <!-- cds_lfht_node* cds_lfht_iter::node -->
+        <var-decl name='node' type-id='type-id-68' visibility='default' filepath='../include/urcu/rculfhash.h' line='56' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='64'>
+        <!-- cds_lfht_node* cds_lfht_iter::next -->
+        <var-decl name='next' type-id='type-id-68' visibility='default' filepath='../include/urcu/rculfhash.h' line='56' column='1'/>
+      </data-member>
+    </class-decl>
+    <!-- struct cds_lfht_mm_type -->
+    <class-decl name='cds_lfht_mm_type' is-struct='yes' visibility='default' size-in-bits='256' filepath='../include/urcu/rculfhash.h' line='128' column='1' hash='48bf3672591f7770' id='type-id-91'>
+      <data-member access='public' layout-offset-in-bits='0'>
+        <!-- cds_lfht* (* cds_lfht_mm_type::alloc_cds_lfht)(unsigned long int, unsigned long int, const cds_lfht_alloc*) -->
+        <var-decl name='alloc_cds_lfht' type-id='type-id-92' visibility='default' filepath='../include/urcu/rculfhash.h' line='129' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='64'>
+        <!-- void (* cds_lfht_mm_type::alloc_bucket_table)(cds_lfht*, unsigned long int) -->
+        <var-decl name='alloc_bucket_table' type-id='type-id-93' visibility='default' filepath='../include/urcu/rculfhash.h' line='131' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='128'>
+        <!-- void (* cds_lfht_mm_type::free_bucket_table)(cds_lfht*, unsigned long int) -->
+        <var-decl name='free_bucket_table' type-id='type-id-93' visibility='default' filepath='../include/urcu/rculfhash.h' line='132' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='192'>
+        <!-- cds_lfht_node* (* cds_lfht_mm_type::bucket_at)(cds_lfht*, unsigned long int) -->
+        <var-decl name='bucket_at' type-id='type-id-83' visibility='default' filepath='../include/urcu/rculfhash.h' line='133' column='1'/>
+      </data-member>
+    </class-decl>
+    <!-- struct cds_lfht_node -->
+    <class-decl name='cds_lfht_node' is-struct='yes' visibility='default' size-in-bits='128' filepath='../include/urcu/rculfhash.h' line='49' column='1' hash='9d8d744bd89f10fe' id='type-id-94'>
+      <data-member access='public' layout-offset-in-bits='0'>
+        <!-- cds_lfht_node* cds_lfht_node::next -->
+        <var-decl name='next' type-id='type-id-68' visibility='default' filepath='../include/urcu/rculfhash.h' line='50' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='64'>
+        <!-- unsigned long int cds_lfht_node::reverse_hash -->
+        <var-decl name='reverse_hash' type-id='type-id-3' visibility='default' filepath='../include/urcu/rculfhash.h' line='51' column='1'/>
+      </data-member>
+    </class-decl>
+    <!-- struct dirent -->
+    <class-decl name='dirent' is-struct='yes' visibility='default' size-in-bits='2240' filepath='/usr/include/x86_64-linux-gnu/bits/dirent.h' line='22' column='1' hash='f8f1acd4a88a2190' id='type-id-95'>
+      <data-member access='public' layout-offset-in-bits='0'>
+        <!-- __ino_t dirent::d_ino -->
+        <var-decl name='d_ino' type-id='type-id-96' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/dirent.h' line='25' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='64'>
+        <!-- __off_t dirent::d_off -->
+        <var-decl name='d_off' type-id='type-id-65' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/dirent.h' line='26' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='128'>
+        <!-- unsigned short int dirent::d_reclen -->
+        <var-decl name='d_reclen' type-id='type-id-97' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/dirent.h' line='31' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='144'>
+        <!-- unsigned char dirent::d_type -->
+        <var-decl name='d_type' type-id='type-id-98' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/dirent.h' line='32' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='152'>
+        <!-- char dirent::d_name[256] -->
+        <var-decl name='d_name' type-id='type-id-73' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/dirent.h' line='33' column='1'/>
+      </data-member>
+    </class-decl>
+    <!-- struct ht_items_count -->
+    <class-decl name='ht_items_count' is-struct='yes' visibility='default' size-in-bits='1024' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='325' column='1' hash='a2644082d5f7cac0' id='type-id-99'>
+      <data-member access='public' layout-offset-in-bits='0'>
+        <!-- unsigned long int ht_items_count::add -->
+        <var-decl name='add' type-id='type-id-3' visibility='default' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='326' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='64'>
+        <!-- unsigned long int ht_items_count::del -->
+        <var-decl name='del' type-id='type-id-3' visibility='default' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='326' column='1'/>
+      </data-member>
+    </class-decl>
+    <!-- struct rcu_flavor_struct -->
+    <class-decl name='rcu_flavor_struct' is-struct='yes' visibility='default' size-in-bits='1024' filepath='../include/urcu/flavor.h' line='30' column='1' hash='79cf2721469b4ceb' id='type-id-100'>
+      <data-member access='public' layout-offset-in-bits='0'>
+        <!-- void (* rcu_flavor_struct::read_lock)(void) -->
+        <var-decl name='read_lock' type-id='type-id-101' visibility='default' filepath='../include/urcu/flavor.h' line='31' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='64'>
+        <!-- void (* rcu_flavor_struct::read_unlock)(void) -->
+        <var-decl name='read_unlock' type-id='type-id-101' visibility='default' filepath='../include/urcu/flavor.h' line='32' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='128'>
+        <!-- int (* rcu_flavor_struct::read_ongoing)(void) -->
+        <var-decl name='read_ongoing' type-id='type-id-102' visibility='default' filepath='../include/urcu/flavor.h' line='33' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='192'>
+        <!-- void (* rcu_flavor_struct::read_quiescent_state)(void) -->
+        <var-decl name='read_quiescent_state' type-id='type-id-101' visibility='default' filepath='../include/urcu/flavor.h' line='34' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='256'>
+        <!-- void (* rcu_flavor_struct::update_call_rcu)(rcu_head*, void (*)(rcu_head*)) -->
+        <var-decl name='update_call_rcu' type-id='type-id-103' visibility='default' filepath='../include/urcu/flavor.h' line='35' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='320'>
+        <!-- void (* rcu_flavor_struct::update_synchronize_rcu)(void) -->
+        <var-decl name='update_synchronize_rcu' type-id='type-id-101' visibility='default' filepath='../include/urcu/flavor.h' line='37' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='384'>
+        <!-- void (* rcu_flavor_struct::update_defer_rcu)(void (*)(void*), void*) -->
+        <var-decl name='update_defer_rcu' type-id='type-id-104' visibility='default' filepath='../include/urcu/flavor.h' line='38' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='448'>
+        <!-- void (* rcu_flavor_struct::thread_offline)(void) -->
+        <var-decl name='thread_offline' type-id='type-id-101' visibility='default' filepath='../include/urcu/flavor.h' line='40' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='512'>
+        <!-- void (* rcu_flavor_struct::thread_online)(void) -->
+        <var-decl name='thread_online' type-id='type-id-101' visibility='default' filepath='../include/urcu/flavor.h' line='41' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='576'>
+        <!-- void (* rcu_flavor_struct::register_thread)(void) -->
+        <var-decl name='register_thread' type-id='type-id-101' visibility='default' filepath='../include/urcu/flavor.h' line='42' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='640'>
+        <!-- void (* rcu_flavor_struct::unregister_thread)(void) -->
+        <var-decl name='unregister_thread' type-id='type-id-101' visibility='default' filepath='../include/urcu/flavor.h' line='43' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='704'>
+        <!-- void (* rcu_flavor_struct::barrier)(void) -->
+        <var-decl name='barrier' type-id='type-id-101' visibility='default' filepath='../include/urcu/flavor.h' line='45' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='768'>
+        <!-- void (* rcu_flavor_struct::register_rculfhash_atfork)(urcu_atfork*) -->
+        <var-decl name='register_rculfhash_atfork' type-id='type-id-105' visibility='default' filepath='../include/urcu/flavor.h' line='47' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='832'>
+        <!-- void (* rcu_flavor_struct::unregister_rculfhash_atfork)(urcu_atfork*) -->
+        <var-decl name='unregister_rculfhash_atfork' type-id='type-id-105' visibility='default' filepath='../include/urcu/flavor.h' line='48' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='896'>
+        <!-- urcu_gp_poll_state (* rcu_flavor_struct::update_start_poll_synchronize_rcu)(void) -->
+        <var-decl name='update_start_poll_synchronize_rcu' type-id='type-id-106' visibility='default' filepath='../include/urcu/flavor.h' line='50' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='960'>
+        <!-- bool (* rcu_flavor_struct::update_poll_state_synchronize_rcu)(urcu_gp_poll_state) -->
+        <var-decl name='update_poll_state_synchronize_rcu' type-id='type-id-107' visibility='default' filepath='../include/urcu/flavor.h' line='51' column='1'/>
+      </data-member>
+    </class-decl>
+    <!-- struct urcu_atfork -->
+    <class-decl name='urcu_atfork' is-struct='yes' visibility='default' size-in-bits='256' filepath='../include/urcu/flavor.h' line='20' column='1' hash='b293ea3330ee7d61' id='type-id-108'>
+      <data-member access='public' layout-offset-in-bits='0'>
+        <!-- void (* urcu_atfork::before_fork)(void*) -->
+        <var-decl name='before_fork' type-id='type-id-109' visibility='default' filepath='../include/urcu/flavor.h' line='21' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='64'>
+        <!-- void (* urcu_atfork::after_fork_parent)(void*) -->
+        <var-decl name='after_fork_parent' type-id='type-id-109' visibility='default' filepath='../include/urcu/flavor.h' line='22' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='128'>
+        <!-- void (* urcu_atfork::after_fork_child)(void*) -->
+        <var-decl name='after_fork_child' type-id='type-id-109' visibility='default' filepath='../include/urcu/flavor.h' line='23' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='192'>
+        <!-- void* urcu_atfork::priv -->
+        <var-decl name='priv' type-id='type-id-63' visibility='default' filepath='../include/urcu/flavor.h' line='24' column='1'/>
+      </data-member>
+    </class-decl>
+    <!-- struct urcu_gp_poll_state -->
+    <class-decl name='urcu_gp_poll_state' is-struct='yes' visibility='default' size-in-bits='64' filepath='../include/urcu/urcu-poll.h' line='12' column='1' hash='4cd6ebfc2c8f186d' id='type-id-110'>
+      <data-member access='public' layout-offset-in-bits='0'>
+        <!-- unsigned long int urcu_gp_poll_state::grace_period_id -->
+        <var-decl name='grace_period_id' type-id='type-id-3' visibility='default' filepath='../include/urcu/urcu-poll.h' line='13' column='1'/>
+      </data-member>
+    </class-decl>
+    <!-- typedef unsigned long int __ino_t -->
+    <typedef-decl name='__ino_t' type-id='type-id-3' size-in-bits='64' filepath='/usr/include/x86_64-linux-gnu/bits/types.h' line='148' column='1' hash='8fdc5eea2983a729' id='type-id-96'/>
+    <!-- typedef long int __ssize_t -->
+    <typedef-decl name='__ssize_t' type-id='type-id-35' size-in-bits='64' filepath='/usr/include/x86_64-linux-gnu/bits/types.h' line='194' column='1' hash='b119fe0931d2ee10' id='type-id-111'/>
+    <!-- typedef int (*)(cds_lfht_node*, void*) cds_lfht_match_fct -->
+    <typedef-decl name='cds_lfht_match_fct' type-id='type-id-112' size-in-bits='64' filepath='../include/urcu/rculfhash.h' line='96' column='1' hash='fd7a63c0c6c822c4' id='type-id-113'/>
+    <!-- typedef __ssize_t ssize_t -->
+    <typedef-decl name='ssize_t' type-id='type-id-111' size-in-bits='64' filepath='/usr/include/x86_64-linux-gnu/sys/types.h' line='108' column='1' hash='b119fe0931d2ee10' id='type-id-114'/>
+    <!-- union {cds_lfht_node* tbl_order[64]; cds_lfht_node* tbl_chunk[]; cds_lfht_node* tbl_mmap;} -->
+    <union-decl name='__anonymous_union__' visibility='default' size-in-bits='4096' is-anonymous='yes' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash-internal.h' line='104' column='1' hash='88020d032a2fc61d' id='type-id-84'>
+      <data-member access='public'>
+        <!-- cds_lfht_node* tbl_order[64] -->
+        <var-decl name='tbl_order' type-id='type-id-69' visibility='default' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash-internal.h' line='113' column='1'/>
+      </data-member>
+      <data-member access='public'>
+        <!-- cds_lfht_node* tbl_chunk[] -->
+        <var-decl name='tbl_chunk' type-id='type-id-71' visibility='default' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash-internal.h' line='125' column='1'/>
+      </data-member>
+      <data-member access='public'>
+        <!-- cds_lfht_node* tbl_mmap -->
+        <var-decl name='tbl_mmap' type-id='type-id-68' visibility='default' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash-internal.h' line='131' column='1'/>
+      </data-member>
+    </union-decl>
+    <!-- unsigned char -->
+    <type-decl name='unsigned char' size-in-bits='8' hash='6ebac62b3366db68' id='type-id-98'/>
+    <!-- bool (*)(urcu_gp_poll_state) -->
+    <pointer-type-def type-id='type-id-115' size-in-bits='64' hash='fd7a63c0c6c822c4' id='type-id-107'/>
+    <!-- cds_lfht* -->
+    <pointer-type-def type-id='type-id-75' size-in-bits='64' hash='ed8d5a7cca3c2a6e' id='type-id-116'/>
+    <!-- cds_lfht* (*)(unsigned long int, unsigned long int, const cds_lfht_alloc*) -->
+    <pointer-type-def type-id='type-id-117' size-in-bits='64' hash='fd7a63c0c6c822c4' id='type-id-92'/>
+    <!-- cds_lfht_iter* -->
+    <pointer-type-def type-id='type-id-90' size-in-bits='64' hash='ca8647ae0eaa1613' id='type-id-118'/>
+    <!-- cds_lfht_node* -->
+    <pointer-type-def type-id='type-id-94' size-in-bits='64' hash='30b2ccf78d81f589' id='type-id-68'/>
+    <!-- cds_lfht_node* (*)(cds_lfht*, unsigned long int) -->
+    <pointer-type-def type-id='type-id-119' size-in-bits='64' hash='fd7a63c0c6c822c4' id='type-id-83'/>
+    <!-- char** -->
+    <pointer-type-def type-id='type-id-120' size-in-bits='64' hash='a93039fe023ed77b' id='type-id-121'/>
+    <!-- char** restrict -->
+    <qualified-type-def type-id='type-id-121' restrict='yes' hash='b04f089b5ae14a6d' id='type-id-122'/>
+    <!-- const cds_lfht_alloc -->
+    <qualified-type-def type-id='type-id-85' const='yes' hash='3a194ccc09785cbe' id='type-id-123'/>
+    <!-- const cds_lfht_alloc* -->
+    <pointer-type-def type-id='type-id-123' size-in-bits='64' hash='e532ade5bd4abf3d' id='type-id-77'/>
+    <!-- const cds_lfht_mm_type -->
+    <qualified-type-def type-id='type-id-91' const='yes' hash='d95aed7e414931de' id='type-id-62'/>
+    <!-- const cds_lfht_mm_type* -->
+    <pointer-type-def type-id='type-id-62' size-in-bits='64' hash='a73a45aaa56fac82' id='type-id-76'/>
+    <!-- const cds_lfht_node -->
+    <qualified-type-def type-id='type-id-94' const='yes' hash='14d6909ee9d2da2e' id='type-id-124'/>
+    <!-- const cds_lfht_node* -->
+    <pointer-type-def type-id='type-id-124' size-in-bits='64' hash='8ffee54f5d33f4a5' id='type-id-125'/>
+    <!-- const char* restrict -->
+    <qualified-type-def type-id='type-id-25' restrict='yes' hash='b7d5472019e79b5f' id='type-id-126'/>
+    <!-- const rcu_flavor_struct -->
+    <qualified-type-def type-id='type-id-100' const='yes' hash='3c2c796cf74cb85a' id='type-id-127'/>
+    <!-- const rcu_flavor_struct* -->
+    <pointer-type-def type-id='type-id-127' size-in-bits='64' hash='96cd1ec7d50d45a5' id='type-id-78'/>
+    <!-- dirent* -->
+    <pointer-type-def type-id='type-id-95' size-in-bits='64' hash='1ce54f87b39780f9' id='type-id-128'/>
+    <!-- ht_items_count* -->
+    <pointer-type-def type-id='type-id-99' size-in-bits='64' hash='91d252bcefa5bf3f' id='type-id-82'/>
+    <!-- int (*)(cds_lfht_node*, void*) -->
+    <pointer-type-def type-id='type-id-129' size-in-bits='64' hash='fd7a63c0c6c822c4' id='type-id-112'/>
+    <!-- int (*)(void) -->
+    <pointer-type-def type-id='type-id-66' size-in-bits='64' hash='fd7a63c0c6c822c4' id='type-id-102'/>
+    <!-- long int* -->
+    <pointer-type-def type-id='type-id-35' size-in-bits='64' hash='9525b6affe75cc9d#2' id='type-id-130'/>
+    <!-- pthread_attr_t* -->
+    <pointer-type-def type-id='type-id-80' size-in-bits='64' hash='cfcdc06ed6575035' id='type-id-79'/>
+    <!-- pthread_attr_t** -->
+    <pointer-type-def type-id='type-id-79' size-in-bits='64' hash='4a6d95dee6b1cae0' id='type-id-131'/>
+    <!-- unsigned long int* -->
+    <pointer-type-def type-id='type-id-3' size-in-bits='64' hash='d9e2f19705735211' id='type-id-132'/>
+    <!-- urcu_atfork* -->
+    <pointer-type-def type-id='type-id-108' size-in-bits='64' hash='2a586f79f3853206' id='type-id-133'/>
+    <!-- urcu_gp_poll_state (*)(void) -->
+    <pointer-type-def type-id='type-id-134' size-in-bits='64' hash='fd7a63c0c6c822c4' id='type-id-106'/>
+    <!-- void (*)(cds_lfht*, unsigned long int) -->
+    <pointer-type-def type-id='type-id-135' size-in-bits='64' hash='fd7a63c0c6c822c4' id='type-id-93'/>
+    <!-- void (*)(urcu_atfork*) -->
+    <pointer-type-def type-id='type-id-136' size-in-bits='64' hash='fd7a63c0c6c822c4' id='type-id-105'/>
+    <!-- void (*)(void (*)(void*), void*) -->
+    <pointer-type-def type-id='type-id-137' size-in-bits='64' hash='fd7a63c0c6c822c4' id='type-id-104'/>
+    <!-- void (*)(void) -->
+    <pointer-type-def type-id='type-id-67' size-in-bits='64' hash='fd7a63c0c6c822c4' id='type-id-101'/>
+    <!-- void (*)(void*) -->
+    <pointer-type-def type-id='type-id-138' size-in-bits='64' hash='fd7a63c0c6c822c4' id='type-id-109'/>
+    <!-- void (*)(void*, void*) -->
+    <pointer-type-def type-id='type-id-139' size-in-bits='64' hash='fd7a63c0c6c822c4' id='type-id-89'/>
+    <!-- void* (*)(void*, size_t) -->
+    <pointer-type-def type-id='type-id-140' size-in-bits='64' hash='fd7a63c0c6c822c4' id='type-id-86'/>
+    <!-- void* (*)(void*, size_t, size_t) -->
+    <pointer-type-def type-id='type-id-141' size-in-bits='64' hash='fd7a63c0c6c822c4' id='type-id-87'/>
+    <!-- void* (*)(void*, void*, size_t) -->
+    <pointer-type-def type-id='type-id-142' size-in-bits='64' hash='fd7a63c0c6c822c4' id='type-id-88'/>
+    <!-- DIR* -->
+    <pointer-type-def type-id='type-id-143' size-in-bits='64' id='type-id-144'/>
+    <!-- struct __dirstream -->
+    <class-decl name='__dirstream' is-struct='yes' visibility='default' is-declaration-only='yes' id='type-id-145'/>
+    <!-- struct urcu_workqueue -->
+    <class-decl name='urcu_workqueue' is-struct='yes' visibility='default' size-in-bits='2048' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/workqueue.c' line='40' column='1' hash='def2c718babd4d20' id='type-id-146'>
+      <data-member access='public' layout-offset-in-bits='0'>
+        <!-- cds_wfcq_tail urcu_workqueue::cbs_tail -->
+        <var-decl name='cbs_tail' type-id='type-id-147' visibility='default' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/workqueue.c' line='47' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='64'>
+        <!-- cds_wfcq_head urcu_workqueue::cbs_head -->
+        <var-decl name='cbs_head' type-id='type-id-148' visibility='default' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/workqueue.c' line='48' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='448'>
+        <!-- unsigned long int urcu_workqueue::flags -->
+        <var-decl name='flags' type-id='type-id-3' visibility='default' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/workqueue.c' line='49' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='512'>
+        <!-- int32_t urcu_workqueue::futex -->
+        <var-decl name='futex' type-id='type-id-23' visibility='default' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/workqueue.c' line='50' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='576'>
+        <!-- unsigned long int urcu_workqueue::qlen -->
+        <var-decl name='qlen' type-id='type-id-3' visibility='default' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/workqueue.c' line='51' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='640'>
+        <!-- pthread_t urcu_workqueue::tid -->
+        <var-decl name='tid' type-id='type-id-149' visibility='default' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/workqueue.c' line='52' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='704'>
+        <!-- int urcu_workqueue::cpu_affinity -->
+        <var-decl name='cpu_affinity' type-id='type-id-22' visibility='default' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/workqueue.c' line='53' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='768'>
+        <!-- unsigned long int urcu_workqueue::loop_count -->
+        <var-decl name='loop_count' type-id='type-id-3' visibility='default' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/workqueue.c' line='54' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='832'>
+        <!-- void* urcu_workqueue::priv -->
+        <var-decl name='priv' type-id='type-id-63' visibility='default' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/workqueue.c' line='55' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='896'>
+        <!-- void (* urcu_workqueue::grace_period_fct)(urcu_workqueue*, void*) -->
+        <var-decl name='grace_period_fct' type-id='type-id-150' visibility='default' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/workqueue.c' line='56' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='960'>
+        <!-- void (* urcu_workqueue::initialize_worker_fct)(urcu_workqueue*, void*) -->
+        <var-decl name='initialize_worker_fct' type-id='type-id-150' visibility='default' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/workqueue.c' line='57' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='1024'>
+        <!-- void (* urcu_workqueue::finalize_worker_fct)(urcu_workqueue*, void*) -->
+        <var-decl name='finalize_worker_fct' type-id='type-id-150' visibility='default' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/workqueue.c' line='58' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='1088'>
+        <!-- void (* urcu_workqueue::worker_before_pause_fct)(urcu_workqueue*, void*) -->
+        <var-decl name='worker_before_pause_fct' type-id='type-id-150' visibility='default' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/workqueue.c' line='59' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='1152'>
+        <!-- void (* urcu_workqueue::worker_after_resume_fct)(urcu_workqueue*, void*) -->
+        <var-decl name='worker_after_resume_fct' type-id='type-id-150' visibility='default' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/workqueue.c' line='60' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='1216'>
+        <!-- void (* urcu_workqueue::worker_before_wait_fct)(urcu_workqueue*, void*) -->
+        <var-decl name='worker_before_wait_fct' type-id='type-id-150' visibility='default' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/workqueue.c' line='61' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='1280'>
+        <!-- void (* urcu_workqueue::worker_after_wake_up_fct)(urcu_workqueue*, void*) -->
+        <var-decl name='worker_after_wake_up_fct' type-id='type-id-150' visibility='default' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/workqueue.c' line='62' column='1'/>
+      </data-member>
+    </class-decl>
+    <!-- void* restrict -->
+    <qualified-type-def type-id='type-id-63' restrict='yes' id='type-id-151'/>
+    <!-- unsigned int cds_lfht_fls_ulong(unsigned long int) -->
+    <function-decl name='cds_lfht_fls_ulong' mangled-name='cds_lfht_fls_ulong' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='563' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='cds_lfht_fls_ulong' hash='3f7b79ee24d3110f'>
+      <!-- parameter of type 'unsigned long int' -->
+      <parameter type-id='type-id-3'/>
+      <!-- unsigned int -->
+      <return type-id='type-id-9'/>
+    </function-decl>
+    <!-- int cds_lfht_get_count_order_ulong(unsigned long int) -->
+    <function-decl name='cds_lfht_get_count_order_ulong' mangled-name='cds_lfht_get_count_order_ulong' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='633' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='cds_lfht_get_count_order_ulong' hash='b6a97d07f8261bc0'>
+      <!-- parameter of type 'unsigned long int' -->
+      <parameter type-id='type-id-3'/>
+      <!-- int -->
+      <return type-id='type-id-22'/>
+    </function-decl>
+    <!-- void cds_lfht_node_init_deleted(cds_lfht_node*) -->
+    <function-decl name='cds_lfht_node_init_deleted' mangled-name='cds_lfht_node_init_deleted' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='1638' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='cds_lfht_node_init_deleted' hash='5a0158a221293677'>
+      <!-- parameter of type 'cds_lfht_node*' -->
+      <parameter type-id='type-id-68' name='node' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='1638' column='1'/>
+      <!-- void -->
+      <return type-id='type-id-26'/>
+    </function-decl>
+    <!-- cds_lfht* _cds_lfht_new_with_alloc(unsigned long int, unsigned long int, unsigned long int, int, const cds_lfht_mm_type*, const rcu_flavor_struct*, const cds_lfht_alloc*, pthread_attr_t*) -->
+    <function-decl name='_cds_lfht_new_with_alloc' mangled-name='_cds_lfht_new_with_alloc' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='1644' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='_cds_lfht_new_with_alloc' hash='5fc58e83674b7e11'>
+      <!-- parameter of type 'unsigned long int' -->
+      <parameter type-id='type-id-3' name='init_size' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='1644' column='1'/>
+      <!-- parameter of type 'unsigned long int' -->
+      <parameter type-id='type-id-3' name='min_nr_alloc_buckets' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='1645' column='1'/>
+      <!-- parameter of type 'unsigned long int' -->
+      <parameter type-id='type-id-3' name='max_nr_buckets' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='1646' column='1'/>
+      <!-- parameter of type 'int' -->
+      <parameter type-id='type-id-22' name='flags' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='1647' column='1'/>
+      <!-- parameter of type 'const cds_lfht_mm_type*' -->
+      <parameter type-id='type-id-76' name='mm' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='1648' column='1'/>
+      <!-- parameter of type 'const rcu_flavor_struct*' -->
+      <parameter type-id='type-id-78' name='flavor' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='1649' column='1'/>
+      <!-- parameter of type 'const cds_lfht_alloc*' -->
+      <parameter type-id='type-id-77' name='alloc' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='1650' column='1'/>
+      <!-- parameter of type 'pthread_attr_t*' -->
+      <parameter type-id='type-id-79' name='attr' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='1651' column='1'/>
+      <!-- cds_lfht* -->
+      <return type-id='type-id-116'/>
+    </function-decl>
+    <!-- cds_lfht* _cds_lfht_new(unsigned long int, unsigned long int, unsigned long int, int, const cds_lfht_mm_type*, const rcu_flavor_struct*, pthread_attr_t*) -->
+    <function-decl name='_cds_lfht_new' mangled-name='_cds_lfht_new' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='1707' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='_cds_lfht_new' hash='3f0410eb151cefba'>
+      <!-- parameter of type 'unsigned long int' -->
+      <parameter type-id='type-id-3' name='init_size' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='1707' column='1'/>
+      <!-- parameter of type 'unsigned long int' -->
+      <parameter type-id='type-id-3' name='min_nr_alloc_buckets' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='1708' column='1'/>
+      <!-- parameter of type 'unsigned long int' -->
+      <parameter type-id='type-id-3' name='max_nr_buckets' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='1709' column='1'/>
+      <!-- parameter of type 'int' -->
+      <parameter type-id='type-id-22' name='flags' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='1710' column='1'/>
+      <!-- parameter of type 'const cds_lfht_mm_type*' -->
+      <parameter type-id='type-id-76' name='mm' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='1711' column='1'/>
+      <!-- parameter of type 'const rcu_flavor_struct*' -->
+      <parameter type-id='type-id-78' name='flavor' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='1712' column='1'/>
+      <!-- parameter of type 'pthread_attr_t*' -->
+      <parameter type-id='type-id-79' name='attr' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='1713' column='1'/>
+      <!-- cds_lfht* -->
+      <return type-id='type-id-116'/>
+    </function-decl>
+    <!-- void cds_lfht_lookup(cds_lfht*, unsigned long int, cds_lfht_match_fct, void*, cds_lfht_iter*) -->
+    <function-decl name='cds_lfht_lookup' mangled-name='cds_lfht_lookup' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='1720' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='cds_lfht_lookup' hash='130ba247219493f8'>
+      <!-- parameter of type 'cds_lfht*' -->
+      <parameter type-id='type-id-116' name='ht' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='1720' column='1'/>
+      <!-- parameter of type 'unsigned long int' -->
+      <parameter type-id='type-id-3' name='hash' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='1720' column='1'/>
+      <!-- parameter of type 'typedef cds_lfht_match_fct' -->
+      <parameter type-id='type-id-113' name='match' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='1721' column='1'/>
+      <!-- parameter of type 'void*' -->
+      <parameter type-id='type-id-63' name='key' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='1721' column='1'/>
+      <!-- parameter of type 'cds_lfht_iter*' -->
+      <parameter type-id='type-id-118' name='iter' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='1722' column='1'/>
+      <!-- void -->
+      <return type-id='type-id-26'/>
+    </function-decl>
+    <!-- void cds_lfht_next_duplicate(cds_lfht*, cds_lfht_match_fct, void*, cds_lfht_iter*) -->
+    <function-decl name='cds_lfht_next_duplicate' mangled-name='cds_lfht_next_duplicate' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='1767' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='cds_lfht_next_duplicate' hash='32ef6bbe01c5cde8'>
+      <!-- parameter of type 'cds_lfht*' -->
+      <parameter type-id='type-id-116' name='ht' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='1767' column='1'/>
+      <!-- parameter of type 'typedef cds_lfht_match_fct' -->
+      <parameter type-id='type-id-113' name='match' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='1768' column='1'/>
+      <!-- parameter of type 'void*' -->
+      <parameter type-id='type-id-63' name='key' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='1769' column='1'/>
+      <!-- parameter of type 'cds_lfht_iter*' -->
+      <parameter type-id='type-id-118' name='iter' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='1769' column='1'/>
+      <!-- void -->
+      <return type-id='type-id-26'/>
+    </function-decl>
+    <!-- void cds_lfht_next(cds_lfht*, cds_lfht_iter*) -->
+    <function-decl name='cds_lfht_next' mangled-name='cds_lfht_next' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='1802' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='cds_lfht_next' hash='677511d9b8194ec9'>
+      <!-- parameter of type 'cds_lfht*' -->
+      <parameter type-id='type-id-116' name='ht' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='1826' column='1'/>
+      <!-- parameter of type 'cds_lfht_iter*' -->
+      <parameter type-id='type-id-118' name='iter' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='1826' column='1'/>
+      <!-- void -->
+      <return type-id='type-id-26'/>
+    </function-decl>
+    <!-- void cds_lfht_first(cds_lfht*, cds_lfht_iter*) -->
+    <function-decl name='cds_lfht_first' mangled-name='cds_lfht_first' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='1826' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='cds_lfht_first' hash='677511d9b8194ec9'>
+      <!-- parameter of type 'cds_lfht*' -->
+      <parameter type-id='type-id-116' name='ht' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='1826' column='1'/>
+      <!-- parameter of type 'cds_lfht_iter*' -->
+      <parameter type-id='type-id-118' name='iter' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='1826' column='1'/>
+      <!-- void -->
+      <return type-id='type-id-26'/>
+    </function-decl>
+    <!-- void cds_lfht_add(cds_lfht*, unsigned long int, cds_lfht_node*) -->
+    <function-decl name='cds_lfht_add' mangled-name='cds_lfht_add' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='1837' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='cds_lfht_add' hash='b9bde62a1283a07b'>
+      <!-- parameter of type 'cds_lfht*' -->
+      <parameter type-id='type-id-116' name='ht' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='1837' column='1'/>
+      <!-- parameter of type 'unsigned long int' -->
+      <parameter type-id='type-id-3' name='hash' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='1837' column='1'/>
+      <!-- parameter of type 'cds_lfht_node*' -->
+      <parameter type-id='type-id-68' name='node' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='1838' column='1'/>
+      <!-- void -->
+      <return type-id='type-id-26'/>
+    </function-decl>
+    <!-- cds_lfht_node* cds_lfht_add_unique(cds_lfht*, unsigned long int, cds_lfht_match_fct, void*, cds_lfht_node*) -->
+    <function-decl name='cds_lfht_add_unique' mangled-name='cds_lfht_add_unique' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='1848' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='cds_lfht_add_unique' hash='eaac88908dc42b98'>
+      <!-- parameter of type 'cds_lfht*' -->
+      <parameter type-id='type-id-116' name='ht' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='1865' column='1'/>
+      <!-- parameter of type 'unsigned long int' -->
+      <parameter type-id='type-id-3' name='hash' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='1866' column='1'/>
+      <!-- parameter of type 'typedef cds_lfht_match_fct' -->
+      <parameter type-id='type-id-113' name='match' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='1867' column='1'/>
+      <!-- parameter of type 'void*' -->
+      <parameter type-id='type-id-63' name='key' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='1868' column='1'/>
+      <!-- parameter of type 'cds_lfht_node*' -->
+      <parameter type-id='type-id-68' name='node' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='1869' column='1'/>
+      <!-- cds_lfht_node* -->
+      <return type-id='type-id-68'/>
+    </function-decl>
+    <!-- cds_lfht_node* cds_lfht_add_replace(cds_lfht*, unsigned long int, cds_lfht_match_fct, void*, cds_lfht_node*) -->
+    <function-decl name='cds_lfht_add_replace' mangled-name='cds_lfht_add_replace' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='1865' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='cds_lfht_add_replace' hash='eaac88908dc42b98'>
+      <!-- parameter of type 'cds_lfht*' -->
+      <parameter type-id='type-id-116' name='ht' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='1865' column='1'/>
+      <!-- parameter of type 'unsigned long int' -->
+      <parameter type-id='type-id-3' name='hash' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='1866' column='1'/>
+      <!-- parameter of type 'typedef cds_lfht_match_fct' -->
+      <parameter type-id='type-id-113' name='match' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='1867' column='1'/>
+      <!-- parameter of type 'void*' -->
+      <parameter type-id='type-id-63' name='key' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='1868' column='1'/>
+      <!-- parameter of type 'cds_lfht_node*' -->
+      <parameter type-id='type-id-68' name='node' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='1869' column='1'/>
+      <!-- cds_lfht_node* -->
+      <return type-id='type-id-68'/>
+    </function-decl>
+    <!-- int cds_lfht_replace(cds_lfht*, cds_lfht_iter*, unsigned long int, cds_lfht_match_fct, void*, cds_lfht_node*) -->
+    <function-decl name='cds_lfht_replace' mangled-name='cds_lfht_replace' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='1888' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='cds_lfht_replace' hash='b0906b2cd20ee4e9'>
+      <!-- parameter of type 'cds_lfht*' -->
+      <parameter type-id='type-id-116' name='ht' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='1888' column='1'/>
+      <!-- parameter of type 'cds_lfht_iter*' -->
+      <parameter type-id='type-id-118' name='old_iter' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='1889' column='1'/>
+      <!-- parameter of type 'unsigned long int' -->
+      <parameter type-id='type-id-3' name='hash' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='1890' column='1'/>
+      <!-- parameter of type 'typedef cds_lfht_match_fct' -->
+      <parameter type-id='type-id-113' name='match' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='1891' column='1'/>
+      <!-- parameter of type 'void*' -->
+      <parameter type-id='type-id-63' name='key' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='1892' column='1'/>
+      <!-- parameter of type 'cds_lfht_node*' -->
+      <parameter type-id='type-id-68' name='new_node' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='1893' column='1'/>
+      <!-- int -->
+      <return type-id='type-id-22'/>
+    </function-decl>
+    <!-- int cds_lfht_del(cds_lfht*, cds_lfht_node*) -->
+    <function-decl name='cds_lfht_del' mangled-name='cds_lfht_del' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='1909' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='cds_lfht_del' hash='a76911c4ad51dd1e'>
+      <!-- parameter of type 'cds_lfht*' -->
+      <parameter type-id='type-id-116' name='ht' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='1909' column='1'/>
+      <!-- parameter of type 'cds_lfht_node*' -->
+      <parameter type-id='type-id-68' name='node' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='1909' column='1'/>
+      <!-- int -->
+      <return type-id='type-id-22'/>
+    </function-decl>
+    <!-- int cds_lfht_is_node_deleted(const cds_lfht_node*) -->
+    <function-decl name='cds_lfht_is_node_deleted' mangled-name='cds_lfht_is_node_deleted' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='1925' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='cds_lfht_is_node_deleted' hash='39e93a7dc08cc5b7'>
+      <!-- parameter of type 'const cds_lfht_node*' -->
+      <parameter type-id='type-id-125' name='node' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='1925' column='1'/>
+      <!-- int -->
+      <return type-id='type-id-22'/>
+    </function-decl>
+    <!-- int cds_lfht_destroy(cds_lfht*, pthread_attr_t**) -->
+    <function-decl name='cds_lfht_destroy' mangled-name='cds_lfht_destroy' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='2015' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='cds_lfht_destroy' hash='1c34fd251c27cec2'>
+      <!-- parameter of type 'cds_lfht*' -->
+      <parameter type-id='type-id-116' name='ht' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='2015' column='1'/>
+      <!-- parameter of type 'pthread_attr_t**' -->
+      <parameter type-id='type-id-131' name='attr' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='2015' column='1'/>
+      <!-- int -->
+      <return type-id='type-id-22'/>
+    </function-decl>
+    <!-- void cds_lfht_count_nodes(cds_lfht*, long int*, unsigned long int*, long int*) -->
+    <function-decl name='cds_lfht_count_nodes' mangled-name='cds_lfht_count_nodes' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='2056' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='cds_lfht_count_nodes' hash='886deb32f45ac64f'>
+      <!-- parameter of type 'cds_lfht*' -->
+      <parameter type-id='type-id-116' name='ht' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='2056' column='1'/>
+      <!-- parameter of type 'long int*' -->
+      <parameter type-id='type-id-130' name='approx_before' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='2057' column='1'/>
+      <!-- parameter of type 'unsigned long int*' -->
+      <parameter type-id='type-id-132' name='count' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='2058' column='1'/>
+      <!-- parameter of type 'long int*' -->
+      <parameter type-id='type-id-130' name='approx_after' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='2059' column='1'/>
+      <!-- void -->
+      <return type-id='type-id-26'/>
+    </function-decl>
+    <!-- void cds_lfht_resize(cds_lfht*, unsigned long int) -->
+    <function-decl name='cds_lfht_resize' mangled-name='cds_lfht_resize' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfhash.c' line='2181' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='cds_lfht_resize' hash='fdd141429df1e9b3'>
+      <!-- parameter of type 'cds_lfht*' -->
+      <parameter type-id='type-id-116'/>
+      <!-- parameter of type 'unsigned long int' -->
+      <parameter type-id='type-id-3'/>
+      <!-- void -->
+      <return type-id='type-id-26'/>
+    </function-decl>
+    <!-- typedef __dirstream DIR -->
+    <typedef-decl name='DIR' type-id='type-id-145' filepath='/usr/include/dirent.h' line='127' column='1' id='type-id-143'/>
+    <!-- int closedir(DIR*) -->
+    <function-decl name='closedir' filepath='/usr/include/dirent.h' line='134' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='closedir' hash='388da3fa973fde78'>
+      <!-- parameter of type 'DIR*' -->
+      <parameter type-id='type-id-144'/>
+      <!-- int -->
+      <return type-id='type-id-22'/>
+    </function-decl>
+    <!-- DIR* opendir(const char*) -->
+    <function-decl name='opendir' filepath='/usr/include/dirent.h' line='141' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='opendir' hash='53885bde0aa65efe'>
+      <!-- parameter of type 'const char*' -->
+      <parameter type-id='type-id-25'/>
+      <!-- DIR* -->
+      <return type-id='type-id-144'/>
+    </function-decl>
+    <!-- dirent* readdir(DIR*) -->
+    <function-decl name='readdir' filepath='/usr/include/dirent.h' line='164' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='readdir' hash='8210c868a3f56bcd'>
+      <!-- parameter of type 'DIR*' -->
+      <parameter type-id='type-id-144'/>
+      <!-- dirent* -->
+      <return type-id='type-id-128'/>
+    </function-decl>
+    <!-- int open(const char*, int, ...) -->
+    <function-decl name='open' filepath='/usr/include/fcntl.h' line='209' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='open' hash='1d81aff51c388187'>
+      <!-- parameter of type 'const char*' -->
+      <parameter type-id='type-id-25'/>
+      <!-- parameter of type 'int' -->
+      <parameter type-id='type-id-22'/>
+      <parameter is-variadic='yes'/>
+      <!-- int -->
+      <return type-id='type-id-22'/>
+    </function-decl>
+    <!-- int pthread_create(pthread_t* restrict, const pthread_attr_t* restrict, void* (*)(void*), void* restrict) -->
+    <function-decl name='pthread_create' filepath='/usr/include/pthread.h' line='202' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='pthread_create' hash='d5a21388996f6e74'>
+      <!-- parameter of type 'pthread_t* restrict' -->
+      <parameter type-id='type-id-152'/>
+      <!-- parameter of type 'const pthread_attr_t* restrict' -->
+      <parameter type-id='type-id-153'/>
+      <!-- parameter of type 'void* (*)(void*)' -->
+      <parameter type-id='type-id-154'/>
+      <!-- parameter of type 'void* restrict' -->
+      <parameter type-id='type-id-151'/>
+      <!-- int -->
+      <return type-id='type-id-22'/>
+    </function-decl>
+    <!-- int pthread_join(pthread_t, void**) -->
+    <function-decl name='pthread_join' filepath='/usr/include/pthread.h' line='219' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='pthread_join' hash='44e617fd0a544534'>
+      <!-- parameter of type 'typedef pthread_t' -->
+      <parameter type-id='type-id-149'/>
+      <!-- parameter of type 'void**' -->
+      <parameter type-id='type-id-155'/>
+      <!-- int -->
+      <return type-id='type-id-22'/>
+    </function-decl>
+    <!-- int sigfillset(sigset_t*) -->
+    <function-decl name='sigfillset' filepath='/usr/include/signal.h' line='202' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='sigfillset' hash='531c1522f306288c'>
+      <!-- parameter of type 'sigset_t*' -->
+      <parameter type-id='type-id-156'/>
+      <!-- int -->
+      <return type-id='type-id-22'/>
+    </function-decl>
+    <!-- FILE* stderr -->
+    <var-decl name='stderr' type-id='type-id-157' visibility='default' filepath='/usr/include/stdio.h' line='151' column='1' elf-symbol-id='stderr'/>
+    <!-- int fprintf(FILE*, const char*, ...) -->
+    <function-decl name='fprintf' filepath='/usr/include/stdio.h' line='357' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='fprintf' hash='31c19dfde3fac410'>
+      <!-- parameter of type 'FILE*' -->
+      <parameter type-id='type-id-157'/>
+      <!-- parameter of type 'const char*' -->
+      <parameter type-id='type-id-25'/>
+      <parameter is-variadic='yes'/>
+      <!-- int -->
+      <return type-id='type-id-22'/>
+    </function-decl>
+    <!-- long int strtol(const char* restrict, char** restrict, int) -->
+    <function-decl name='strtol' mangled-name='__isoc23_strtol' filepath='/usr/include/stdlib.h' line='215' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='__isoc23_strtol' hash='52efcc9e902b4c3e'>
+      <!-- parameter of type 'const char* restrict' -->
+      <parameter type-id='type-id-126'/>
+      <!-- parameter of type 'char** restrict' -->
+      <parameter type-id='type-id-122'/>
+      <!-- parameter of type 'int' -->
+      <parameter type-id='type-id-22'/>
+      <!-- long int -->
+      <return type-id='type-id-35'/>
+    </function-decl>
+    <!-- unsigned long int strtoul(const char* restrict, char** restrict, int) -->
+    <function-decl name='strtoul' mangled-name='__isoc23_strtoul' filepath='/usr/include/stdlib.h' line='219' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='__isoc23_strtoul' hash='91a1f6f7dca9d3ed'>
+      <!-- parameter of type 'const char* restrict' -->
+      <parameter type-id='type-id-126'/>
+      <!-- parameter of type 'char** restrict' -->
+      <parameter type-id='type-id-122'/>
+      <!-- parameter of type 'int' -->
+      <parameter type-id='type-id-22'/>
+      <!-- unsigned long int -->
+      <return type-id='type-id-3'/>
+    </function-decl>
+    <!-- void* malloc(unsigned long int) -->
+    <function-decl name='malloc' filepath='/usr/include/stdlib.h' line='672' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='malloc' hash='e0055d99adb0e173'>
+      <!-- parameter of type 'unsigned long int' -->
+      <parameter type-id='type-id-3'/>
+      <!-- void* -->
+      <return type-id='type-id-63'/>
+    </function-decl>
+    <!-- void* calloc(unsigned long int, unsigned long int) -->
+    <function-decl name='calloc' filepath='/usr/include/stdlib.h' line='675' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='calloc' hash='91495cdf6321a116'>
+      <!-- parameter of type 'unsigned long int' -->
+      <parameter type-id='type-id-3'/>
+      <!-- parameter of type 'unsigned long int' -->
+      <parameter type-id='type-id-3'/>
+      <!-- void* -->
+      <return type-id='type-id-63'/>
+    </function-decl>
+    <!-- void* realloc(void*, unsigned long int) -->
+    <function-decl name='realloc' filepath='/usr/include/stdlib.h' line='683' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='realloc' hash='e0055d99adb0e173'>
+      <!-- parameter of type 'void*' -->
+      <parameter type-id='type-id-63'/>
+      <!-- parameter of type 'unsigned long int' -->
+      <parameter type-id='type-id-3'/>
+      <!-- void* -->
+      <return type-id='type-id-63'/>
+    </function-decl>
+    <!-- void free(void*) -->
+    <function-decl name='free' filepath='/usr/include/stdlib.h' line='687' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='free' hash='7f32ffea222edbe7'>
+      <!-- parameter of type 'void*' -->
+      <parameter type-id='type-id-63'/>
+      <!-- void -->
+      <return type-id='type-id-26'/>
+    </function-decl>
+    <!-- int posix_memalign(void**, unsigned long int, unsigned long int) -->
+    <function-decl name='posix_memalign' filepath='/usr/include/stdlib.h' line='718' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='posix_memalign' hash='f74641e922c0ae49'>
+      <!-- parameter of type 'void**' -->
+      <parameter type-id='type-id-155'/>
+      <!-- parameter of type 'unsigned long int' -->
+      <parameter type-id='type-id-3'/>
+      <!-- parameter of type 'unsigned long int' -->
+      <parameter type-id='type-id-3'/>
+      <!-- int -->
+      <return type-id='type-id-22'/>
+    </function-decl>
+    <!-- int strncmp(const char*, const char*, unsigned long int) -->
+    <function-decl name='strncmp' filepath='/usr/include/string.h' line='159' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='strncmp' hash='2f99ec08ee54ebb4'>
+      <!-- parameter of type 'const char*' -->
+      <parameter type-id='type-id-25'/>
+      <!-- parameter of type 'const char*' -->
+      <parameter type-id='type-id-25'/>
+      <!-- parameter of type 'unsigned long int' -->
+      <parameter type-id='type-id-3'/>
+      <!-- int -->
+      <return type-id='type-id-22'/>
+    </function-decl>
+    <!-- char* strerror(int) -->
+    <function-decl name='strerror' filepath='/usr/include/string.h' line='419' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='strerror' hash='64137bddd2d8bd37'>
+      <!-- parameter of type 'int' -->
+      <parameter type-id='type-id-22'/>
+      <!-- char* -->
+      <return type-id='type-id-120'/>
+    </function-decl>
+    <!-- int close(int) -->
+    <function-decl name='close' filepath='/usr/include/unistd.h' line='358' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='close' hash='d628501fd2223339'>
+      <!-- parameter of type 'int' -->
+      <parameter type-id='type-id-22'/>
+      <!-- int -->
+      <return type-id='type-id-22'/>
+    </function-decl>
+    <!-- ssize_t read(int, void*, size_t) -->
+    <function-decl name='read' filepath='/usr/include/unistd.h' line='371' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='read' hash='e1f135b405ab837f'>
+      <!-- parameter of type 'int' -->
+      <parameter type-id='type-id-22'/>
+      <!-- parameter of type 'void*' -->
+      <parameter type-id='type-id-63'/>
+      <!-- parameter of type 'typedef size_t' -->
+      <parameter type-id='type-id-64'/>
+      <!-- typedef ssize_t -->
+      <return type-id='type-id-114'/>
+    </function-decl>
+    <!-- long int sysconf(int) -->
+    <function-decl name='sysconf' filepath='/usr/include/unistd.h' line='640' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='sysconf' hash='683f2cc4e918c0b3#2'>
+      <!-- parameter of type 'int' -->
+      <parameter type-id='type-id-22'/>
+      <!-- long int -->
+      <return type-id='type-id-35'/>
+    </function-decl>
+    <!-- int sched_getcpu() -->
+    <function-decl name='sched_getcpu' filepath='/usr/include/x86_64-linux-gnu/bits/sched.h' line='139' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='sched_getcpu@@GLIBC_2.6' hash='388da3fa973fde78'>
+      <!-- int -->
+      <return type-id='type-id-22'/>
+    </function-decl>
+    <!-- int pthread_sigmask(int, const __sigset_t* restrict, __sigset_t* restrict) -->
+    <function-decl name='pthread_sigmask' filepath='/usr/include/x86_64-linux-gnu/bits/sigthread.h' line='31' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='pthread_sigmask' hash='7ebcce9ba6f5d0e4'>
+      <!-- parameter of type 'int' -->
+      <parameter type-id='type-id-22'/>
+      <!-- parameter of type 'const __sigset_t* restrict' -->
+      <parameter type-id='type-id-158'/>
+      <!-- parameter of type '__sigset_t* restrict' -->
+      <parameter type-id='type-id-159'/>
+      <!-- int -->
+      <return type-id='type-id-22'/>
+    </function-decl>
+    <!-- bool (urcu_gp_poll_state) -->
+    <function-type size-in-bits='64' hash='c7c710e908194b91' id='type-id-115'>
+      <!-- parameter of type 'struct urcu_gp_poll_state' -->
+      <parameter type-id='type-id-110'/>
+      <!-- bool -->
+      <return type-id='type-id-30'/>
+    </function-type>
+    <!-- cds_lfht* (unsigned long int, unsigned long int, const cds_lfht_alloc*) -->
+    <function-type size-in-bits='64' hash='30956f9796ea7fed' id='type-id-117'>
+      <!-- parameter of type 'unsigned long int' -->
+      <parameter type-id='type-id-3'/>
+      <!-- parameter of type 'unsigned long int' -->
+      <parameter type-id='type-id-3'/>
+      <!-- parameter of type 'const cds_lfht_alloc*' -->
+      <parameter type-id='type-id-77'/>
+      <!-- cds_lfht* -->
+      <return type-id='type-id-116'/>
+    </function-type>
+    <!-- cds_lfht_node* (cds_lfht*, unsigned long int) -->
+    <function-type size-in-bits='64' hash='ce53802cc9c93c80' id='type-id-119'>
+      <!-- parameter of type 'cds_lfht*' -->
+      <parameter type-id='type-id-116'/>
+      <!-- parameter of type 'unsigned long int' -->
+      <parameter type-id='type-id-3'/>
+      <!-- cds_lfht_node* -->
+      <return type-id='type-id-68'/>
+    </function-type>
+    <!-- int (cds_lfht_node*, void*) -->
+    <function-type size-in-bits='64' hash='65cb3b0cf53b0204' id='type-id-129'>
+      <!-- parameter of type 'cds_lfht_node*' -->
+      <parameter type-id='type-id-68'/>
+      <!-- parameter of type 'void*' -->
+      <parameter type-id='type-id-63'/>
+      <!-- int -->
+      <return type-id='type-id-22'/>
+    </function-type>
+    <!-- urcu_gp_poll_state (void) -->
+    <function-type size-in-bits='64' hash='7f32ffea222edbe7' id='type-id-134'>
+      <!-- struct urcu_gp_poll_state -->
+      <return type-id='type-id-110'/>
+    </function-type>
+    <!-- void (cds_lfht*, unsigned long int) -->
+    <function-type size-in-bits='64' hash='fdd141429df1e9b3' id='type-id-135'>
+      <!-- parameter of type 'cds_lfht*' -->
+      <parameter type-id='type-id-116'/>
+      <!-- parameter of type 'unsigned long int' -->
+      <parameter type-id='type-id-3'/>
+      <!-- void -->
+      <return type-id='type-id-26'/>
+    </function-type>
+    <!-- void (urcu_atfork*) -->
+    <function-type size-in-bits='64' hash='089d46d7acbb7fc2' id='type-id-136'>
+      <!-- parameter of type 'urcu_atfork*' -->
+      <parameter type-id='type-id-133'/>
+      <!-- void -->
+      <return type-id='type-id-26'/>
+    </function-type>
+    <!-- void (void (*)(void*), void*) -->
+    <function-type size-in-bits='64' hash='5695f5ce05a4c55f' id='type-id-137'>
+      <!-- parameter of type 'void (*)(void*)' -->
+      <parameter type-id='type-id-109'/>
+      <!-- parameter of type 'void*' -->
+      <parameter type-id='type-id-63'/>
+      <!-- void -->
+      <return type-id='type-id-26'/>
+    </function-type>
+    <!-- void (void*) -->
+    <function-type size-in-bits='64' hash='7f32ffea222edbe7' id='type-id-138'>
+      <!-- parameter of type 'void*' -->
+      <parameter type-id='type-id-63'/>
+      <!-- void -->
+      <return type-id='type-id-26'/>
+    </function-type>
+    <!-- void (void*, void*) -->
+    <function-type size-in-bits='64' hash='7f32ffea222edbe7' id='type-id-139'>
+      <!-- parameter of type 'void*' -->
+      <parameter type-id='type-id-63'/>
+      <!-- parameter of type 'void*' -->
+      <parameter type-id='type-id-63'/>
+      <!-- void -->
+      <return type-id='type-id-26'/>
+    </function-type>
+    <!-- void* (void*, size_t) -->
+    <function-type size-in-bits='64' hash='e0055d99adb0e173' id='type-id-140'>
+      <!-- parameter of type 'void*' -->
+      <parameter type-id='type-id-63'/>
+      <!-- parameter of type 'typedef size_t' -->
+      <parameter type-id='type-id-64'/>
+      <!-- void* -->
+      <return type-id='type-id-63'/>
+    </function-type>
+    <!-- void* (void*, size_t, size_t) -->
+    <function-type size-in-bits='64' hash='91495cdf6321a116' id='type-id-141'>
+      <!-- parameter of type 'void*' -->
+      <parameter type-id='type-id-63'/>
+      <!-- parameter of type 'typedef size_t' -->
+      <parameter type-id='type-id-64'/>
+      <!-- parameter of type 'typedef size_t' -->
+      <parameter type-id='type-id-64'/>
+      <!-- void* -->
+      <return type-id='type-id-63'/>
+    </function-type>
+    <!-- void* (void*, void*, size_t) -->
+    <function-type size-in-bits='64' hash='e0055d99adb0e173' id='type-id-142'>
+      <!-- parameter of type 'void*' -->
+      <parameter type-id='type-id-63'/>
+      <!-- parameter of type 'void*' -->
+      <parameter type-id='type-id-63'/>
+      <!-- parameter of type 'typedef size_t' -->
+      <parameter type-id='type-id-64'/>
+      <!-- void* -->
+      <return type-id='type-id-63'/>
+    </function-type>
+    <!-- void (rcu_head*) -->
+    <function-type size-in-bits='64' hash='7096d47a7681a820' id='type-id-160'>
+      <!-- parameter of type 'rcu_head*' -->
+      <parameter type-id='type-id-161'/>
+      <!-- void -->
+      <return type-id='type-id-26'/>
+    </function-type>
+    <!-- void (rcu_head*, void (*)(rcu_head*)) -->
+    <function-type size-in-bits='64' hash='c7304f0015d3e072' id='type-id-162'>
+      <!-- parameter of type 'rcu_head*' -->
+      <parameter type-id='type-id-161'/>
+      <!-- parameter of type 'void (*)(rcu_head*)' -->
+      <parameter type-id='type-id-163'/>
+      <!-- void -->
+      <return type-id='type-id-26'/>
+    </function-type>
+    <!-- void (urcu_work*) -->
+    <function-type size-in-bits='64' hash='e3267f730a5b9469' id='type-id-164'>
+      <!-- parameter of type 'urcu_work*' -->
+      <parameter type-id='type-id-165'/>
+      <!-- void -->
+      <return type-id='type-id-26'/>
+    </function-type>
+    <!-- void (urcu_workqueue*, void*) -->
+    <function-type size-in-bits='64' hash='d6bc186ed4e1444a' id='type-id-166'>
+      <!-- parameter of type 'urcu_workqueue*' -->
+      <parameter type-id='type-id-167'/>
+      <!-- parameter of type 'void*' -->
+      <parameter type-id='type-id-63'/>
+      <!-- void -->
+      <return type-id='type-id-26'/>
+    </function-type>
+    <!-- void* (void*) -->
+    <function-type size-in-bits='64' hash='7f32ffea222edbe7' id='type-id-168'>
+      <!-- parameter of type 'void*' -->
+      <parameter type-id='type-id-63'/>
+      <!-- void* -->
+      <return type-id='type-id-63'/>
+    </function-type>
+  </abi-instr>
+  <abi-instr address-size='64' path='rculfqueue.c' comp-dir-path='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src' language='LANG_C11'>
+    <!-- char -->
+    <type-decl name='char' size-in-bits='8' hash='65b2d157027b431a' id='type-id-1'/>
+    <!-- int -->
+    <type-decl name='int' size-in-bits='32' hash='09d17c08f594edc7' id='type-id-22'/>
+    <!-- struct cds_lfq_node_rcu -->
+    <class-decl name='cds_lfq_node_rcu' is-struct='yes' visibility='default' size-in-bits='128' filepath='../include/urcu/rculfqueue.h' line='20' column='1' hash='837fc0a38cf157e7' id='type-id-169'>
+      <data-member access='public' layout-offset-in-bits='0'>
+        <!-- cds_lfq_node_rcu* cds_lfq_node_rcu::next -->
+        <var-decl name='next' type-id='type-id-170' visibility='default' filepath='../include/urcu/rculfqueue.h' line='21' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='64'>
+        <!-- int cds_lfq_node_rcu::dummy -->
+        <var-decl name='dummy' type-id='type-id-22' visibility='default' filepath='../include/urcu/rculfqueue.h' line='22' column='1'/>
+      </data-member>
+    </class-decl>
+    <!-- struct cds_lfq_queue_rcu -->
+    <class-decl name='cds_lfq_queue_rcu' is-struct='yes' visibility='default' size-in-bits='192' filepath='../include/urcu/rculfqueue.h' line='25' column='1' hash='741d18cf8fa75013' id='type-id-171'>
+      <data-member access='public' layout-offset-in-bits='0'>
+        <!-- cds_lfq_node_rcu* cds_lfq_queue_rcu::head -->
+        <var-decl name='head' type-id='type-id-170' visibility='default' filepath='../include/urcu/rculfqueue.h' line='26' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='64'>
+        <!-- cds_lfq_node_rcu* cds_lfq_queue_rcu::tail -->
+        <var-decl name='tail' type-id='type-id-170' visibility='default' filepath='../include/urcu/rculfqueue.h' line='26' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='128'>
+        <!-- void (* cds_lfq_queue_rcu::queue_call_rcu)(rcu_head*, void (*)(rcu_head*)) -->
+        <var-decl name='queue_call_rcu' type-id='type-id-103' visibility='default' filepath='../include/urcu/rculfqueue.h' line='27' column='1'/>
+      </data-member>
+    </class-decl>
+    <!-- struct cds_wfcq_node -->
+    <class-decl name='cds_wfcq_node' is-struct='yes' visibility='default' size-in-bits='64' filepath='../include/urcu/wfcqueue.h' line='44' column='1' hash='fcfd91346f4422bc' id='type-id-172'>
+      <data-member access='public' layout-offset-in-bits='0'>
+        <!-- cds_wfcq_node* cds_wfcq_node::next -->
+        <var-decl name='next' type-id='type-id-173' visibility='default' filepath='../include/urcu/wfcqueue.h' line='45' column='1'/>
+      </data-member>
+    </class-decl>
+    <!-- struct rcu_head -->
+    <class-decl name='rcu_head' is-struct='yes' visibility='default' size-in-bits='128' filepath='../include/urcu/call-rcu.h' line='43' column='1' hash='f7fd57e130f157b7' id='type-id-174'>
+      <data-member access='public' layout-offset-in-bits='0'>
+        <!-- cds_wfcq_node rcu_head::next -->
+        <var-decl name='next' type-id='type-id-172' visibility='default' filepath='../include/urcu/call-rcu.h' line='44' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='64'>
+        <!-- void (* rcu_head::func)(rcu_head*) -->
+        <var-decl name='func' type-id='type-id-163' visibility='default' filepath='../include/urcu/call-rcu.h' line='45' column='1'/>
+      </data-member>
+    </class-decl>
+    <!-- unsigned int -->
+    <type-decl name='unsigned int' size-in-bits='32' hash='e66b43f97c38e87a' id='type-id-9'/>
+    <!-- unsigned long int -->
+    <type-decl name='unsigned long int' size-in-bits='64' hash='8fdc5eea2983a729#2' id='type-id-3'/>
+    <!-- cds_lfq_node_rcu* -->
+    <pointer-type-def type-id='type-id-169' size-in-bits='64' hash='0f86a3fc88390bb7' id='type-id-170'/>
+    <!-- cds_lfq_queue_rcu* -->
+    <pointer-type-def type-id='type-id-171' size-in-bits='64' hash='66b79dfcef9a80e6' id='type-id-175'/>
+    <!-- cds_wfcq_node* -->
+    <pointer-type-def type-id='type-id-172' size-in-bits='64' hash='67618dd7cc72c6aa' id='type-id-173'/>
+    <!-- const char -->
+    <qualified-type-def type-id='type-id-1' const='yes' hash='3e50fd33f9bb78d9' id='type-id-176'/>
+    <!-- const char* -->
+    <pointer-type-def type-id='type-id-176' size-in-bits='64' hash='c44743f354f6a443' id='type-id-25'/>
+    <!-- rcu_head* -->
+    <pointer-type-def type-id='type-id-174' size-in-bits='64' hash='8a7cc24f5b6b2d53' id='type-id-161'/>
+    <!-- void (*)(rcu_head*) -->
+    <pointer-type-def type-id='type-id-160' size-in-bits='64' hash='fd7a63c0c6c822c4' id='type-id-163'/>
+    <!-- void (*)(rcu_head*, void (*)(rcu_head*)) -->
+    <pointer-type-def type-id='type-id-162' size-in-bits='64' hash='fd7a63c0c6c822c4' id='type-id-103'/>
+    <!-- void cds_lfq_node_init_rcu(cds_lfq_node_rcu*) -->
+    <function-decl name='cds_lfq_node_init_rcu' mangled-name='cds_lfq_node_init_rcu' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfqueue.c' line='19' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='cds_lfq_node_init_rcu' hash='74e6228eb17c16ec'>
+      <!-- parameter of type 'cds_lfq_node_rcu*' -->
+      <parameter type-id='type-id-170' name='node' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfqueue.c' line='19' column='1'/>
+      <!-- void -->
+      <return type-id='type-id-26'/>
+    </function-decl>
+    <!-- void cds_lfq_init_rcu(cds_lfq_queue_rcu*, void (*)(rcu_head*, void (*)(rcu_head*))) -->
+    <function-decl name='cds_lfq_init_rcu' mangled-name='cds_lfq_init_rcu' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfqueue.c' line='24' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='cds_lfq_init_rcu' hash='2230701174f62252'>
+      <!-- parameter of type 'cds_lfq_queue_rcu*' -->
+      <parameter type-id='type-id-175' name='q' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfqueue.c' line='24' column='1'/>
+      <!-- parameter of type 'void (*)(rcu_head*, void (*)(rcu_head*))' -->
+      <parameter type-id='type-id-103' name='queue_call_rcu' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfqueue.c' line='25' column='1'/>
+      <!-- void -->
+      <return type-id='type-id-26'/>
+    </function-decl>
+    <!-- int cds_lfq_destroy_rcu(cds_lfq_queue_rcu*) -->
+    <function-decl name='cds_lfq_destroy_rcu' mangled-name='cds_lfq_destroy_rcu' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfqueue.c' line='31' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='cds_lfq_destroy_rcu' hash='892835fb65658ddf'>
+      <!-- parameter of type 'cds_lfq_queue_rcu*' -->
+      <parameter type-id='type-id-175' name='q' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfqueue.c' line='31' column='1'/>
+      <!-- int -->
+      <return type-id='type-id-22'/>
+    </function-decl>
+    <!-- void cds_lfq_enqueue_rcu(cds_lfq_queue_rcu*, cds_lfq_node_rcu*) -->
+    <function-decl name='cds_lfq_enqueue_rcu' mangled-name='cds_lfq_enqueue_rcu' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfqueue.c' line='36' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='cds_lfq_enqueue_rcu' hash='dae28cbfcfa25895'>
+      <!-- parameter of type 'cds_lfq_queue_rcu*' -->
+      <parameter type-id='type-id-175' name='q' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfqueue.c' line='36' column='1'/>
+      <!-- parameter of type 'cds_lfq_node_rcu*' -->
+      <parameter type-id='type-id-170' name='node' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfqueue.c' line='36' column='1'/>
+      <!-- void -->
+      <return type-id='type-id-26'/>
+    </function-decl>
+    <!-- cds_lfq_node_rcu* cds_lfq_dequeue_rcu(cds_lfq_queue_rcu*) -->
+    <function-decl name='cds_lfq_dequeue_rcu' mangled-name='cds_lfq_dequeue_rcu' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfqueue.c' line='42' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='cds_lfq_dequeue_rcu' hash='1aaa0efdc34d7c86'>
+      <!-- parameter of type 'cds_lfq_queue_rcu*' -->
+      <parameter type-id='type-id-175' name='q' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfqueue.c' line='42' column='1'/>
+      <!-- cds_lfq_node_rcu* -->
+      <return type-id='type-id-170'/>
+    </function-decl>
+    <!-- void -->
+    <type-decl name='void' id='type-id-26'/>
+    <!-- void* -->
+    <pointer-type-def type-id='type-id-26' id='type-id-63'/>
+  </abi-instr>
+  <abi-instr address-size='64' path='rculfstack.c' comp-dir-path='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src' language='LANG_C11'>
+    <!-- struct cds_lfs_node_rcu -->
+    <class-decl name='cds_lfs_node_rcu' is-struct='yes' visibility='default' size-in-bits='64' filepath='../include/urcu/rculfstack.h' line='23' column='1' hash='7aa4578fe29925f8' id='type-id-177'>
+      <data-member access='public' layout-offset-in-bits='0'>
+        <!-- cds_lfs_node_rcu* cds_lfs_node_rcu::next -->
+        <var-decl name='next' type-id='type-id-178' visibility='default' filepath='../include/urcu/rculfstack.h' line='24' column='1'/>
+      </data-member>
+    </class-decl>
+    <!-- struct cds_lfs_stack_rcu -->
+    <class-decl name='cds_lfs_stack_rcu' is-struct='yes' visibility='default' size-in-bits='64' filepath='../include/urcu/rculfstack.h' line='27' column='1' hash='e04ea799b263bdea' id='type-id-179'>
+      <data-member access='public' layout-offset-in-bits='0'>
+        <!-- cds_lfs_node_rcu* cds_lfs_stack_rcu::head -->
+        <var-decl name='head' type-id='type-id-178' visibility='default' filepath='../include/urcu/rculfstack.h' line='28' column='1'/>
+      </data-member>
+    </class-decl>
+    <!-- cds_lfs_node_rcu* -->
+    <pointer-type-def type-id='type-id-177' size-in-bits='64' hash='a7d1abd2ed33c597' id='type-id-178'/>
+    <!-- cds_lfs_stack_rcu* -->
+    <pointer-type-def type-id='type-id-179' size-in-bits='64' hash='0aa90d74cd4331d2' id='type-id-180'/>
+    <!-- void cds_lfs_node_init_rcu(cds_lfs_node_rcu*) -->
+    <function-decl name='cds_lfs_node_init_rcu' mangled-name='cds_lfs_node_init_rcu' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfstack.c' line='23' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='cds_lfs_node_init_rcu' hash='0b51dd562e6d2d3f'>
+      <!-- parameter of type 'cds_lfs_node_rcu*' -->
+      <parameter type-id='type-id-178' name='node' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfstack.c' line='23' column='1'/>
+      <!-- void -->
+      <return type-id='type-id-26'/>
+    </function-decl>
+    <!-- void cds_lfs_init_rcu(cds_lfs_stack_rcu*) -->
+    <function-decl name='cds_lfs_init_rcu' mangled-name='cds_lfs_init_rcu' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfstack.c' line='28' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='cds_lfs_init_rcu' hash='66180bb877a215c0'>
+      <!-- parameter of type 'cds_lfs_stack_rcu*' -->
+      <parameter type-id='type-id-180' name='s' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfstack.c' line='28' column='1'/>
+      <!-- void -->
+      <return type-id='type-id-26'/>
+    </function-decl>
+    <!-- int cds_lfs_push_rcu(cds_lfs_stack_rcu*, cds_lfs_node_rcu*) -->
+    <function-decl name='cds_lfs_push_rcu' mangled-name='cds_lfs_push_rcu' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfstack.c' line='33' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='cds_lfs_push_rcu' hash='607988c83ee20303'>
+      <!-- parameter of type 'cds_lfs_stack_rcu*' -->
+      <parameter type-id='type-id-180' name='s' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfstack.c' line='33' column='1'/>
+      <!-- parameter of type 'cds_lfs_node_rcu*' -->
+      <parameter type-id='type-id-178' name='node' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfstack.c' line='34' column='1'/>
+      <!-- int -->
+      <return type-id='type-id-22'/>
+    </function-decl>
+    <!-- cds_lfs_node_rcu* cds_lfs_pop_rcu(cds_lfs_stack_rcu*) -->
+    <function-decl name='cds_lfs_pop_rcu' mangled-name='cds_lfs_pop_rcu' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfstack.c' line='39' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='cds_lfs_pop_rcu' hash='b6dabf5c487b1595'>
+      <!-- parameter of type 'cds_lfs_stack_rcu*' -->
+      <parameter type-id='type-id-180' name='s' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/rculfstack.c' line='39' column='1'/>
+      <!-- cds_lfs_node_rcu* -->
+      <return type-id='type-id-178'/>
+    </function-decl>
+  </abi-instr>
+  <abi-instr address-size='64' path='workqueue.c' comp-dir-path='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src' language='LANG_C11'>
+    <!-- __cpu_mask[16] -->
+    <array-type-def dimensions='1' type-id='type-id-181' size-in-bits='1024' hash='3f0209c3c9694f78' id='type-id-182'>
+      <!-- <anonymous range>[16] -->
+      <subrange length='16' lower-bound='0' upper-bound='15' type-id='type-id-3' size-in-bits='64' is-anonymous='yes' hash='6c35b1e999eba398' id='type-id-183'/>
+    </array-type-def>
+    <!-- char[1] -->
+    <array-type-def dimensions='1' type-id='type-id-1' size-in-bits='8' hash='f7aed1c6cc6e7b3c' id='type-id-184'>
+      <!-- <anonymous range>[1] -->
+      <subrange length='1' lower-bound='0' upper-bound='0' type-id='type-id-3' size-in-bits='64' is-anonymous='yes' hash='eba0a2b392137dcb' id='type-id-185'/>
+    </array-type-def>
+    <!-- char[20] -->
+    <array-type-def dimensions='1' type-id='type-id-1' size-in-bits='160' hash='99641d293d1da856' id='type-id-186'>
+      <!-- <anonymous range>[20] -->
+      <subrange length='20' lower-bound='0' upper-bound='19' type-id='type-id-3' size-in-bits='64' is-anonymous='yes' hash='1ca9e41140ea49be' id='type-id-187'/>
+    </array-type-def>
+    <!-- char[56] -->
+    <array-type-def dimensions='1' type-id='type-id-1' size-in-bits='448' hash='b9acc09cd17d593e' id='type-id-188'>
+      <!-- <anonymous range>[56] -->
+      <subrange length='56' lower-bound='0' upper-bound='55' type-id='type-id-3' size-in-bits='64' is-anonymous='yes' hash='1911f4cdae5d7aa5' id='type-id-189'/>
+    </array-type-def>
+    <!-- signed char -->
+    <type-decl name='signed char' size-in-bits='8' hash='3c595c3350588f18' id='type-id-190'/>
+    <!-- struct _IO_FILE -->
+    <class-decl name='_IO_FILE' is-struct='yes' visibility='default' size-in-bits='1728' filepath='/usr/include/x86_64-linux-gnu/bits/types/struct_FILE.h' line='50' column='1' hash='a4bd2f88347a2dd0' id='type-id-191'>
+      <data-member access='public' layout-offset-in-bits='0'>
+        <!-- int _IO_FILE::_flags -->
+        <var-decl name='_flags' type-id='type-id-22' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/types/struct_FILE.h' line='52' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='64'>
+        <!-- char* _IO_FILE::_IO_read_ptr -->
+        <var-decl name='_IO_read_ptr' type-id='type-id-120' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/types/struct_FILE.h' line='55' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='128'>
+        <!-- char* _IO_FILE::_IO_read_end -->
+        <var-decl name='_IO_read_end' type-id='type-id-120' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/types/struct_FILE.h' line='56' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='192'>
+        <!-- char* _IO_FILE::_IO_read_base -->
+        <var-decl name='_IO_read_base' type-id='type-id-120' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/types/struct_FILE.h' line='57' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='256'>
+        <!-- char* _IO_FILE::_IO_write_base -->
+        <var-decl name='_IO_write_base' type-id='type-id-120' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/types/struct_FILE.h' line='58' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='320'>
+        <!-- char* _IO_FILE::_IO_write_ptr -->
+        <var-decl name='_IO_write_ptr' type-id='type-id-120' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/types/struct_FILE.h' line='59' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='384'>
+        <!-- char* _IO_FILE::_IO_write_end -->
+        <var-decl name='_IO_write_end' type-id='type-id-120' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/types/struct_FILE.h' line='60' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='448'>
+        <!-- char* _IO_FILE::_IO_buf_base -->
+        <var-decl name='_IO_buf_base' type-id='type-id-120' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/types/struct_FILE.h' line='61' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='512'>
+        <!-- char* _IO_FILE::_IO_buf_end -->
+        <var-decl name='_IO_buf_end' type-id='type-id-120' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/types/struct_FILE.h' line='62' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='576'>
+        <!-- char* _IO_FILE::_IO_save_base -->
+        <var-decl name='_IO_save_base' type-id='type-id-120' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/types/struct_FILE.h' line='65' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='640'>
+        <!-- char* _IO_FILE::_IO_backup_base -->
+        <var-decl name='_IO_backup_base' type-id='type-id-120' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/types/struct_FILE.h' line='66' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='704'>
+        <!-- char* _IO_FILE::_IO_save_end -->
+        <var-decl name='_IO_save_end' type-id='type-id-120' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/types/struct_FILE.h' line='67' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='768'>
+        <!-- _IO_marker* _IO_FILE::_markers -->
+        <var-decl name='_markers' type-id='type-id-192' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/types/struct_FILE.h' line='69' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='832'>
+        <!-- _IO_FILE* _IO_FILE::_chain -->
+        <var-decl name='_chain' type-id='type-id-193' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/types/struct_FILE.h' line='71' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='896'>
+        <!-- int _IO_FILE::_fileno -->
+        <var-decl name='_fileno' type-id='type-id-22' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/types/struct_FILE.h' line='73' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='928'>
+        <!-- int _IO_FILE::_flags2 -->
+        <var-decl name='_flags2' type-id='type-id-22' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/types/struct_FILE.h' line='74' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='952'>
+        <!-- char _IO_FILE::_short_backupbuf[1] -->
+        <var-decl name='_short_backupbuf' type-id='type-id-184' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/types/struct_FILE.h' line='76' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='960'>
+        <!-- __off_t _IO_FILE::_old_offset -->
+        <var-decl name='_old_offset' type-id='type-id-65' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/types/struct_FILE.h' line='77' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='1024'>
+        <!-- unsigned short int _IO_FILE::_cur_column -->
+        <var-decl name='_cur_column' type-id='type-id-97' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/types/struct_FILE.h' line='80' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='1040'>
+        <!-- signed char _IO_FILE::_vtable_offset -->
+        <var-decl name='_vtable_offset' type-id='type-id-190' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/types/struct_FILE.h' line='81' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='1048'>
+        <!-- char _IO_FILE::_shortbuf[1] -->
+        <var-decl name='_shortbuf' type-id='type-id-184' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/types/struct_FILE.h' line='82' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='1088'>
+        <!-- _IO_lock_t* _IO_FILE::_lock -->
+        <var-decl name='_lock' type-id='type-id-194' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/types/struct_FILE.h' line='84' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='1152'>
+        <!-- __off64_t _IO_FILE::_offset -->
+        <var-decl name='_offset' type-id='type-id-195' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/types/struct_FILE.h' line='92' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='1216'>
+        <!-- _IO_codecvt* _IO_FILE::_codecvt -->
+        <var-decl name='_codecvt' type-id='type-id-196' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/types/struct_FILE.h' line='94' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='1280'>
+        <!-- _IO_wide_data* _IO_FILE::_wide_data -->
+        <var-decl name='_wide_data' type-id='type-id-197' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/types/struct_FILE.h' line='95' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='1344'>
+        <!-- _IO_FILE* _IO_FILE::_freeres_list -->
+        <var-decl name='_freeres_list' type-id='type-id-193' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/types/struct_FILE.h' line='96' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='1408'>
+        <!-- void* _IO_FILE::_freeres_buf -->
+        <var-decl name='_freeres_buf' type-id='type-id-63' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/types/struct_FILE.h' line='97' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='1472'>
+        <!-- _IO_FILE** _IO_FILE::_prevchain -->
+        <var-decl name='_prevchain' type-id='type-id-198' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/types/struct_FILE.h' line='98' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='1536'>
+        <!-- int _IO_FILE::_mode -->
+        <var-decl name='_mode' type-id='type-id-22' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/types/struct_FILE.h' line='99' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='1568'>
+        <!-- char _IO_FILE::_unused2[20] -->
+        <var-decl name='_unused2' type-id='type-id-186' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/types/struct_FILE.h' line='101' column='1'/>
+      </data-member>
+    </class-decl>
+    <!-- struct __sigset_t -->
+    <class-decl name='__sigset_t' is-struct='yes' naming-typedef-id='type-id-199' visibility='default' size-in-bits='1024' filepath='/usr/include/x86_64-linux-gnu/bits/types/__sigset_t.h' line='5' column='1' hash='18950dbdbe728dbc' id='type-id-200'>
+      <data-member access='public' layout-offset-in-bits='0'>
+        <!-- unsigned long int __sigset_t::__val[16] -->
+        <var-decl name='__val' type-id='type-id-201' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/types/__sigset_t.h' line='7' column='1'/>
+      </data-member>
+    </class-decl>
+    <!-- struct cds_wfcq_head -->
+    <class-decl name='cds_wfcq_head' is-struct='yes' visibility='default' size-in-bits='384' filepath='../include/urcu/wfcqueue.h' line='57' column='1' hash='9793c1d1f7203887' id='type-id-148'>
+      <data-member access='public' layout-offset-in-bits='0'>
+        <!-- cds_wfcq_node cds_wfcq_head::node -->
+        <var-decl name='node' type-id='type-id-172' visibility='default' filepath='../include/urcu/wfcqueue.h' line='58' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='64'>
+        <!-- pthread_mutex_t cds_wfcq_head::lock -->
+        <var-decl name='lock' type-id='type-id-20' visibility='default' filepath='../include/urcu/wfcqueue.h' line='59' column='1'/>
+      </data-member>
+    </class-decl>
+    <!-- struct cds_wfcq_tail -->
+    <class-decl name='cds_wfcq_tail' is-struct='yes' visibility='default' size-in-bits='64' filepath='../include/urcu/wfcqueue.h' line='171' column='1' hash='8829193ada1d4ea9' id='type-id-147'>
+      <data-member access='public' layout-offset-in-bits='0'>
+        <!-- cds_wfcq_node* cds_wfcq_tail::p -->
+        <var-decl name='p' type-id='type-id-173' visibility='default' filepath='../include/urcu/wfcqueue.h' line='172' column='1'/>
+      </data-member>
+    </class-decl>
+    <!-- struct cpu_set_t -->
+    <class-decl name='cpu_set_t' is-struct='yes' naming-typedef-id='type-id-202' visibility='default' size-in-bits='1024' filepath='/usr/include/x86_64-linux-gnu/bits/cpu-set.h' line='39' column='1' hash='320ffe1e673199fd' id='type-id-203'>
+      <data-member access='public' layout-offset-in-bits='0'>
+        <!-- __cpu_mask cpu_set_t::__bits[16] -->
+        <var-decl name='__bits' type-id='type-id-182' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/cpu-set.h' line='41' column='1'/>
+      </data-member>
+    </class-decl>
+    <!-- struct pollfd -->
+    <class-decl name='pollfd' is-struct='yes' visibility='default' size-in-bits='64' filepath='/usr/include/x86_64-linux-gnu/sys/poll.h' line='36' column='1' hash='9448f51ff629d594' id='type-id-204'>
+      <data-member access='public' layout-offset-in-bits='0'>
+        <!-- int pollfd::fd -->
+        <var-decl name='fd' type-id='type-id-22' visibility='default' filepath='/usr/include/x86_64-linux-gnu/sys/poll.h' line='38' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='32'>
+        <!-- short int pollfd::events -->
+        <var-decl name='events' type-id='type-id-36' visibility='default' filepath='/usr/include/x86_64-linux-gnu/sys/poll.h' line='39' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='48'>
+        <!-- short int pollfd::revents -->
+        <var-decl name='revents' type-id='type-id-36' visibility='default' filepath='/usr/include/x86_64-linux-gnu/sys/poll.h' line='40' column='1'/>
+      </data-member>
+    </class-decl>
+    <!-- struct timespec -->
+    <class-decl name='timespec' is-struct='yes' visibility='default' size-in-bits='128' filepath='/usr/include/x86_64-linux-gnu/bits/types/struct_timespec.h' line='11' column='1' hash='7451f9a3207df4f1' id='type-id-205'>
+      <data-member access='public' layout-offset-in-bits='0'>
+        <!-- __time_t timespec::tv_sec -->
+        <var-decl name='tv_sec' type-id='type-id-206' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/types/struct_timespec.h' line='16' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='64'>
+        <!-- __syscall_slong_t timespec::tv_nsec -->
+        <var-decl name='tv_nsec' type-id='type-id-207' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/types/struct_timespec.h' line='21' column='1'/>
+      </data-member>
+    </class-decl>
+    <!-- struct urcu_ref -->
+    <class-decl name='urcu_ref' is-struct='yes' visibility='default' size-in-bits='64' filepath='../include/urcu/ref.h' line='21' column='1' hash='c65d2d4454a6d7a9' id='type-id-208'>
+      <data-member access='public' layout-offset-in-bits='0'>
+        <!-- long int urcu_ref::refcount -->
+        <var-decl name='refcount' type-id='type-id-35' visibility='default' filepath='../include/urcu/ref.h' line='22' column='1'/>
+      </data-member>
+    </class-decl>
+    <!-- struct urcu_work -->
+    <class-decl name='urcu_work' is-struct='yes' visibility='default' size-in-bits='128' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/workqueue.h' line='39' column='1' hash='ede2e9c12425b10e' id='type-id-81'>
+      <data-member access='public' layout-offset-in-bits='0'>
+        <!-- cds_wfcq_node urcu_work::next -->
+        <var-decl name='next' type-id='type-id-172' visibility='default' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/workqueue.h' line='40' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='64'>
+        <!-- void (* urcu_work::func)(urcu_work*) -->
+        <var-decl name='func' type-id='type-id-209' visibility='default' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/workqueue.h' line='41' column='1'/>
+      </data-member>
+    </class-decl>
+    <!-- struct urcu_workqueue_completion -->
+    <class-decl name='urcu_workqueue_completion' is-struct='yes' visibility='default' size-in-bits='128' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/workqueue.c' line='65' column='1' hash='7ec9961140d29565' id='type-id-210'>
+      <data-member access='public' layout-offset-in-bits='0'>
+        <!-- int urcu_workqueue_completion::barrier_count -->
+        <var-decl name='barrier_count' type-id='type-id-22' visibility='default' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/workqueue.c' line='66' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='32'>
+        <!-- int32_t urcu_workqueue_completion::futex -->
+        <var-decl name='futex' type-id='type-id-23' visibility='default' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/workqueue.c' line='67' column='1'/>
+      </data-member>
+      <data-member access='public' layout-offset-in-bits='64'>
+        <!-- urcu_ref urcu_workqueue_completion::ref -->
+        <var-decl name='ref' type-id='type-id-208' visibility='default' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/workqueue.c' line='68' column='1'/>
+      </data-member>
+    </class-decl>
+    <!-- typedef _IO_FILE FILE -->
+    <typedef-decl name='FILE' type-id='type-id-191' size-in-bits='1728' filepath='/usr/include/x86_64-linux-gnu/bits/types/FILE.h' line='7' column='1' id='type-id-211'/>
+    <!-- typedef void _IO_lock_t -->
+    <typedef-decl name='_IO_lock_t' type-id='type-id-26' filepath='/usr/include/x86_64-linux-gnu/bits/types/struct_FILE.h' line='44' column='1' id='type-id-212'/>
+    <!-- typedef unsigned long int __cpu_mask -->
+    <typedef-decl name='__cpu_mask' type-id='type-id-3' size-in-bits='64' filepath='/usr/include/x86_64-linux-gnu/bits/cpu-set.h' line='32' column='1' hash='8fdc5eea2983a729' id='type-id-181'/>
+    <!-- typedef int __int32_t -->
+    <typedef-decl name='__int32_t' type-id='type-id-22' size-in-bits='32' filepath='/usr/include/x86_64-linux-gnu/bits/types.h' line='41' column='1' hash='09d17c08f594edc7' id='type-id-213'/>
+    <!-- typedef long int __off64_t -->
+    <typedef-decl name='__off64_t' type-id='type-id-35' size-in-bits='64' filepath='/usr/include/x86_64-linux-gnu/bits/types.h' line='153' column='1' hash='b119fe0931d2ee10' id='type-id-195'/>
+    <!-- typedef long int __off_t -->
+    <typedef-decl name='__off_t' type-id='type-id-35' size-in-bits='64' filepath='/usr/include/x86_64-linux-gnu/bits/types.h' line='152' column='1' hash='b119fe0931d2ee10' id='type-id-65'/>
+    <!-- typedef int __pid_t -->
+    <typedef-decl name='__pid_t' type-id='type-id-22' size-in-bits='32' filepath='/usr/include/x86_64-linux-gnu/bits/types.h' line='154' column='1' hash='09d17c08f594edc7' id='type-id-214'/>
+    <!-- typedef __sigset_t __sigset_t -->
+    <typedef-decl name='__sigset_t' type-id='type-id-200' size-in-bits='1024' filepath='/usr/include/x86_64-linux-gnu/bits/types/__sigset_t.h' line='8' column='1' id='type-id-199'/>
+    <!-- typedef long int __syscall_slong_t -->
+    <typedef-decl name='__syscall_slong_t' type-id='type-id-35' size-in-bits='64' filepath='/usr/include/x86_64-linux-gnu/bits/types.h' line='197' column='1' hash='b119fe0931d2ee10' id='type-id-207'/>
+    <!-- typedef long int __time_t -->
+    <typedef-decl name='__time_t' type-id='type-id-35' size-in-bits='64' filepath='/usr/include/x86_64-linux-gnu/bits/types.h' line='160' column='1' hash='b119fe0931d2ee10' id='type-id-206'/>
+    <!-- typedef cpu_set_t cpu_set_t -->
+    <typedef-decl name='cpu_set_t' type-id='type-id-203' size-in-bits='1024' filepath='/usr/include/x86_64-linux-gnu/bits/cpu-set.h' line='42' column='1' id='type-id-202'/>
+    <!-- typedef __int32_t int32_t -->
+    <typedef-decl name='int32_t' type-id='type-id-213' size-in-bits='32' filepath='/usr/include/x86_64-linux-gnu/bits/stdint-intn.h' line='26' column='1' hash='09d17c08f594edc7' id='type-id-23'/>
+    <!-- typedef unsigned long int nfds_t -->
+    <typedef-decl name='nfds_t' type-id='type-id-3' size-in-bits='64' filepath='/usr/include/x86_64-linux-gnu/sys/poll.h' line='33' column='1' hash='8fdc5eea2983a729' id='type-id-29'/>
+    <!-- typedef pthread_attr_t pthread_attr_t -->
+    <typedef-decl name='pthread_attr_t' type-id='type-id-215' size-in-bits='448' filepath='/usr/include/x86_64-linux-gnu/bits/pthreadtypes.h' line='62' column='1' id='type-id-80'/>
+    <!-- typedef unsigned long int pthread_t -->
+    <typedef-decl name='pthread_t' type-id='type-id-3' size-in-bits='64' filepath='/usr/include/x86_64-linux-gnu/bits/pthreadtypes.h' line='27' column='1' hash='8fdc5eea2983a729' id='type-id-149'/>
+    <!-- typedef __sigset_t sigset_t -->
+    <typedef-decl name='sigset_t' type-id='type-id-199' size-in-bits='1024' filepath='/usr/include/x86_64-linux-gnu/bits/types/sigset_t.h' line='7' column='1' id='type-id-216'/>
+    <!-- typedef unsigned long int size_t -->
+    <typedef-decl name='size_t' type-id='type-id-3' size-in-bits='64' filepath='/usr/lib/gcc/x86_64-linux-gnu/14/include/stddef.h' line='214' column='1' hash='8fdc5eea2983a729' id='type-id-64'/>
+    <!-- union pthread_attr_t -->
+    <union-decl name='pthread_attr_t' visibility='default' size-in-bits='448' filepath='/usr/include/x86_64-linux-gnu/bits/pthreadtypes.h' line='56' column='1' hash='f1fee08f614bcebf' id='type-id-215'>
+      <data-member access='public'>
+        <!-- char pthread_attr_t::__size[56] -->
+        <var-decl name='__size' type-id='type-id-188' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/pthreadtypes.h' line='58' column='1'/>
+      </data-member>
+      <data-member access='public'>
+        <!-- long int pthread_attr_t::__align -->
+        <var-decl name='__align' type-id='type-id-35' visibility='default' filepath='/usr/include/x86_64-linux-gnu/bits/pthreadtypes.h' line='59' column='1'/>
+      </data-member>
+    </union-decl>
+    <!-- unsigned long int[16] -->
+    <array-type-def dimensions='1' type-id='type-id-3' size-in-bits='1024' hash='ed1e12a813ec6094' id='type-id-201'>
+      <!-- <anonymous range>[16] -->
+      <subrange length='16' lower-bound='0' upper-bound='15' type-id='type-id-3' size-in-bits='64' is-anonymous='yes' hash='6c35b1e999eba398' id='type-id-183'/>
+    </array-type-def>
+    <!-- unsigned short int -->
+    <type-decl name='unsigned short int' size-in-bits='16' hash='d7723bb93a30b11d#4' id='type-id-97'/>
+    <!-- FILE* -->
+    <pointer-type-def type-id='type-id-211' size-in-bits='64' hash='4cdc26b379a5c62d' id='type-id-157'/>
+    <!-- _IO_FILE* -->
+    <pointer-type-def type-id='type-id-191' size-in-bits='64' hash='071f36dcbe00ad00' id='type-id-193'/>
+    <!-- _IO_FILE** -->
+    <pointer-type-def type-id='type-id-193' size-in-bits='64' hash='e8c018048121152c' id='type-id-198'/>
+    <!-- __sigset_t* -->
+    <pointer-type-def type-id='type-id-199' size-in-bits='64' hash='555fc4bca5fe84c7' id='type-id-217'/>
+    <!-- __sigset_t* restrict -->
+    <qualified-type-def type-id='type-id-217' restrict='yes' hash='44bc700b0795901e' id='type-id-159'/>
+    <!-- char* -->
+    <pointer-type-def type-id='type-id-1' size-in-bits='64' hash='e533f42d1dd4942c' id='type-id-120'/>
+    <!-- const __sigset_t -->
+    <qualified-type-def type-id='type-id-199' const='yes' hash='e7101e81b3a1c79a' id='type-id-218'/>
+    <!-- const __sigset_t* -->
+    <pointer-type-def type-id='type-id-218' size-in-bits='64' hash='cb258e8b0236a189' id='type-id-219'/>
+    <!-- const __sigset_t* restrict -->
+    <qualified-type-def type-id='type-id-219' restrict='yes' hash='9e59d76337e3faeb' id='type-id-158'/>
+    <!-- const cpu_set_t -->
+    <qualified-type-def type-id='type-id-202' const='yes' hash='74b753259a2ac36a' id='type-id-220'/>
+    <!-- const cpu_set_t* -->
+    <pointer-type-def type-id='type-id-220' size-in-bits='64' hash='b11851f865e088e6' id='type-id-221'/>
+    <!-- const pthread_attr_t -->
+    <qualified-type-def type-id='type-id-80' const='yes' hash='13a03dff5e111f90' id='type-id-222'/>
+    <!-- const pthread_attr_t* -->
+    <pointer-type-def type-id='type-id-222' size-in-bits='64' hash='119feddb672945aa' id='type-id-223'/>
+    <!-- const pthread_attr_t* restrict -->
+    <qualified-type-def type-id='type-id-223' restrict='yes' hash='8bc9fa649ad6eb1c' id='type-id-153'/>
+    <!-- const timespec -->
+    <qualified-type-def type-id='type-id-205' const='yes' hash='bab7e12c9662709b' id='type-id-224'/>
+    <!-- const timespec* -->
+    <pointer-type-def type-id='type-id-224' size-in-bits='64' hash='977f4d367b98a605' id='type-id-24'/>
+    <!-- int* -->
+    <pointer-type-def type-id='type-id-22' size-in-bits='64' hash='3fd83b2c14ae2f2f' id='type-id-27'/>
+    <!-- int32_t* -->
+    <pointer-type-def type-id='type-id-23' size-in-bits='64' hash='eed3dd419640fb3b' id='type-id-21'/>
+    <!-- pollfd* -->
+    <pointer-type-def type-id='type-id-204' size-in-bits='64' hash='4dd6d46112846be5' id='type-id-28'/>
+    <!-- pthread_t* -->
+    <pointer-type-def type-id='type-id-149' size-in-bits='64' hash='d653420556c2920d' id='type-id-225'/>
+    <!-- pthread_t* restrict -->
+    <qualified-type-def type-id='type-id-225' restrict='yes' hash='132d28bdae624dd8' id='type-id-152'/>
+    <!-- sigset_t* -->
+    <pointer-type-def type-id='type-id-216' size-in-bits='64' hash='ea13385a3a011c76' id='type-id-156'/>
+    <!-- urcu_work* -->
+    <pointer-type-def type-id='type-id-81' size-in-bits='64' hash='45239880de2247d4' id='type-id-165'/>
+    <!-- urcu_workqueue* -->
+    <pointer-type-def type-id='type-id-146' size-in-bits='64' hash='3f19e8269b561e55' id='type-id-167'/>
+    <!-- urcu_workqueue_completion* -->
+    <pointer-type-def type-id='type-id-210' size-in-bits='64' hash='f54552610ec3f0cb' id='type-id-226'/>
+    <!-- void (*)(urcu_work*) -->
+    <pointer-type-def type-id='type-id-164' size-in-bits='64' hash='fd7a63c0c6c822c4' id='type-id-209'/>
+    <!-- void (*)(urcu_workqueue*, void*) -->
+    <pointer-type-def type-id='type-id-166' size-in-bits='64' hash='fd7a63c0c6c822c4' id='type-id-150'/>
+    <!-- void* (*)(void*) -->
+    <pointer-type-def type-id='type-id-168' size-in-bits='64' hash='fd7a63c0c6c822c4' id='type-id-154'/>
+    <!-- void** -->
+    <pointer-type-def type-id='type-id-63' size-in-bits='64' hash='473a9667a2856e32' id='type-id-155'/>
+    <!-- _IO_codecvt* -->
+    <pointer-type-def type-id='type-id-227' size-in-bits='64' id='type-id-196'/>
+    <!-- _IO_lock_t* -->
+    <pointer-type-def type-id='type-id-212' size-in-bits='64' id='type-id-194'/>
+    <!-- _IO_marker* -->
+    <pointer-type-def type-id='type-id-228' size-in-bits='64' id='type-id-192'/>
+    <!-- _IO_wide_data* -->
+    <pointer-type-def type-id='type-id-229' size-in-bits='64' id='type-id-197'/>
+    <!-- struct _IO_codecvt -->
+    <class-decl name='_IO_codecvt' is-struct='yes' visibility='default' is-declaration-only='yes' id='type-id-227'/>
+    <!-- struct _IO_marker -->
+    <class-decl name='_IO_marker' is-struct='yes' visibility='default' is-declaration-only='yes' id='type-id-228'/>
+    <!-- struct _IO_wide_data -->
+    <class-decl name='_IO_wide_data' is-struct='yes' visibility='default' is-declaration-only='yes' id='type-id-229'/>
+    <!-- void* restrict -->
+    <qualified-type-def type-id='type-id-63' restrict='yes' id='type-id-230'/>
+    <!-- urcu_workqueue* urcu_workqueue_create(unsigned long int, int, void*, void (*)(urcu_workqueue*, void*), void (*)(urcu_workqueue*, void*), void (*)(urcu_workqueue*, void*), void (*)(urcu_workqueue*, void*), void (*)(urcu_workqueue*, void*), void (*)(urcu_workqueue*, void*), void (*)(urcu_workqueue*, void*)) -->
+    <function-decl name='urcu_workqueue_create' mangled-name='urcu_workqueue_create' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/workqueue.c' line='261' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='urcu_workqueue_create' hash='2951451e58dcb5b3'>
+      <!-- parameter of type 'unsigned long int' -->
+      <parameter type-id='type-id-3'/>
+      <!-- parameter of type 'int' -->
+      <parameter type-id='type-id-22'/>
+      <!-- parameter of type 'void*' -->
+      <parameter type-id='type-id-63'/>
+      <!-- parameter of type 'void (*)(urcu_workqueue*, void*)' -->
+      <parameter type-id='type-id-150'/>
+      <!-- parameter of type 'void (*)(urcu_workqueue*, void*)' -->
+      <parameter type-id='type-id-150'/>
+      <!-- parameter of type 'void (*)(urcu_workqueue*, void*)' -->
+      <parameter type-id='type-id-150'/>
+      <!-- parameter of type 'void (*)(urcu_workqueue*, void*)' -->
+      <parameter type-id='type-id-150'/>
+      <!-- parameter of type 'void (*)(urcu_workqueue*, void*)' -->
+      <parameter type-id='type-id-150'/>
+      <!-- parameter of type 'void (*)(urcu_workqueue*, void*)' -->
+      <parameter type-id='type-id-150'/>
+      <!-- parameter of type 'void (*)(urcu_workqueue*, void*)' -->
+      <parameter type-id='type-id-150'/>
+      <!-- urcu_workqueue* -->
+      <return type-id='type-id-167'/>
+    </function-decl>
+    <!-- void urcu_workqueue_destroy(urcu_workqueue*) -->
+    <function-decl name='urcu_workqueue_destroy' mangled-name='urcu_workqueue_destroy' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/workqueue.c' line='337' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='urcu_workqueue_destroy' hash='d6bc186ed4e1444a'>
+      <!-- parameter of type 'urcu_workqueue*' -->
+      <parameter type-id='type-id-167'/>
+      <!-- void -->
+      <return type-id='type-id-26'/>
+    </function-decl>
+    <!-- void urcu_workqueue_queue_work(urcu_workqueue*, urcu_work*, void (*)(urcu_work*)) -->
+    <function-decl name='urcu_workqueue_queue_work' mangled-name='urcu_workqueue_queue_work' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/workqueue.c' line='350' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='urcu_workqueue_queue_work' hash='4f0ace1ca3205b74'>
+      <!-- parameter of type 'urcu_workqueue*' -->
+      <parameter type-id='type-id-167'/>
+      <!-- parameter of type 'urcu_work*' -->
+      <parameter type-id='type-id-165'/>
+      <!-- parameter of type 'void (*)(urcu_work*)' -->
+      <parameter type-id='type-id-209'/>
+      <!-- void -->
+      <return type-id='type-id-26'/>
+    </function-decl>
+    <!-- urcu_workqueue_completion* urcu_workqueue_create_completion() -->
+    <function-decl name='urcu_workqueue_create_completion' mangled-name='urcu_workqueue_create_completion' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/workqueue.c' line='384' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='urcu_workqueue_create_completion' hash='bf0fa093bc655310'>
+      <!-- urcu_workqueue_completion* -->
+      <return type-id='type-id-226'/>
+    </function-decl>
+    <!-- void urcu_workqueue_destroy_completion(urcu_workqueue_completion*) -->
+    <function-decl name='urcu_workqueue_destroy_completion' mangled-name='urcu_workqueue_destroy_completion' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/workqueue.c' line='396' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='urcu_workqueue_destroy_completion' hash='bf0fa093bc655310'>
+      <!-- parameter of type 'urcu_workqueue_completion*' -->
+      <parameter type-id='type-id-226' name='completion' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/workqueue.c' line='401' column='1'/>
+      <!-- void -->
+      <return type-id='type-id-26'/>
+    </function-decl>
+    <!-- void urcu_workqueue_wait_completion(urcu_workqueue_completion*) -->
+    <function-decl name='urcu_workqueue_wait_completion' mangled-name='urcu_workqueue_wait_completion' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/workqueue.c' line='401' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='urcu_workqueue_wait_completion' hash='bf0fa093bc655310'>
+      <!-- parameter of type 'urcu_workqueue_completion*' -->
+      <parameter type-id='type-id-226' name='completion' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/workqueue.c' line='401' column='1'/>
+      <!-- void -->
+      <return type-id='type-id-26'/>
+    </function-decl>
+    <!-- void urcu_workqueue_queue_completion(urcu_workqueue*, urcu_workqueue_completion*) -->
+    <function-decl name='urcu_workqueue_queue_completion' mangled-name='urcu_workqueue_queue_completion' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/workqueue.c' line='414' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='urcu_workqueue_queue_completion' hash='7e0ec4ea0f4f7c4c'>
+      <!-- parameter of type 'urcu_workqueue*' -->
+      <parameter type-id='type-id-167' name='workqueue' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/workqueue.c' line='414' column='1'/>
+      <!-- parameter of type 'urcu_workqueue_completion*' -->
+      <parameter type-id='type-id-226' name='completion' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/workqueue.c' line='415' column='1'/>
+      <!-- void -->
+      <return type-id='type-id-26'/>
+    </function-decl>
+    <!-- void urcu_workqueue_flush_queued_work(urcu_workqueue*) -->
+    <function-decl name='urcu_workqueue_flush_queued_work' mangled-name='urcu_workqueue_flush_queued_work' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/workqueue.c' line='431' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='urcu_workqueue_flush_queued_work' hash='d6bc186ed4e1444a'>
+      <!-- parameter of type 'urcu_workqueue*' -->
+      <parameter type-id='type-id-167'/>
+      <!-- void -->
+      <return type-id='type-id-26'/>
+    </function-decl>
+    <!-- void urcu_workqueue_pause_worker(urcu_workqueue*) -->
+    <function-decl name='urcu_workqueue_pause_worker' mangled-name='urcu_workqueue_pause_worker' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/workqueue.c' line='444' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='urcu_workqueue_pause_worker' hash='d6bc186ed4e1444a'>
+      <!-- parameter of type 'urcu_workqueue*' -->
+      <parameter type-id='type-id-167'/>
+      <!-- void -->
+      <return type-id='type-id-26'/>
+    </function-decl>
+    <!-- void urcu_workqueue_resume_worker(urcu_workqueue*) -->
+    <function-decl name='urcu_workqueue_resume_worker' mangled-name='urcu_workqueue_resume_worker' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/workqueue.c' line='455' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='urcu_workqueue_resume_worker' hash='d6bc186ed4e1444a'>
+      <!-- parameter of type 'urcu_workqueue*' -->
+      <parameter type-id='type-id-167'/>
+      <!-- void -->
+      <return type-id='type-id-26'/>
+    </function-decl>
+    <!-- void urcu_workqueue_create_worker(urcu_workqueue*) -->
+    <function-decl name='urcu_workqueue_create_worker' mangled-name='urcu_workqueue_create_worker' filepath='/home/mjeanson/Git/lttng/userspace-rcu/stable-0.15/src/workqueue.c' line='462' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='urcu_workqueue_create_worker' hash='d6bc186ed4e1444a'>
+      <!-- parameter of type 'urcu_workqueue*' -->
+      <parameter type-id='type-id-167'/>
+      <!-- void -->
+      <return type-id='type-id-26'/>
+    </function-decl>
+    <!-- int sched_setaffinity(__pid_t, size_t, const cpu_set_t*) -->
+    <function-decl name='sched_setaffinity' filepath='/usr/include/sched.h' line='130' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='sched_setaffinity' hash='a8c3ccba20c8dbe7'>
+      <!-- parameter of type 'typedef __pid_t' -->
+      <parameter type-id='type-id-214'/>
+      <!-- parameter of type 'typedef size_t' -->
+      <parameter type-id='type-id-64'/>
+      <!-- parameter of type 'const cpu_set_t*' -->
+      <parameter type-id='type-id-221'/>
+      <!-- int -->
+      <return type-id='type-id-22'/>
+    </function-decl>
+    <!-- void* memset(void*, int, unsigned long int) -->
+    <function-decl name='memset' filepath='/usr/include/string.h' line='61' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='memset' hash='b6a97d07f8261bc0'>
+      <!-- parameter of type 'void*' -->
+      <parameter type-id='type-id-63'/>
+      <!-- parameter of type 'int' -->
+      <parameter type-id='type-id-22'/>
+      <!-- parameter of type 'unsigned long int' -->
+      <parameter type-id='type-id-3'/>
+      <!-- void* -->
+      <return type-id='type-id-63'/>
+    </function-decl>
+    <!-- long int syscall(long int, ...) -->
+    <function-decl name='syscall' filepath='/usr/include/unistd.h' line='1091' column='1' visibility='default' binding='global' size-in-bits='64' elf-symbol-id='syscall' hash='b1dcd91100b153bb'>
+      <!-- parameter of type 'long int' -->
+      <parameter type-id='type-id-35'/>
+      <parameter is-variadic='yes'/>
+      <!-- long int -->
+      <return type-id='type-id-35'/>
+    </function-decl>
+    <!-- variadic parameter type -->
+    <type-decl name='variadic parameter type' id='type-id-231'/>
+  </abi-instr>
+</abi-corpus>
