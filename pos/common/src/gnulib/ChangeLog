@@ -1,3 +1,81 @@
+2026-10-30  Bruno Haible  <bruno@clisp.org>
+
+	carray-list: Fix a counted_by constraint violation (regr. 2026-05-03).
+	Reproducible with gcc-16.2.0 -O2 -D_FORTIFY_SOURCE=3.
+	* lib/gl_carray_list.c (gl_carray_nx_create): Assign to list->elements
+	only after filling the array.
+
+2026-10-30  Bruno Haible  <bruno@clisp.org>
+
+	array-list: Fix a counted_by constraint violation (regr. 2026-05-03).
+	Reproducible with gcc-16.2.0 -O2 -D_FORTIFY_SOURCE=3.
+	Reported by Alexander Sosedkin <monk@unboiled.info> in
+	<https://lists.gnu.org/archive/html/bug-gnulib/2026-10/msg00140.html>.
+	* lib/gl_array_list.c (gl_array_nx_create): Assign to list->elements
+	only after filling the array.
+
+2026-10-28  Bruno Haible  <bruno@clisp.org>
+
+	doc: Expand documentation about string descriptors.
+	* doc/string-desc.texi (Handling strings with NUL characters): Document
+	each function. Add types/functions correspondence tables.
+
+2026-10-28  Bruno Haible  <bruno@clisp.org>
+
+	string-desc-quotearg: Improve comments.
+	* lib/string-desc-quotearg.h (sd_quotearg_buffer, sd_quotearg_alloc):
+	Rename parameter 'o' to 'options'.
+	(sd_quotearg_n_custom): Improve description.
+
+	string-desc: Fix comment.
+	* lib/string-desc.h (sd_data): Fix description.
+
+2026-10-28  Paul Eggert  <eggert@cs.ucla.edu>
+
+	libgmp-mpz: Pacify more gcc warnings
+	* lib/mini-gmp-gnulib.c: Ignore -Wanalyzer-write-to-const in
+	versions of GCC that support that option, as mini-gmp.c itself
+	doesn’t worry about pacifying that warning.
+	Similarly, ignore -Wunused-parameter, in case people compile
+	Gnulib code with that option.
+
+2026-10-27  Kamila Szewczyk <szewczyk@cs.uni-saarland.de>
+
+	announce-gen: Perl list buglet, cksum sha3 usage.
+
+	* lib/announce-gen (sizes): return empty list, not undef,
+	since the caller uses it in list context.
+	(print_checksums): omit --base64 from info message for sha3 since
+	digest_file_hex is called, so the checksum is output in hex, not
+	base64.
+
+2026-10-25  Paul Eggert  <eggert@cs.ucla.edu>
+
+	acl-permissions: use _GL_UNUSED
+	This is useful for Emacs when compiled with -Wunused-parameter.
+	* lib/acl-internal.c (free_permission_context):
+	* lib/get-permissions.c (get_permissions):
+	Use _GL_UNUSED for arguments that might not be used, depending on
+	compile-time options.
+
+2026-10-25  Eric Cai  <ericcaiwx@gmail.com>  (tiny change)
+
+	qcopy-acl: Fix handling of file descriptor 0.
+	* lib/qcopy-acl.c (qcopy_acl): Fix typo.
+
+2026-10-25  Bruno Haible  <bruno@clisp.org>
+
+	string-desc: Fix comment.
+	* lib/string-desc.h (sd_readwrite): Fix typo in comment.
+
+2026-10-21  Bruno Haible  <bruno@clisp.org>
+
+	Avoid -Wundef warnings about __clang_major__ with recent GCC in C mode.
+	Reported by Andrew Hamilton <adhamilt@gmail.com> in
+	<https://lists.gnu.org/archive/html/bug-gnulib/2026-10/msg00091.html>.
+	* m4/gnulib-common.m4 (gl_COMMON_BODY, gl_CC_GNULIB_WARNINGS): Test
+	__clang__ before __clang_major__.
+
 2026-10-21  Pádraig Brady  <P@draigBrady.com>
 
 	cpu-supports: align more closely with GLIBC_TUNABLES parsing
@@ -54,7 +132,7 @@
 2026-10-16  Paul Eggert  <eggert@cs.ucla.edu>
 
 	regex, ac-permissions, nstrftime: use maybe_unused
-	This is useful for Emacs when compiled with -Wunused-paramet3er.
+	This is useful for Emacs when compiled with -Wunused-parameter.
 	* lib/malloc/dynarray-skeleton.c (DYNARRAY_NAME (free__elements__)):
 	* lib/malloc/dynarray_at_failure.c (__libc_dynarray_at_failure):
 	* lib/regcomp.c (regerror, calc_next, build_range_exp)
@@ -65,7 +143,7 @@
 	perhaps only when compiled under Gnulib.  Since glibc does not
 	have anything like _GL_UNNAMED, don’t use that here.
 	* lib/set-permissions.c (set_acls):
-	* lib/strftime.c (get_tm_zone): Use _GL_UNSUED for arguments that
+	* lib/strftime.c (get_tm_zone): Use _GL_UNUSED for arguments that
 	might not be used, depending on compile-time options.
 
 2026-10-16  Bruno Haible  <bruno@clisp.org>
@@ -2737,7 +2815,7 @@
 
 	libgmp-mpz: pacify -Wuseless-cast
 	* lib/mini-gmp-gnulib.c: Ignore -Wuseless-cast, as we
-	don’t want top change lib/mini-gmp.c.
+	don’t want to change lib/mini-gmp.c.
 
 2026-05-26  Bruno Haible  <bruno@clisp.org>
 
