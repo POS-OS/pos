@@ -1,0 +1,437 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+/*
+ * Copyright (c) 2017-2019 Huawei Corporation or its affiliates.
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version 2
+ * of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ *   Author:  Zou Ming<zouming.zouming@huawei.com>,
+ *				Yang Feng <philip.yang@huawei.com>
+ */
+#include <dirent.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <inttypes.h>
+#include <limits.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+
+#include <libnvme.h>
+
+#include <ccan/endian/endian.h>
+#include <shared/compiler-attributes-util.h>
+#include <shared/hex-util.h>
+#include <shared/string-util.h>
+#include <shared/suffix-util.h>
+
+#include "cleanup.h"
+#include "global-ctx.h"
+#include "nvme-print.h"
+#include "plugin.h"
+
+#define HW_SSD_PCI_VENDOR_ID 0x19E5
+#define ARRAY_NAME_LEN 80
+#define NS_NAME_LEN    40
+
+#define MIN_ARRAY_NAME_LEN 16
+#define MIN_NS_NAME_LEN 16
+
+struct huawei_list_item {
+	char                node[1024];
+	struct nvme_id_ctrl ctrl;
+	unsigned int        nsid;
+	struct nvme_id_ns   ns;
+	unsigned int        block;
+	char                ns_name[NS_NAME_LEN];
+	char                array_name[ARRAY_NAME_LEN];
+	bool                huawei_device;
+};
+
+struct huawei_list_element_len {
+	unsigned int node;
+	unsigned int ns_name;
+	unsigned int nguid;
+	unsigned int ns_id;
+	unsigned int usage;
+	unsigned int array_name;
+};
+
+static int huawei_get_nvme_info(struct libnvme_transport_handle *hdl,
+				struct huawei_list_item *item, const char *node)
+{
+	struct libnvme_passthru_cmd cmd;
+	int err;
+	int len;
+
+	memset(item, 0, sizeof(*item));
+
+	nvme_init_identify_ctrl(&cmd, &item->ctrl);
+	err = libnvme_exec_admin_passthru(hdl, &cmd);
+	if (err)
+		return err;
+
+	/*identify huawei device*/
+	if (strstr(item->ctrl.mn, "Huawei") == NULL &&
+	    le16_to_cpu(item->ctrl.vid) != HW_SSD_PCI_VENDOR_ID) {
+		item->huawei_device = false;
+		return 0;
+	}
+
+	item->huawei_device = true;
+	err = libnvme_get_nsid(hdl, &item->nsid);
+	if (err)
+		return err;
+	nvme_init_identify_ns(&cmd, item->nsid, &item->ns);
+	err = libnvme_exec_admin_passthru(hdl, &cmd);
+	if (err)
+		return err;
+
+	shr_strscpy(item->node, node, sizeof(item->node));
+	item->block = libnvme_transport_handle_is_ns(hdl);
+
+	if (item->ns.vs[0] == 0) {
+		len = snprintf(item->ns_name, NS_NAME_LEN, "%s", "----");
+		if (len < 0)
+			return -EINVAL;
+	} else {
+		memcpy(item->ns_name, item->ns.vs, NS_NAME_LEN);
+		item->ns_name[NS_NAME_LEN - 1] = '\0';
+	}
+
+	if (item->ctrl.vs[0] == 0) {
+		len = snprintf(item->array_name, ARRAY_NAME_LEN, "%s", "----");
+		if (len < 0)
+			return -EINVAL;
+	} else {
+		memcpy(item->array_name, item->ctrl.vs, ARRAY_NAME_LEN);
+		item->array_name[ARRAY_NAME_LEN - 1] = '\0';
+	}
+	return 0;
+}
+
+#ifdef CONFIG_JSONC
+static void format(char *formatter, size_t fmt_sz, char *tofmt, size_t tofmtsz)
+{
+	fmt_sz = snprintf(formatter, fmt_sz, "%-*.*s", (int)tofmtsz, (int)tofmtsz, tofmt);
+
+	/* trim() the obnoxious trailing white lines */
+	while (fmt_sz) {
+		if (formatter[fmt_sz - 1] != ' ' && formatter[fmt_sz - 1] != '\0') {
+			formatter[fmt_sz] = '\0';
+			break;
+		}
+		fmt_sz--;
+	}
+}
+
+static void huawei_json_print_list_items(struct huawei_list_item *list_items,
+					 unsigned int len)
+{
+	struct json_object *root;
+	struct json_object *devices;
+	struct json_object *device_attrs;
+	char formatter[128] = { 0 };
+	int index, i = 0;
+
+	if (!list_items)
+		return;
+
+	root = json_create_object();
+	if (!root)
+		return;
+
+	devices = json_create_array();
+	if (!devices) {
+		json_free_object(root);
+		return;
+	}
+
+	for (i = 0; i < len; i++) {
+		device_attrs = json_create_object();
+		if (!device_attrs)
+			continue;
+
+		json_object_add_value_string(device_attrs,
+						 "DevicePath",
+						 list_items[i].node);
+
+		if (sscanf(list_items[i].node, "/dev/nvme%d", &index) == 1)
+			json_object_add_value_int(device_attrs,
+						  "Index",
+						  index);
+
+		format(formatter, sizeof(formatter),
+		       list_items[i].ns_name,
+		       sizeof(list_items[i].ns_name));
+
+		json_object_add_value_string(device_attrs,
+						 "NS Name",
+						 formatter);
+
+		format(formatter, sizeof(formatter),
+		       list_items[i].array_name,
+		       sizeof(list_items[i].array_name));
+
+		json_object_add_value_string(device_attrs,
+					     "Array Name",
+					     formatter);
+
+		json_array_add_value_object(devices, device_attrs);
+	}
+	json_object_add_value_array(root, "Devices", devices);
+	json_print_object(root, NULL);
+	printf("\n");
+	json_free_object(root);
+}
+#endif /* CONFIG_JSONC */
+
+static void huawei_print_list_head(struct huawei_list_element_len element_len)
+{
+	char dash[128];
+	int i;
+
+	for (i = 0; i < 128; i++)
+		dash[i] = '-';
+	dash[127] = '\0';
+
+	printf("%-*.*s %-*.*s %-*.*s %-*.*s %-*.*s %-*.*s\n",
+		element_len.node, element_len.node, "Node",
+		element_len.ns_name, element_len.ns_name, "NS Name",
+		element_len.nguid, element_len.nguid, "Nguid",
+		element_len.ns_id, element_len.ns_id, "NS ID",
+		element_len.usage, element_len.usage, "Usage",
+		element_len.array_name, element_len.array_name, "Array Name");
+
+	printf("%-.*s %-.*s %-.*s %-.*s %-.*s %-.*s\n",
+		element_len.node, dash, element_len.ns_name, dash,
+		element_len.nguid, dash, element_len.ns_id, dash,
+		element_len.usage, dash, element_len.array_name, dash);
+}
+
+static void huawei_print_list_item(struct huawei_list_item *list_item,
+				   struct huawei_list_element_len element_len)
+{
+	__u8 lba_index;
+
+	nvme_id_ns_flbas_to_lbaf_inuse(list_item->ns.flbas, &lba_index);
+	unsigned long long lba =
+		nvme_lbaf_data_size(list_item->ns.lbaf[lba_index].ds);
+	double nsze       = le64_to_cpu(list_item->ns.nsze) * lba;
+	double nuse       = le64_to_cpu(list_item->ns.nuse) * lba;
+
+	const char *s_suffix = shr_suffix_si_get(&nsze);
+	const char *u_suffix = shr_suffix_si_get(&nuse);
+
+	char usage[128];
+	char nguid_buf[2 * sizeof(list_item->ns.nguid) + 1];
+
+	snprintf(usage, sizeof(usage), "%6.2f %2sB / %6.2f %2sB", nuse,
+		 u_suffix, nsze, s_suffix);
+	shr_bin_to_hex(nguid_buf, sizeof(nguid_buf), list_item->ns.nguid,
+		       sizeof(list_item->ns.nguid), 0);
+
+	printf("%-*.*s %-*.*s %-*.*s %-*d %-*.*s %-*.*s\n",
+		element_len.node, element_len.node, list_item->node,
+		element_len.ns_name, element_len.ns_name, list_item->ns_name,
+		element_len.nguid, element_len.nguid, nguid_buf,
+		element_len.ns_id, list_item->nsid,
+		element_len.usage, element_len.usage, usage,
+		element_len.array_name, element_len.array_name,
+		list_item->array_name);
+
+}
+
+static unsigned int choose_len(unsigned int old_len, unsigned int cur_len, unsigned int default_len)
+{
+	unsigned int temp_len;
+
+	temp_len = (cur_len > default_len) ? cur_len : default_len;
+	if (temp_len > old_len)
+		return temp_len;
+	return old_len;
+}
+
+static unsigned int huawei_get_ns_len(struct huawei_list_item *list_items, unsigned int len,
+				      unsigned int default_len)
+{
+	int i;
+	unsigned int min_len = default_len;
+
+	for (i = 0 ; i < len ; i++)
+		min_len = choose_len(min_len, strlen(list_items->ns_name), default_len);
+
+	return min_len;
+}
+
+static int huawei_get_array_len(struct huawei_list_item *list_items, unsigned int len,
+				unsigned int default_len)
+{
+	int i;
+	int min_len = default_len;
+
+	for (i = 0 ; i < len ; i++)
+		min_len = choose_len(min_len, strlen(list_items->array_name), default_len);
+
+	return min_len;
+}
+
+static void huawei_print_list_items(struct huawei_list_item *list_items, unsigned int len)
+{
+	unsigned int i;
+	struct huawei_list_element_len element_len;
+
+	element_len.node = 16;
+	element_len.nguid = 2 * sizeof(list_items->ns.nguid) + 1;
+	element_len.ns_id = 9;
+	element_len.usage = 26;
+	element_len.ns_name = huawei_get_ns_len(list_items, len, MIN_NS_NAME_LEN);
+	element_len.array_name = huawei_get_array_len(list_items, len, MIN_ARRAY_NAME_LEN);
+
+	huawei_print_list_head(element_len);
+
+	for (i = 0 ; i < len ; i++)
+		huawei_print_list_item(&list_items[i], element_len);
+}
+
+static int filter_namespace(const struct dirent *d)
+{
+	int i, n;
+
+	if (d->d_name[0] == '.')
+		return 0;
+
+	if (strstr(d->d_name, "nvme"))
+		if (sscanf(d->d_name, "nvme%dn%d", &i, &n) == 2)
+			return 1;
+
+	return 0;
+}
+
+static int huawei_list(int argc, char **argv, struct command *acmd,
+		       struct plugin *plugin)
+{
+	const char *desc = "Retrieve basic information for the given huawei device";
+	__cleanup_nvme_global_ctx struct libnvme_global_ctx *ctx = NULL;
+	char path[264];
+	struct dirent **devices;
+	struct huawei_list_item *list_items;
+	unsigned int i, n;
+	unsigned int huawei_num = 0;
+	int ret;
+
+	OPT_ARGS(opts) = {
+		OPT_END()
+	};
+
+	ret = parse_args(argc, argv, desc, opts);
+	if (ret)
+		return ret;
+
+	ret = nvme_create_global_ctx(&ctx);
+	if (ret)
+		return ret;
+
+	n = scandir("/dev", &devices, filter_namespace, alphasort);
+	if (n <= 0)
+		return n;
+
+	list_items = calloc(n, sizeof(*list_items));
+	if (!list_items) {
+		nvme_show_error("can not allocate controller list payload");
+		ret = ENOMEM;
+		goto out_free_devices;
+	}
+
+	for (i = 0; i < n; i++) {
+		__cleanup_nvme_transport_handle struct libnvme_transport_handle *hdl = NULL;
+
+		snprintf(path, sizeof(path), "/dev/%s", devices[i]->d_name);
+		ret = libnvme_open(ctx, path, O_RDONLY, &hdl);
+		if (ret) {
+			nvme_show_error("Cannot open device %s: %s",
+				path, libnvme_strerror(-ret));
+			continue;
+		}
+		ret = huawei_get_nvme_info(hdl, &list_items[huawei_num], path);
+		if (ret)
+			goto out_free_list_items;
+
+		if (list_items[huawei_num].huawei_device == true)
+			huawei_num++;
+	}
+
+	if (huawei_num > 0) {
+#ifdef CONFIG_JSONC
+		if (nvme_args.output_flags == JSON)
+			huawei_json_print_list_items(list_items, huawei_num);
+		else
+#endif /* CONFIG_JSONC */
+			huawei_print_list_items(list_items, huawei_num);
+	}
+out_free_list_items:
+	free(list_items);
+out_free_devices:
+	for (i = 0; i < n; i++)
+		free(devices[i]);
+	free(devices);
+
+	return ret;
+}
+
+static void huawei_do_id_ctrl(__u8 *vs, struct json_object *root)
+{
+	char array_name[ARRAY_NAME_LEN + 1] = {0};
+
+	memcpy(array_name, vs, ARRAY_NAME_LEN);
+	if (root)
+		json_object_add_value_string(root, "array name", strlen(array_name) > 1 ? array_name : "NULL");
+	else
+		printf("array name : %s\n", strlen(array_name) > 1 ? array_name : "NULL");
+}
+
+static int huawei_id_ctrl(int argc, char **argv, struct command *acmd, struct plugin *plugin)
+{
+	return __id_ctrl(argc, argv, acmd, plugin, huawei_do_id_ctrl);
+}
+
+static struct command huawei_list_cmd = {
+	.name = "list",
+	.help = "List all Huawei NVMe devices and namespaces on machine",
+	.fn = huawei_list,
+	.output_formats = NORMAL | JSON,
+	.device = COMMAND_NO_DEVICE,
+	.needs_root = true,
+};
+
+static struct command huawei_id_ctrl_cmd = {
+	.name = "id-ctrl",
+	.help = "Huawei identify controller",
+	.fn = huawei_id_ctrl,
+};
+
+static struct command *commands[] = {
+	&huawei_list_cmd,
+	&huawei_id_ctrl_cmd,
+	NULL,
+};
+
+static struct plugin plugin = {
+	.name = "huawei",
+	.desc = "Huawei vendor specific extensions",
+	.version = NVME_VERSION,
+};
+
+static void __shr_constructor register_plugin(void)
+{
+	plugin_add_group(&plugin, NULL, commands);
+	register_extension(&plugin);
+}

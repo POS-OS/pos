@@ -1,0 +1,38 @@
+nvme-reachability-groups-log(1)
+===============================
+
+NAME
+----
+nvme-reachability-groups-log - Retrieve Reachability Groups Log, show it (deprecated)
+
+SYNOPSIS
+--------
+[verse]
+'nvme' [<global-options>] 'reachability-groups-log' <device>
+			[--groups-only | -g]
+			[--rae | -r]
+
+DESCRIPTION
+-----------
+Deprecated alias for linknvme:nvme-log-reachability-groups[1], kept for scripts written
+against nvme-cli versions older than 3.0. Options and behavior are
+identical; only the top-level command name is retained.
+
+New scripts should use 'nvme log reachability-groups' instead. This alias prints a
+deprecation warning on stderr and may be removed in a future release.
+
+See linknvme:nvme-log-reachability-groups[1] for the full option reference.
+
+include::global-options.txt[]
+
+EXAMPLES
+--------
+No Examples
+
+NVME
+----
+Part of the nvme-user suite
+
+SEE ALSO
+--------
+linknvme:nvme-log-reachability-groups[1]

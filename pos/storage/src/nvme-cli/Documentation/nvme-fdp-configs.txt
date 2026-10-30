@@ -1,0 +1,33 @@
+nvme-fdp-configs(1)
+===================
+
+NAME
+----
+nvme-fdp-configs - Get Flexible Data Placement Configurations
+
+SYNOPSIS
+--------
+[verse]
+'nvme' [<global-options>] 'fdp configs' <device> [--endgrp-id=<NUM> | -e <NUM>]
+			[--raw-binary | -b]
+
+DESCRIPTION
+-----------
+For the NVMe device given, and the endurance group identifier specified, list
+the possible configurations for Flexible Data Placement.
+
+OPTIONS
+-------
+-e <NUM>::
+--endgrp-id=<NUM>::
+	The endurance group identifier to use when requesting the log page.
+
+-b::
+--raw-binary::
+	Print the raw buffer to the standard output stream.
+
+include::global-options.txt[]
+
+NVME
+----
+Part of nvme-cli

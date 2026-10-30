@@ -1,0 +1,127 @@
+'\" t
+.\"     Title: nvme-fdp-feature
+.\"    Author: [FIXME: author] [see http://www.docbook.org/tdg5/en/html/author]
+.\" Generator: DocBook XSL Stylesheets vsnapshot <http://docbook.sf.net/>
+.\"      Date: 09/18/2026
+.\"    Manual: NVMe Manual
+.\"    Source: NVMe
+.\"  Language: English
+.\"
+.TH "NVME\-FDP\-FEATURE" "1" "09/18/2026" "NVMe" "NVMe Manual"
+.\" -----------------------------------------------------------------
+.\" * Define some portability stuff
+.\" -----------------------------------------------------------------
+.\" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.\" http://bugs.debian.org/507673
+.\" http://lists.gnu.org/archive/html/groff/2009-02/msg00013.html
+.\" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.ie \n(.g .ds Aq \(aq
+.el       .ds Aq '
+.\" -----------------------------------------------------------------
+.\" * set default formatting
+.\" -----------------------------------------------------------------
+.\" disable hyphenation
+.nh
+.\" disable justification (adjust text to left margin only)
+.ad l
+.\" -----------------------------------------------------------------
+.\" * MAIN CONTENT STARTS HERE *
+.\" -----------------------------------------------------------------
+.SH "NAME"
+nvme-fdp-feature \- Show or change Flexible Data Placement (FDP) Feature
+.SH "SYNOPSIS"
+.sp
+.nf
+\fInvme\fR [<global\-options>] \fIfdp\fR <device> [\-\-endgrp\-id=<NUM> | \-e <NUM>]
+                        [\-\-enable\-conf\-idx=<NUM> | \-c <NUM>]
+                        [\-\-disable | \-d]
+.fi
+.SH "DESCRIPTION"
+.sp
+For the NVMe device given, configure and manage the Flexible Data Placement (FDP) feature\&.
+.sp
+This command can be used to either show the current FDP feature configuration or change it\&.
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+ If no `\-\-enable\-conf\-idx` or `\-\-disable` options are provided, the current configuration is
+displayed\&.
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+If the \-\-enable\-conf\-idx or \-\-disable options are provided, configuration is changed accordingly\&. Device may refuse the change if there is a namespace\&.
+.sp
+The <device> parameter is mandatory and must be a NVMe character device (ex: /dev/nvme0)
+.SH "OPTIONS"
+.PP
+\-e <NUM>, \-\-endgrp\-id=<NUM>
+.RS 4
+Specify the endurance group ID\&. This option is mandatory if device supports endurance groups\&.
+.RE
+.PP
+\-c <NUM>, \-\-enable\-conf\-idx=<NUM>
+.RS 4
+Enable FDP feature with the specified configuration\&. The configuration index matches position listed by nvme\-fdp\-config(1)\&.
+.RE
+.PP
+\-d, \-\-disable
+.RS 4
+Disable the current FDP feature configuration\&.
+.RE
+.SH "GLOBAL OPTIONS"
+.sp
+The following options are defined at the top\-level nvme command and are available to this subcommand:
+.PP
+\-\-dry\-run
+.RS 4
+Print the command that would be executed, but do not actually execute it\&.
+.RE
+.PP
+\-\-no\-ioctl\-probing
+.RS 4
+Disable probing for 64\-bit IOCTL support\&.
+.RE
+.PP
+\-\-no\-retries
+.RS 4
+Disable retry logic on transient errors\&.
+.RE
+.PP
+\-o <fmt>, \-\-output\-format=<fmt>
+.RS 4
+Set the reporting format to
+\fInormal\fR,
+\fItabular, \*(Aqjson\fR, or
+\fIbinary\fR\&. Only one output format may be used at a time\&.
+.RE
+.PP
+\-\-output\-format\-version=<version>
+.RS 4
+Select the output format version\&. Version
+\fI1\fR
+uses the original field naming, while version
+\fI2\fR
+(default) provides more consistent and script\-friendly field names\&.
+.RE
+.PP
+\-\-timeout=<ms>
+.RS 4
+Set the timeout for the command in milliseconds\&.
+.RE
+.PP
+\-v, \-\-verbose
+.RS 4
+Increase the level of detail in the output\&. May be specified multiple times to further increase verbosity\&.
+.RE
+.sp
+These options can also be set as machine\-wide defaults in nvme\-cli\&.conf(5)\&. A command\-line flag always overrides the file\&.
+.SH "SEE ALSO"
+.sp
+nvme\-list\-endgrp(1) nvme\-fdp\-config(1)
+.SH "NVME"
+.sp
+Part of nvme\-cli

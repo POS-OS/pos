@@ -1,0 +1,149 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
+/*
+ * This file is part of libnvme.
+ *
+ * Copyright (c) 2025, Dell Technologies Inc. or its subsidiaries.
+ * Authors: Martin Belanger <Martin.Belanger@dell.com>
+ *
+ * This symbol list is maintained by hand, not auto-generated. When
+ * you run the update below, it does not rewrite this file -- it
+ * prints which symbols should be added or removed. Add or remove
+ * those symbols yourself, in the correct ABI version section.
+ *
+ * To check: meson compile -C [BUILD-DIR] update-accessors
+ * Or:       make update-accessors
+ */
+
+LIBNVME_ACCESSORS_3 {
+	global:
+		libnvme_ctrl_get_address;
+		libnvme_ctrl_get_concat;
+		libnvme_ctrl_get_ctrl_loss_tmo;
+		libnvme_ctrl_get_data_digest;
+		libnvme_ctrl_get_disable_sqflow;
+		libnvme_ctrl_get_discovered;
+		libnvme_ctrl_get_discovery_ctrl;
+		libnvme_ctrl_get_duplicate_connect;
+		libnvme_ctrl_get_fast_io_fail_tmo;
+		libnvme_ctrl_get_hdr_digest;
+		libnvme_ctrl_get_host_iface;
+		libnvme_ctrl_get_host_traddr;
+		libnvme_ctrl_get_keep_alive_tmo;
+		libnvme_ctrl_get_keyring_id;
+		libnvme_ctrl_get_name;
+		libnvme_ctrl_get_nr_io_queues;
+		libnvme_ctrl_get_nr_poll_queues;
+		libnvme_ctrl_get_nr_write_queues;
+		libnvme_ctrl_get_persistent;
+		libnvme_ctrl_get_queue_size;
+		libnvme_ctrl_get_reconnect_delay;
+		libnvme_ctrl_get_subsysnqn;
+		libnvme_ctrl_get_sysfs_dir;
+		libnvme_ctrl_get_tls;
+		libnvme_ctrl_get_tls_configured_key_id;
+		libnvme_ctrl_get_tls_key;
+		libnvme_ctrl_get_tls_key_id;
+		libnvme_ctrl_get_tls_key_identity;
+		libnvme_ctrl_get_tos;
+		libnvme_ctrl_get_traddr;
+		libnvme_ctrl_get_transport;
+		libnvme_ctrl_get_trsvcid;
+		libnvme_ctrl_get_unique_discovery_ctrl;
+		libnvme_ctrl_set_discovered;
+		libnvme_ctrl_set_discovery_ctrl;
+		libnvme_ctrl_set_persistent;
+		libnvme_ctrl_set_tls_key;
+		libnvme_ctrl_set_tls_key_identity;
+		libnvme_ctrl_set_unique_discovery_ctrl;
+		libnvme_fabric_options_get_cntlid;
+		libnvme_fabric_options_get_concat;
+		libnvme_fabric_options_get_ctrl_loss_tmo;
+		libnvme_fabric_options_get_data_digest;
+		libnvme_fabric_options_get_dhchap_ctrl_secret;
+		libnvme_fabric_options_get_dhchap_secret;
+		libnvme_fabric_options_get_disable_sqflow;
+		libnvme_fabric_options_get_discovery;
+		libnvme_fabric_options_get_duplicate_connect;
+		libnvme_fabric_options_get_fast_io_fail_tmo;
+		libnvme_fabric_options_get_hdr_digest;
+		libnvme_fabric_options_get_host_iface;
+		libnvme_fabric_options_get_host_traddr;
+		libnvme_fabric_options_get_hostid;
+		libnvme_fabric_options_get_hostnqn;
+		libnvme_fabric_options_get_instance;
+		libnvme_fabric_options_get_keep_alive_tmo;
+		libnvme_fabric_options_get_keyring;
+		libnvme_fabric_options_get_nqn;
+		libnvme_fabric_options_get_nr_io_queues;
+		libnvme_fabric_options_get_nr_poll_queues;
+		libnvme_fabric_options_get_nr_write_queues;
+		libnvme_fabric_options_get_queue_size;
+		libnvme_fabric_options_get_reconnect_delay;
+		libnvme_fabric_options_get_tls;
+		libnvme_fabric_options_get_tls_key;
+		libnvme_fabric_options_get_tos;
+		libnvme_fabric_options_get_traddr;
+		libnvme_fabric_options_get_transport;
+		libnvme_fabric_options_get_trsvcid;
+		libnvme_fabric_options_set_cntlid;
+		libnvme_fabric_options_set_concat;
+		libnvme_fabric_options_set_ctrl_loss_tmo;
+		libnvme_fabric_options_set_data_digest;
+		libnvme_fabric_options_set_dhchap_ctrl_secret;
+		libnvme_fabric_options_set_dhchap_secret;
+		libnvme_fabric_options_set_disable_sqflow;
+		libnvme_fabric_options_set_discovery;
+		libnvme_fabric_options_set_duplicate_connect;
+		libnvme_fabric_options_set_fast_io_fail_tmo;
+		libnvme_fabric_options_set_hdr_digest;
+		libnvme_fabric_options_set_host_iface;
+		libnvme_fabric_options_set_host_traddr;
+		libnvme_fabric_options_set_hostid;
+		libnvme_fabric_options_set_hostnqn;
+		libnvme_fabric_options_set_instance;
+		libnvme_fabric_options_set_keep_alive_tmo;
+		libnvme_fabric_options_set_keyring;
+		libnvme_fabric_options_set_nqn;
+		libnvme_fabric_options_set_nr_io_queues;
+		libnvme_fabric_options_set_nr_poll_queues;
+		libnvme_fabric_options_set_nr_write_queues;
+		libnvme_fabric_options_set_queue_size;
+		libnvme_fabric_options_set_reconnect_delay;
+		libnvme_fabric_options_set_tls;
+		libnvme_fabric_options_set_tls_key;
+		libnvme_fabric_options_set_tos;
+		libnvme_fabric_options_set_traddr;
+		libnvme_fabric_options_set_transport;
+		libnvme_fabric_options_set_trsvcid;
+		libnvme_get_dry_run;
+		libnvme_get_force_4k;
+		libnvme_get_ioctl_probing;
+		libnvme_get_mi_probe_enabled;
+		libnvme_host_get_hostid;
+		libnvme_host_get_hostnqn;
+		libnvme_host_get_hostsymname;
+		libnvme_host_get_kxchap_host_key;
+		libnvme_host_set_hostsymname;
+		libnvme_host_set_kxchap_host_key;
+		libnvme_ns_get_generic_name;
+		libnvme_ns_get_name;
+		libnvme_ns_get_nsid;
+		libnvme_ns_get_sysfs_dir;
+		libnvme_ns_set_nsid;
+		libnvme_ns_set_sysfs_dir;
+		libnvme_path_get_name;
+		libnvme_path_get_sysfs_dir;
+		libnvme_path_set_name;
+		libnvme_path_set_sysfs_dir;
+		libnvme_set_dry_run;
+		libnvme_set_force_4k;
+		libnvme_set_hostid;
+		libnvme_set_hostnqn;
+		libnvme_set_ioctl_probing;
+		libnvme_set_mi_probe_enabled;
+		libnvme_subsystem_get_name;
+		libnvme_subsystem_get_subsysnqn;
+		libnvme_subsystem_get_subsystype;
+		libnvme_subsystem_get_sysfs_dir;
+};

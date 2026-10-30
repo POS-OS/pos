@@ -1,0 +1,70 @@
+nvme-resv-report(1)
+===================
+
+NAME
+----
+nvme-resv-report - Send NVMe Reservation Report, parse the result
+
+SYNOPSIS
+--------
+[verse]
+'nvme' [<global-options>] 'resv report' <device>
+			[--namespace-id=<nsid> | -n <nsid>]
+			[--numd=<num-dwords> | -d <num-dwords>]
+			[--eds | -e]
+			[--raw-binary | -b]
+
+DESCRIPTION
+-----------
+The Reservation Report command returns a Reservation Status data structure
+to host memory that describes the registration and reservation status
+of a namespace.
+
+The size of the Reservation Status data structure is a function of the
+number of controllers in the NVM Subsystem that are associated with
+hosts that are registrants of the namespace (i.e., there is a Registered
+Controller data structure for each such controller).
+
+That size is not known in advance, so the transfer is sized automatically:
+the fixed-size header of the structure is read first, and the structure
+is then read again with a buffer large enough to hold every registrant the
+namespace reports. Pass '--numd' to transfer a fixed length instead.
+
+The bare 'nvme resv-report' form (without a space) still works as a deprecated
+alias and will be removed in a future major version. New scripts should
+use 'nvme resv report' instead.
+
+OPTIONS
+-------
+-n <nsid>::
+--namespace-id=<nsid>::
+	Retrieve the reservation report structure for the given nsid. This
+	is required for the character devices, or overrides the block nsid
+	if given.
+	The broadcast value 0xffffffff can also be given as 'all' or '-1'.
+
+-d <num-dwords>::
+--numd=<num-dwords>::
+	Transfer a fixed number of Dwords of the Reservation Status
+	structure instead of sizing the transfer automatically. The count
+	is zero-based, so one Dword more than requested is transferred.
+
+-e::
+--eds::
+	Request extended Data Structure: If this bit is set to a '1', then the
+	controller returns the Extended Data Structure.
+
+-b::
+--raw-binary::
+	Print the raw buffer to stdout. Structure is not parsed by
+	program.
+
+include::global-options.txt[]
+
+EXAMPLES
+--------
+No examples yet.
+
+NVME
+----
+Part of the nvme-user suite

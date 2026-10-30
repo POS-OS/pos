@@ -1,0 +1,49 @@
+nvme-ocp-telemetry-string-log(1)
+================================
+
+NAME
+----
+nvme-ocp-telemetry-string-log - Retrieve OCP Telemetry String Log page
+
+SYNOPSIS
+--------
+[verse]
+'nvme' [<global-options>] 'ocp telemetry-string-log' <device>
+			[--output-file=<file> | -f <file>] [--no-uuid | -n]
+
+DESCRIPTION
+-----------
+For the NVMe device given, Retrieve OCP Telemetry String Log page
+
+The <device> parameter is mandatory and may be either the NVMe character
+device (ex: /dev/nvme0) or block device (ex: /dev/nvme0n1).
+
+This will only work on OCP compliant devices supporting this feature.
+Results for any other device are undefined.
+
+On success it returns 0, error code otherwise.
+
+OPTIONS
+-------
+-f <file>::
+--output-file=<file>::
+	Filepath name to where binary output data will be saved to.
+
+-n::
+--no-uuid::
+	Do not try to automatically detect UUID index for this command (default
+	UUID index to 0).
+
+include::global-options.txt[]
+
+EXAMPLES
+--------
+* Has the program issue a telemetry-string-log command to get the log page data from bin file.
++
+------------
+# nvme ocp telemetry-string-log /dev/nvme0n1
+------------
+
+NVME
+----
+Part of the nvme-user suite.

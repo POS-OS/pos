@@ -1,0 +1,135 @@
+'\" t
+.\"     Title: nvme-lockdown
+.\"    Author: [FIXME: author] [see http://www.docbook.org/tdg5/en/html/author]
+.\" Generator: DocBook XSL Stylesheets vsnapshot <http://docbook.sf.net/>
+.\"      Date: 09/18/2026
+.\"    Manual: NVMe Manual
+.\"    Source: NVMe
+.\"  Language: English
+.\"
+.TH "NVME\-LOCKDOWN" "1" "09/18/2026" "NVMe" "NVMe Manual"
+.\" -----------------------------------------------------------------
+.\" * Define some portability stuff
+.\" -----------------------------------------------------------------
+.\" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.\" http://bugs.debian.org/507673
+.\" http://lists.gnu.org/archive/html/groff/2009-02/msg00013.html
+.\" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.ie \n(.g .ds Aq \(aq
+.el       .ds Aq '
+.\" -----------------------------------------------------------------
+.\" * set default formatting
+.\" -----------------------------------------------------------------
+.\" disable hyphenation
+.nh
+.\" disable justification (adjust text to left margin only)
+.ad l
+.\" -----------------------------------------------------------------
+.\" * MAIN CONTENT STARTS HERE *
+.\" -----------------------------------------------------------------
+.SH "NAME"
+nvme-lockdown \- Send an NVMe Lockdown command to prohibit or allow the execution of command
+.SH "SYNOPSIS"
+.sp
+.nf
+\fInvme\fR [<global\-options>] \fIlockdown\fR <device>
+                        [\-\-ofi=<ofi> | \-O <ofi>]
+                        [\-\-ifc=<ifc> | \-f <ifc>]
+                        [\-\-prhbt=<prhbt> | \-p <prhbt>]
+                        [\-\-scp=<scp> | \-s <scp>]
+                        [\-\-uuid=<UUID_Index> | \-U <UUID_Index>]
+                        [\-\-csel=<csel> | \-c <csel>]
+                        [\-\-css=<css> | \-C <css>]
+.fi
+.SH "DESCRIPTION"
+.sp
+The Lockdown command is used to control the Command and Feature Lockdown capability which configures the prohibition or allowance of execution of the specified command or Set Features command targeting a specific Feature Identifier\&.
+.SH "OPTIONS"
+.PP
+\-O <ofi>, \-\-ofi=<ofi>
+.RS 4
+Opcode or Feature Identifier(OFI) specifies the command opcode or Set Features Feature Identifier identified by the Scope field\&.
+.RE
+.PP
+\-f <ifc>, \-\-ifc=<ifc>
+.RS 4
+Interface (INF) field identifies the interfaces affected by this command\&.
+.RE
+.PP
+\-p <prhbt>, \-\-prhbt=<prhbt>
+.RS 4
+Prohibit (PRHBT) bit specifies whether to prohibit or allow the command opcode or Set Features Feature Identifier specified by this command\&.
+.RE
+.PP
+\-s <scp>, \-\-scp=<scp>
+.RS 4
+Scope (SCP) field specifies the contents of the Opcode or Feature Identifier field\&.
+.RE
+.PP
+\-U <UUID_Index>, \-\-uuid=<UUID_Index>
+.RS 4
+UUID Index \- If this field is set to a non\-zero value, then the value of this field is the index of a UUID in the UUID List that is used by the command\&. If this field is cleared to 0h,then no UUID index is specified\&.
+.RE
+.PP
+\-c <csel>, \-\-csel=<csel>
+.RS 4
+Controller Select (CSEL) specifies the controller(s) affected by this command: 0 = NVM subsystem (all controllers), 1 = the specific controller identified by \-\-css, 2 = the secondary controllers of the specific primary controller identified by \-\-css, 15 = vendor specific\&.
+.RE
+.PP
+\-C <css>, \-\-css=<css>
+.RS 4
+Controller Select Specific (CSS) \- meaning depends on \-\-csel: the Controller Identifier if \-\-csel=1, or the Primary Controller Identifier if \-\-csel=2\&. Ignored if \-\-csel=0\&.
+.RE
+.SH "GLOBAL OPTIONS"
+.sp
+The following options are defined at the top\-level nvme command and are available to this subcommand:
+.PP
+\-\-dry\-run
+.RS 4
+Print the command that would be executed, but do not actually execute it\&.
+.RE
+.PP
+\-\-no\-ioctl\-probing
+.RS 4
+Disable probing for 64\-bit IOCTL support\&.
+.RE
+.PP
+\-\-no\-retries
+.RS 4
+Disable retry logic on transient errors\&.
+.RE
+.PP
+\-o <fmt>, \-\-output\-format=<fmt>
+.RS 4
+Set the reporting format to
+\fInormal\fR,
+\fItabular, \*(Aqjson\fR, or
+\fIbinary\fR\&. Only one output format may be used at a time\&.
+.RE
+.PP
+\-\-output\-format\-version=<version>
+.RS 4
+Select the output format version\&. Version
+\fI1\fR
+uses the original field naming, while version
+\fI2\fR
+(default) provides more consistent and script\-friendly field names\&.
+.RE
+.PP
+\-\-timeout=<ms>
+.RS 4
+Set the timeout for the command in milliseconds\&.
+.RE
+.PP
+\-v, \-\-verbose
+.RS 4
+Increase the level of detail in the output\&. May be specified multiple times to further increase verbosity\&.
+.RE
+.sp
+These options can also be set as machine\-wide defaults in nvme\-cli\&.conf(5)\&. A command\-line flag always overrides the file\&.
+.SH "EXAMPLES"
+.sp
+No examples yet\&.
+.SH "NVME"
+.sp
+Part of the nvme\-user suite

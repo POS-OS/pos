@@ -1,0 +1,59 @@
+nvme-set-reg(1)
+===============
+
+NAME
+----
+nvme-set-reg - Writes and shows the defined NVMe controller register
+
+SYNOPSIS
+--------
+[verse]
+'nvme' [<global-options>] 'set-reg' <device>
+			[--register=<name> | -r <name>] [--offset=<offset> | -O <offset>]
+			[--value=<val> | -V <val>] [--mmio32 | -m]
+
+DESCRIPTION
+-----------
+Writes a controller register: of an NVMe over PCIe controller in its PCI
+memory space, of an NVMe over Fabrics controller, which has no PCI memory
+space, the property with a Property Set command.
+
+The <device> parameter is mandatory and must be the nvme admin character
+device (ex: /dev/nvme0).
+
+OPTIONS
+-------
+-r <name>::
+--register=<name>::
+	The register to write, by name: one of the registers the host may
+	write, intms, intmc, cc, csts, nssr, aqa, asq, acq, bprsel, bpmbl, cmbmsc, nssd, pmrctl, pmrmscl, pmrmscu.
+
+-O <offset>::
+--offset=<offset>::
+	The register to write, by offset or name, e.g. 0x14 or cc.
+
+-V <val>::
+--value=<val>::
+	The value to write. A 32 bit register refuses a larger value.
+
+-m::
+--mmio32::
+	Write a 64 bit register as two 32 bit accesses.
+
+The options --cc=<val>, --aqa=<val> and so on of earlier versions, one for
+each register the host may write, still work, but are deprecated: use
+--register and --value.
+
+include::global-options.txt[]
+
+EXAMPLES
+--------
+* Write 0x460000 to the Controller Configuration register
++
+------------
+# nvme set-reg /dev/nvme0 --register=cc --value=0x460000
+------------
+
+NVME
+----
+Part of the nvme-user suite.

@@ -1,0 +1,46 @@
+nvme-error-log(1)
+=================
+
+NAME
+----
+nvme-error-log - Send NVME Error log page request, return result and log (deprecated)
+
+SYNOPSIS
+--------
+[verse]
+'nvme' [<global-options>] 'error-log' <device>
+			[--log-entries=<entries> | -e <entries>]
+			[--raw-binary | -b]
+			[--valid-entry | -V]
+			[--sqid=<sqid> | -S <sqid>]
+			[--status=<status> | -s <status>]
+			[--lba=<lba> | -l <lba>]
+			[--namespace-id=<nsid> | -n <nsid>]
+			[--trtype=<trtype> | -t <trtype>]
+			[--csi=<csi> | -c <csi>]
+			[--opcode=<opcode> | -O <opcode>]
+
+DESCRIPTION
+-----------
+Deprecated alias for linknvme:nvme-log-error[1], kept for scripts written
+against nvme-cli versions older than 3.0. Options and behavior are
+identical; only the top-level command name is retained.
+
+New scripts should use 'nvme log error' instead. This alias prints a
+deprecation warning on stderr and may be removed in a future release.
+
+See linknvme:nvme-log-error[1] for the full option reference.
+
+include::global-options.txt[]
+
+EXAMPLES
+--------
+No Examples
+
+NVME
+----
+Part of the nvme-user suite
+
+SEE ALSO
+--------
+linknvme:nvme-log-error[1]

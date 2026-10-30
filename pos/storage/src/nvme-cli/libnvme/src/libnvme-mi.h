@@ -1,0 +1,21 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
+/*
+ * This file is part of libnvme.
+ * Copyright (c) 2021 Code Construct Pty Ltd
+ *
+ * Authors: Jeremy Kerr <jk@codeconstruct.com.au>
+ */
+#pragma once
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#include <nvme/lib.h>
+#include <nvme/mi.h>
+#include <nvme/nvme-types.h>
+#include <nvme/nvme-cmds.h>
+
+#ifdef __cplusplus
+}
+#endif

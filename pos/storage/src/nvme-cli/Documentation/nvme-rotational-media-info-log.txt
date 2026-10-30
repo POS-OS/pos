@@ -1,0 +1,37 @@
+nvme-rotational-media-info-log(1)
+=================================
+
+NAME
+----
+nvme-rotational-media-info-log - Retrieve Rotational Media Information Log, show it (deprecated)
+
+SYNOPSIS
+--------
+[verse]
+'nvme' [<global-options>] 'rotational-media-info-log' <device>
+			[--endg-id=<endgid> | -e <endgid>]
+
+DESCRIPTION
+-----------
+Deprecated alias for linknvme:nvme-log-rotational-media-info[1], kept for scripts written
+against nvme-cli versions older than 3.0. Options and behavior are
+identical; only the top-level command name is retained.
+
+New scripts should use 'nvme log rotational-media-info' instead. This alias prints a
+deprecation warning on stderr and may be removed in a future release.
+
+See linknvme:nvme-log-rotational-media-info[1] for the full option reference.
+
+include::global-options.txt[]
+
+EXAMPLES
+--------
+No Examples
+
+NVME
+----
+Part of the nvme-user suite
+
+SEE ALSO
+--------
+linknvme:nvme-log-rotational-media-info[1]

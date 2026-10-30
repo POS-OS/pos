@@ -1,0 +1,39 @@
+nvme-pred-lat-event-agg-log(1)
+==============================
+
+NAME
+----
+nvme-pred-lat-event-agg-log - Send Predictable Latency Event Aggregate Log
+Page request, returns result and log (deprecated)
+
+SYNOPSIS
+--------
+[verse]
+'nvme' [<global-options>] 'pred-lat-event-agg-log' <device>
+			[--log-entries=<log_entries> | -e <log_entries>]
+			[--rae | -r] [--raw-binary | -b]
+
+DESCRIPTION
+-----------
+Deprecated alias for linknvme:nvme-log-pred-lat-event-agg[1], kept for scripts written
+against nvme-cli versions older than 3.0. Options and behavior are
+identical; only the top-level command name is retained.
+
+New scripts should use 'nvme log pred-lat-event-agg' instead. This alias prints a
+deprecation warning on stderr and may be removed in a future release.
+
+See linknvme:nvme-log-pred-lat-event-agg[1] for the full option reference.
+
+include::global-options.txt[]
+
+EXAMPLES
+--------
+No Examples
+
+NVME
+----
+Part of the nvme-user suite
+
+SEE ALSO
+--------
+linknvme:nvme-log-pred-lat-event-agg[1]

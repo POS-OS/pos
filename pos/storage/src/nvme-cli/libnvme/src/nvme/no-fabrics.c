@@ -1,0 +1,107 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
+/*
+ * This file is part of libnvme.
+ * Copyright (c) 2026 SUSE Software Solutions
+ *
+ * Authors: Daniel Wagner <dwagner@suse.de>
+ */
+
+#include <errno.h>
+#include <stdlib.h>
+
+#include <shared/compiler-attributes-util.h>
+
+#include "private.h"
+
+__shr_public char *libnvmf_generate_hostid(struct libnvme_global_ctx *ctx)
+{
+	return NULL;
+}
+
+__shr_public char *libnvmf_generate_hostnqn_from_hostid(
+				struct libnvme_global_ctx *ctx, char *hostid)
+{
+	return NULL;
+}
+
+__shr_public char *libnvmf_generate_hostnqn(struct libnvme_global_ctx *ctx)
+{
+	return NULL;
+}
+
+__shr_public char *libnvmf_read_hostnqn(struct libnvme_global_ctx *ctx)
+{
+	return NULL;
+}
+
+__shr_public char *libnvmf_read_hostid(struct libnvme_global_ctx *ctx)
+{
+	return NULL;
+}
+
+__shr_public int libnvmf_host_get_ids(struct libnvme_global_ctx *ctx,
+		      const char *hostnqn_arg, const char *hostid_arg,
+		      char **hostnqn, char **hostid)
+{
+	char *hnqn = NULL;
+	char *hid = NULL;
+
+	if (hostnqn_arg) {
+		hnqn = strdup(hostnqn_arg);
+		if (!hnqn)
+			return -ENOMEM;
+	}
+
+	if (hostid_arg) {
+		hid = strdup(hostid_arg);
+		if (!hid) {
+			free(hnqn);
+			return -ENOMEM;
+		}
+	}
+
+	*hostnqn = hnqn;
+	*hostid = hid;
+
+	return 0;
+}
+
+bool traddr_is_hostname(struct libnvme_global_ctx *ctx,
+		const char *transport, const char *traddr)
+{
+	return false;
+}
+
+void libnvmf_default_config(struct libnvme_fabrics_config *cfg)
+{
+}
+
+void libnvmf_read_sysfs_fabrics_attrs(struct libnvme_global_ctx *ctx,
+		struct libnvme_ctrl *c)
+{
+}
+
+struct libnvme_ctrl *libnvme_ctrl_find(struct libnvme_subsystem *s,
+		const struct libnvme_ctrl_params *params, struct libnvme_ctrl *p)
+{
+#ifndef _WIN32
+	struct libnvme_ctrl *c;
+
+	c = p ? libnvme_subsystem_next_ctrl(s, p) :
+		libnvme_subsystem_first_ctrl(s);
+	for (; c; c = libnvme_subsystem_next_ctrl(s, c)) {
+		if (!shr_streq0(c->transport, params->transport))
+			continue;
+		if (params->traddr && c->traddr &&
+		    !shr_streqcase0(c->traddr, params->traddr))
+			continue;
+		return c;
+	}
+#endif
+	return NULL;
+}
+
+__shr_public char *libnvme_ctrl_owner(struct libnvme_ctrl *c)
+{
+	return NULL;
+}

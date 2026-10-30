@@ -1,0 +1,558 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
+/*
+ * Copyright (c) 2025 Sandisk Corporation or its affiliates.
+ *
+ *   Author: Jeff Lien <jeff.lien@sandisk.com>
+ *           Brandon Paupore <brandon.paupore@sandisk.com>
+ */
+
+#include <assert.h>
+#include <ctype.h>
+#include <stdbool.h>
+#include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+#include <unistd.h>
+
+#include <sys/stat.h>
+#include <sys/time.h>
+#include <sys/types.h>
+
+#include <shared/compiler-attributes-util.h>
+
+/* Device Config */
+#define SNDK_NVME_WDC_VID                   0x1b96
+#define SNDK_NVME_SNDK_VID                  0x15b7
+
+#define SNDK_NVME_SN630_DEV_ID              0x2200
+#define SNDK_NVME_SN630_DEV_ID_1            0x2201
+#define SNDK_NVME_SN840_DEV_ID              0x2300
+#define SNDK_NVME_SN840_DEV_ID_1            0x2500
+#define SNDK_NVME_SN640_DEV_ID              0x2400
+#define SNDK_NVME_SN640_DEV_ID_1            0x2401
+#define SNDK_NVME_SN640_DEV_ID_2            0x2402
+#define SNDK_NVME_SN640_DEV_ID_3            0x2404
+#define SNDK_NVME_SN650_DEV_ID              0x2700
+#define SNDK_NVME_SN650_DEV_ID_1            0x2701
+#define SNDK_NVME_SN650_DEV_ID_2            0x2702
+#define SNDK_NVME_SN650_DEV_ID_3            0x2720
+#define SNDK_NVME_SN650_DEV_ID_4            0x2721
+#define SNDK_NVME_SN655_DEV_ID              0x2722
+#define SNDK_NVME_SN655_DEV_ID_1            0x2723
+#define SNDK_NVME_SN861_DEV_ID_E1S          0x2750
+#define SNDK_NVME_SN861_DEV_ID_U2           0x2751
+#define SNDK_NVME_SN861_DEV_ID_E3S          0x2752
+#define SNDK_NVME_SNTMP_DEV_ID              0x2761
+#define SNDK_NVME_SNTMP_DEV_ID_1            0x2763
+
+#define SNDK_NVME_SNESSD1_DEV_ID_E1L        0x2765
+#define SNDK_NVME_SNESSD1_DEV_ID_E2         0x2766
+#define SNDK_NVME_SNESSD1_DEV_ID_E3S        0x2767
+#define SNDK_NVME_SNESSD1_DEV_ID_E3L        0x2768
+#define SNDK_NVME_SNESSD1_DEV_ID_U2         0x2769
+
+#define SNDK_NVME_SNESSD2_DEV_ID_E1S_95     0x2790
+#define SNDK_NVME_SNESSD2_DEV_ID_E1S_15     0x2791
+#define SNDK_NVME_SNESSD2_DEV_ID_E1L        0x2792
+#define SNDK_NVME_SNESSD2_DEV_ID_E3S        0x2793
+#define SNDK_NVME_SNESSD2_DEV_ID_E3L        0x2794
+
+#define SNDK_NVME_SNESSD3_DEV_ID_E2         0x2770
+#define SNDK_NVME_SNESSD3_DEV_ID_U2         0x2771
+#define SNDK_NVME_SNESSD3_DEV_ID_E3L        0x2772
+#define SNDK_NVME_SNESSD3_DEV_ID_E3S        0x2773
+#define SNDK_NVME_SNESSD3_DEV_ID_E1L        0x2774
+
+#define SNDK_NVME_SN862_DEV_ID_E1S_25       0x27A0
+#define SNDK_NVME_SN862_DEV_ID_E1S_15       0x27A1
+#define SNDK_NVME_SN862_DEV_ID_E1S_95       0x27A2
+#define SNDK_NVME_SN862_DEV_ID_E3S          0x27A3
+#define SNDK_NVME_SN862_DEV_ID_U2           0x27A4
+
+#define SNDK_NVME_SN520_DEV_ID              0x5003
+#define SNDK_NVME_SN520_DEV_ID_1            0x5004
+#define SNDK_NVME_SN520_DEV_ID_2            0x5005
+
+#define SNDK_NVME_SN530_DEV_ID_1            0x5007
+#define SNDK_NVME_SN530_DEV_ID_2            0x5008
+#define SNDK_NVME_SN530_DEV_ID_3            0x5009
+#define SNDK_NVME_SN530_DEV_ID_4            0x500b
+#define SNDK_NVME_SN530_DEV_ID_5            0x501d
+
+#define SNDK_NVME_SN350_DEV_ID              0x5019
+
+#define SNDK_NVME_SN570_DEV_ID              0x501A
+
+#define SNDK_NVME_SN850X_DEV_ID             0x5030
+
+#define SNDK_NVME_SN5000_DEV_ID_1           0x5034
+#define SNDK_NVME_SN5000_DEV_ID_2           0x5035
+#define SNDK_NVME_SN5000_DEV_ID_3           0x5036
+#define SNDK_NVME_SN5000_DEV_ID_4           0x504A
+
+#define SNDK_NVME_SN7000S_DEV_ID_1          0x5039
+
+#define SNDK_NVME_SN7150_DEV_ID_1           0x503b
+#define SNDK_NVME_SN7150_DEV_ID_2           0x503c
+#define SNDK_NVME_SN7150_DEV_ID_3           0x503d
+#define SNDK_NVME_SN7150_DEV_ID_4           0x503e
+#define SNDK_NVME_SN7150_DEV_ID_5           0x503f
+
+#define SNDK_NVME_SNCSSD1_DEV_ID_M2_2230    0x5081
+#define SNDK_NVME_SNCSSD1_DEV_ID_M2_2242    0x5082
+#define SNDK_NVME_SNCSSD1_DEV_ID_M2_2280    0x5083
+
+#define SNDK_NVME_SN7100_DEV_ID_1           0x5043
+#define SNDK_NVME_SN7100_DEV_ID_2           0x5044
+#define SNDK_NVME_SN7100_DEV_ID_3           0x5045
+
+#define SNDK_NVME_SN8000S_DEV_ID            0x5049
+
+#define SNDK_NVME_SN720_DEV_ID              0x5002
+#define SNDK_NVME_SN730_DEV_ID              0x5006
+#define SNDK_NVME_SN740_DEV_ID              0x5015
+#define SNDK_NVME_SN740_DEV_ID_1            0x5016
+#define SNDK_NVME_SN740_DEV_ID_2            0x5017
+#define SNDK_NVME_SN740_DEV_ID_3            0x5025
+#define SNDK_NVME_SN340_DEV_ID              0x500d
+#define SNDK_NVME_ZN350_DEV_ID              0x5010
+#define SNDK_NVME_ZN350_DEV_ID_1            0x5018
+#define SNDK_NVME_SN810_DEV_ID              0x5011
+#define SNDK_NVME_SN820CL_DEV_ID            0x5037
+
+#define SNDK_NVME_SN5100S_DEV_ID_1          0x5061
+#define SNDK_NVME_SN5100S_DEV_ID_2          0x5062
+#define SNDK_NVME_SN5100S_DEV_ID_3          0x5063
+
+/* Shared flag space with WDC plugin */
+#define SNDK_DRIVE_CAP_RESERVED1			0x0000000000000001
+#define SNDK_DRIVE_CAP_INTERNAL_LOG			0x0000000000000002
+#define SNDK_DRIVE_CAP_C1_LOG_PAGE			0x0000000000000004
+#define SNDK_DRIVE_CAP_CA_LOG_PAGE			0x0000000000000008
+#define SNDK_DRIVE_CAP_RESERVED2			0x0000000000000010
+#define SNDK_DRIVE_CAP_DRIVE_STATUS			0x0000000000000020
+#define SNDK_DRIVE_CAP_CLEAR_ASSERT			0x0000000000000040
+#define SNDK_DRIVE_CAP_CLEAR_PCIE			0x0000000000000080
+#define SNDK_DRIVE_CAP_RESIZE				0x0000000000000100
+#define SNDK_DRIVE_CAP_RESERVED3			0x0000000000000200
+#define SNDK_DRIVE_CAP_RESERVED4 			0x0000000000000400
+#define SNDK_DRIVE_CAP_RESERVED5			0x0000000000000800
+#define SNDK_DRIVE_CAP_RESERVED6			0x0000000000001000
+#define SNDK_DRIVE_CAP_FW_ACTIVATE_HISTORY		0x0000000000002000
+#define SNDK_DRIVE_CAP_CLEAR_FW_ACT_HISTORY		0x0000000000004000
+#define SNDK_DRIVE_CAP_RESERVED7			0x0000000000008000
+#define SNDK_DRIVE_CAP_RESERVED8			0x0000000000010000
+#define SNDK_DRIVE_CAP_LOG_PAGE_DIR			0x0000000000020000
+#define SNDK_DRIVE_CAP_RESERVED9			0x0000000000040000
+#define SNDK_DRIVE_CAP_INFO				0x0000000000080000
+#define SNDK_DRIVE_CAP_C0_LOG_PAGE			0x0000000000100000
+#define SNDK_DRIVE_CAP_RESERVED10			0x0000000000200000
+#define SNDK_DRIVE_CAP_VUC_CLEAR_PCIE			0x0000000000400000
+#define SNDK_DRIVE_CAP_VU_FID_CLEAR_PCIE		0x0000000000800000
+#define SNDK_DRIVE_CAP_FW_ACTIVATE_HISTORY_C2		0x0000000001000000
+#define SNDK_DRIVE_CAP_VU_FID_CLEAR_FW_ACT_HISTORY	0x0000000002000000
+#define SNDK_DRIVE_CAP_CLOUD_SSD_VERSION		0x0000000004000000
+#define SNDK_DRIVE_CAP_RESERVED11			0x0000000008000000
+#define SNDK_DRIVE_CAP_RESERVED12			0x0000000010000000
+#define SNDK_DRIVE_CAP_C3_LOG_PAGE			0x0000000020000000
+#define SNDK_DRIVE_CAP_RESERVED13			0x0000000040000000
+#define SNDK_DRIVE_CAP_RESERVED14			0x0000000080000000
+#define SNDK_DRIVE_CAP_RESERVED15			0x0000000100000000
+#define SNDK_DRIVE_CAP_DUI_DATA				0x0000000200000000
+#define SNDK_DRIVE_CAP_VUC_LOG				0x0000000400000000
+#define SNDK_DRIVE_CAP_DUI				0x0000000800000000
+#define SNDK_DRIVE_CAP_RESERVED16			0x0000001000000000
+#define SNDK_DRIVE_CAP_RESERVED17			0x0000002000000000
+#define SNDK_DRIVE_CAP_OCP_C4_LOG_PAGE			0x0000004000000000
+#define SNDK_DRIVE_CAP_OCP_C5_LOG_PAGE			0x0000008000000000
+#define SNDK_DRIVE_CAP_RESERVED18			0x0000010000000000
+#define SNDK_DRIVE_CAP_SET_LATENCY_MONITOR		0x0000020000000000
+#define SNDK_DRIVE_CAP_UDUI				0x0000040000000000
+#define SNDK_DRIVE_CAP_RESIZE_SN861			0x0000080000000000
+
+/* Any new capability flags should be added to the WDC plugin */
+
+#define SNDK_DRIVE_CAP_SMART_LOG_MASK       (SNDK_DRIVE_CAP_C0_LOG_PAGE | \
+		SNDK_DRIVE_CAP_C1_LOG_PAGE | \
+		SNDK_DRIVE_CAP_CA_LOG_PAGE)
+#define SNDK_DRIVE_CAP_CLEAR_PCIE_MASK      (SNDK_DRIVE_CAP_CLEAR_PCIE | \
+		SNDK_DRIVE_CAP_VUC_CLEAR_PCIE | \
+		SNDK_DRIVE_CAP_VU_FID_CLEAR_PCIE)
+#define SNDK_DRIVE_CAP_INTERNAL_LOG_MASK    (SNDK_DRIVE_CAP_INTERNAL_LOG | \
+		SNDK_DRIVE_CAP_DUI | \
+		SNDK_DRIVE_CAP_UDUI | \
+		SNDK_DRIVE_CAP_DUI_DATA | \
+		SNDK_DRIVE_CAP_VUC_LOG)
+#define SNDK_DRIVE_CAP_FW_ACTIVATE_HISTORY_MASK     (SNDK_DRIVE_CAP_FW_ACTIVATE_HISTORY | \
+		SNDK_DRIVE_CAP_FW_ACTIVATE_HISTORY_C2)
+#define SNDK_DRIVE_CAP_CLEAR_FW_ACT_HISTORY_MASK    (SNDK_DRIVE_CAP_CLEAR_FW_ACT_HISTORY | \
+		SNDK_DRIVE_CAP_VU_FID_CLEAR_FW_ACT_HISTORY)
+#define SNDK_DRIVE_CAP_RESIZE_MASK          (SNDK_DRIVE_CAP_RESIZE | \
+		SNDK_DRIVE_CAP_RESIZE_SN861)
+
+/* Vendor defined Log Page IDs */
+#define SNDK_NVME_GET_SMART_CLOUD_ATTR_LOG_ID       0xC0
+#define SNDK_NVME_GET_EOL_STATUS_LOG_ID             0xC0
+#define SNDK_ERROR_REC_LOG_ID                       0xC1
+#define SNDK_NVME_GET_FW_ACT_HISTORY_C2_LOG_ID      0xC2
+#define SNDK_LATENCY_MON_LOG_ID                     0xC3
+#define SNDK_DEV_CAP_LOG_ID                         0xC4
+#define SNDK_UNSUPPORTED_REQS_LOG_ID                0xC5
+
+#define SNDK_NVME_GET_DEVICE_INFO_LOG_ID            0xCA
+#define SNDK_NVME_GET_FW_ACT_HISTORY_LOG_ID         0xCB
+
+#define SNDK_NVME_GET_DEV_MGMNT_LOG_PAGE_ID         0xC2
+#define SNDK_DEV_MGMNT_LOG_PAGE_LEN                 0x1000
+
+#define SNDK_C2_MARKETING_NAME_ID                   0x07
+#define SNDK_C2_LOG_PAGES_SUPPORTED_ID              0x08
+#define SNDK_C2_FORM_FACTOR                         0x0A
+#define SNDK_C2_CUSTOMER_ID_ID                      0x15
+
+#define SNDK_SN655_MARKETING_NAME_1                 "Ultrastar DC SN655"
+#define SNDK_SN655_MARKETING_NAME_2                 "ULTRASTAR DC SN655"
+#define SNDK_SN655_MARKETING_NAME_3                 "SanDisk DC SN655"
+#define SNDK_SN655_MARKETING_NAME_4                 "SANDISK DC SN655"
+
+#define SNDK_SN861_MARKETING_NAME_1                 "Ultrastar DC SN861"
+#define SNDK_SN861_MARKETING_NAME_2                 "ULTRASTAR DC SN861"
+
+#define SNDK_C2_FORM_FACTOR_UNKNOWN                 0x00000000
+#define SNDK_C2_FORM_FACTOR_SFF_U2                  0x00000001
+#define SNDK_C2_FORM_FACTOR_HHHL                    0x00000002
+#define SNDK_C2_FORM_FACTOR_MEZZANINE               0x00000003
+#define SNDK_C2_FORM_FACTOR_M2                      0x00000004
+#define SNDK_C2_FORM_FACTOR_EDSFF_E1L               0x00000005
+#define SNDK_C2_FORM_FACTOR_EDSFF_E1S               0x00000006
+#define SNDK_C2_FORM_FACTOR_SFF_U3                  0x00000007
+#define SNDK_C2_FORM_FACTOR_EDSFF_E3L               0x00000008
+#define SNDK_C2_FORM_FACTOR_EDSFF_E3S               0x00000009
+#define SNDK_C2_FORM_FACTOR_EDSFF_E2                0x0000000A
+
+/* Vendor defined Feature IDs */
+#define SNDK_NVME_CLEAR_FW_ACT_HIST_VU_FID                  0xC1
+#define SNDK_VU_DISABLE_CNTLR_TELEMETRY_OPTION_FEATURE_ID   0xD2
+
+/* Customer ID's */
+#define SNDK_CUSTOMER_ID_GN             0x0001
+#define SNDK_CUSTOMER_ID_GD             0x0101
+#define SNDK_CUSTOMER_ID_BD             0x1009
+
+#define SNDK_CUSTOMER_ID_0x1004         0x1004
+#define SNDK_CUSTOMER_ID_0x1005         0x1005
+#define SNDK_CUSTOMER_ID_0x1008         0x1008
+#define SNDK_CUSTOMER_ID_0x100B         0x100B
+#define SNDK_CUSTOMER_ID_0x100F         0x100F
+#define SNDK_CUSTOMER_ID_0x1304         0x1304
+#define SNDK_INVALID_CUSTOMER_ID            -1
+
+/* Capture Device Unit Info */
+#define SNDK_NVME_CAP_UDUI_OPCODE			0xFA
+
+/* Telemtery types for vs-internal-log command */
+#define SNDK_TELEMETRY_TYPE_NONE            0x0
+#define SNDK_TELEMETRY_TYPE_HOST            0x1
+#define SNDK_TELEMETRY_TYPE_CONTROLLER      0x2
+#define SNDK_TELEMETRY_TYPE_BOTH            0x3
+/* Misc */
+#define SNDK_MAX_PATH_LEN                   256
+#define SNDK_GUID_LENGTH                    16
+#define SNDK_FW_REV_LENGTH                  8
+
+#define SNDK_MAX_NUM_ACT_HIST_ENTRIES       20
+#define SNDK_FW_ACT_HISTORY_C2_LOG_BUF_LEN  0x1000
+
+#define SNDK_ALL_PAGE_MASK                         0xFFFF
+#define SNDK_C0_PAGE_MASK                          0x0001
+#define SNDK_C1_PAGE_MASK                          0x0002
+#define SNDK_CA_PAGE_MASK                          0x0004
+#define SNDK_RESERVED_PAGE_MASK                    0x0008
+#define SNDK_NVME_GET_DEVICE_INFO_LOG_OPCODE       0xCA
+#define SNDK_FB_CA_LOG_BUF_LEN                     0x200
+#define SNDK_BD_CA_LOG_BUF_LEN                     0xA0
+#define SNDK_NVME_GET_EOL_STATUS_LOG_OPCODE        0xC0
+#define SNDK_NVME_EOL_STATUS_LOG_LEN               0x200
+#define SNDK_NVME_SMART_CLOUD_ATTR_LEN             0x200
+#define SNDK_SCA_V1_NAND_STATS                     0x1
+#define SNDK_SCA_V1_ALL                            0xF
+#define SNDK_SCAO_V1_LPG                           496
+#define SNDK_NVME_VU_SMART_LOG_LEN                 0x200
+
+struct __packed sndk_bd_ca_log_format {
+	__u8 field_id;
+	__u8 reserved1[2];
+	__u8 normalized_value;
+	__u8 raw_value[8];
+};
+
+struct __packed sndk_ssd_ca_perf_stats {
+	__le64 nand_bytes_wr_lo;
+	__le64 nand_bytes_wr_hi;
+	__le64 nand_bytes_rd_lo;
+	__le64 nand_bytes_rd_hi;
+	__le64 nand_bad_block;
+	__le64 uncorr_read_count;
+	__le64 ecc_error_count;
+	__le32 ssd_detect_count;
+	__le32 ssd_correct_count;
+	__u8 data_percent_used;
+	__le32 data_erase_max;
+	__le32 data_erase_min;
+	__le64 refresh_count;
+	__le64 program_fail;
+	__le64 user_erase_fail;
+	__le64 system_erase_fail;
+	__u8 thermal_throttle_status;
+	__u8 thermal_throttle_count;
+	__le64 pcie_corr_error;
+	__le32 incomplete_shutdown_count;
+	__u8 percent_free_blocks;
+	__u8 rsvd[392];
+};
+
+struct sndk_ocp_bad_nand_block_count { __u64 raw : 48; __u16 normalized : 16; };
+struct sndk_ocp_e2e_correction_count { __u32 detected; __u32 corrected; };
+struct sndk_ocp_user_data_erase_count { __u32 maximum; __u32 minimum; };
+struct sndk_ocp_thermal_status { __u8 num_events; __u8 current_status; };
+
+struct __packed sndk_ocp_dssd_specific_ver {
+	__u8 errata_ver;
+	__u16 point_ver;
+	__u16 minor_ver;
+	__u8 major_ver;
+};
+
+struct sndk_ocp_cloud_smart_log {
+	__u8 physical_media_units_written[16];
+	__u8 physical_media_units_read[16];
+	struct sndk_ocp_bad_nand_block_count bad_user_nand_blocks;
+	struct sndk_ocp_bad_nand_block_count bad_system_nand_blocks;
+	__u64 xor_recovery_count;
+	__u64 uncorrectable_read_error_count;
+	__u64 soft_ecc_error_count;
+	struct sndk_ocp_e2e_correction_count e2e_correction_counts;
+	__u8 system_data_percent_used;
+	__u64 refresh_counts : 56;
+	struct sndk_ocp_user_data_erase_count user_data_erase_counts;
+	struct sndk_ocp_thermal_status thermal_status;
+	struct sndk_ocp_dssd_specific_ver dssd_specific_ver;
+	__u64 pcie_correctable_error_count;
+	__u32 incomplete_shutdowns;
+	__u8 rsvd116[4];
+	__u8 percent_free_blocks;
+	__u8 rsvd121[7];
+	__u16 capacitor_health;
+	__u8 nvme_base_errata_ver;
+	__u8 nvme_cmd_set_errata_ver;
+	__u8 rsvd132[4];
+	__u64 unaligned_io;
+	__u64 security_version_number;
+	__u64 total_nuse;
+	__u8 plp_start_count[16];
+	__u8 endurance_estimate[16];
+	__u64 pcie_link_retraining_cnt;
+	__u64 power_state_change_cnt;
+	char lowest_permitted_fw_rev[16];
+	__u8 rsvd216[270];
+	__u16 log_page_version;
+	__u8 log_page_guid[16];
+};
+
+struct __packed sndk_nvme_c0_eol_log_page {
+	__u8 rsvd1[76];
+	__u32 eol_rbc;
+	__u32 eol_rsvd2;
+	__u32 eol_wra;
+	__u32 eol_plr;
+	__u32 eol_rsvd3;
+	__u32 eol_pfc;
+	__u32 eol_efc;
+	__u32 eol_rsvd4;
+	__u32 eol_rrer;
+	__u16 eol_cp_status;
+	__u16 eol_ip_status;
+	__u8 eol_cp_state;
+	__u8 eol_ip_state;
+};
+
+struct __packed sndk_nvme_ext_smart_log {
+	__u8 ext_smart_pmuwt[16];
+	__u8 ext_smart_pmuws[16];
+	__u8 ext_smart_bunbc[8];
+	__u64 ext_smart_xrc;
+	__u64 ext_smart_urec;
+	__u64 ext_smart_eece;
+	__u64 ext_smart_eede;
+	__u64 ext_smart_eeue;
+	__u8 ext_smart_sdpu;
+	__u8 ext_smart_rsvd1[3];
+	__u64 ext_smart_mnudec;
+	__u64 ext_smart_mxudec;
+	__u64 ext_smart_avudec;
+	__u64 ext_smart_mnec;
+	__u64 ext_smart_mxec;
+	__u64 ext_smart_avec;
+	__u8 ext_smart_pfc[8];
+	__u8 ext_smart_efc[8];
+	__u64 ext_smart_pcec;
+	__u8 ext_smart_pfbu;
+	__u8 ext_smart_rsvd2[3];
+	__u64 ext_smart_svn;
+	__u8 ext_smart_pfbs;
+	__u8 ext_smart_rsvd3[3];
+	__u8 ext_smart_dcc[16];
+	__u64 ext_smart_tnu;
+	__u16 ext_smart_fcc;
+	__u8 ext_smart_bbpg;
+	__u8 ext_smart_rsvd4[3];
+	__u64 ext_smart_seec;
+	__u64 ext_smart_rfsc;
+	__u8 ext_smart_bsnbc[8];
+	__u8 ext_smart_eest[16];
+	__u16 ext_smart_ttc;
+	__u64 ext_smart_uio;
+	__u8 ext_smart_pmur[16];
+	__u32 ext_smart_rtoc;
+	__u32 ext_smart_wtoc;
+	__u32 ext_smart_ttoc;
+	__u8 ext_smart_rsvd5[4];
+	__u64 ext_smart_plrc;
+	__u64 ext_smart_pscc;
+	__u16 ext_smart_maj;
+	__u16 ext_smart_min;
+	__u16 ext_smart_pt;
+	__u16 ext_smart_err;
+	__u32 ext_smart_ftlus;
+	__u32 ext_smart_tcgos;
+	__u8 ext_smart_rsvd6[178];
+	__u16 ext_smart_lpv;
+	__u8 ext_smart_lpg[16];
+};
+
+struct SNDK_UtilsTimeInfo {
+	unsigned int year;
+	unsigned int month;
+	unsigned int dayOfWeek;
+	unsigned int dayOfMonth;
+	unsigned int hour;
+	unsigned int minute;
+	unsigned int second;
+	unsigned int msecs;
+	unsigned char isDST; /*0 or 1 */
+	int zone; /* Zone value like +530 or -300 */
+};
+
+/* Additional C2 Log Page */
+struct sndk_c2_log_page_header {
+	__le32	length;
+	__le32	version;
+};
+
+struct sndk_c2_log_subpage_header {
+	__le32	length;
+	__le32	entry_id;
+	__le32	data;
+};
+
+struct sndk_c2_cbs_data {
+	__le32	length;
+	__u8	data[];
+};
+
+struct __packed sndk_fw_act_history_log_entry_c2 {
+	__u8		entry_version_num;
+	__u8		entry_len;
+	__le16		reserved;
+	__le16		fw_act_hist_entries;
+	__le64		timestamp;
+	__u8		reserved2[8];
+	__le64		power_cycle_count;
+	__le64		previous_fw_version;
+	__le64		current_fw_version;
+	__u8		slot_number;
+	__u8		commit_action_type;
+	__le16		result;
+	__u8		reserved3[14];
+};
+
+struct __packed sndk_fw_act_history_log_format_c2 {
+	__u8		log_identifier;
+	__u8		reserved[3];
+	__le32		num_entries;
+	struct		sndk_fw_act_history_log_entry_c2 entry[SNDK_MAX_NUM_ACT_HIST_ENTRIES];
+	__u8		reserved2[2790];
+	__le16		log_page_version;
+	__u8		log_page_guid[SNDK_GUID_LENGTH];
+};
+
+int sndk_get_vendor_id(struct libnvme_transport_handle *hdl,
+		uint32_t *vendor_id);
+
+bool sndk_check_device(struct libnvme_global_ctx *ctx,
+		struct libnvme_transport_handle *hdl);
+
+__u32 sndk_get_fw_cust_id(struct libnvme_global_ctx *ctx,
+		struct libnvme_transport_handle *hdl);
+
+void sndk_get_commit_action_bin(__u8 commit_action_type,
+		char *action_bin, size_t size);
+
+bool sndk_parse_dev_mng_log_entry(void *data,
+		__u32 entry_id,
+		struct sndk_c2_log_subpage_header **log_entry);
+
+bool sndk_nvme_parse_dev_status_log_entry(void *log_data,
+		__u32 entry_id,
+		__u32 *ret_data);
+
+bool sndk_nvme_parse_dev_status_log_str(void *log_data,
+		__u32 entry_id,
+		char *ret_data,
+		size_t ret_data_size,
+		__u32 *ret_data_len);
+
+bool sndk_get_dev_mgment_data(struct libnvme_global_ctx *ctx,
+		struct libnvme_transport_handle *hdl,
+		void **data);
+
+bool sndk_validate_dev_mng_log(void *data);
+
+bool sndk_get_dev_mgmt_log_page_data(struct libnvme_transport_handle *hdl,
+		void **log_data,
+		__u8 uuid_ix);
+
+__u64 sndk_get_drive_capabilities(struct libnvme_global_ctx *ctx,
+		struct libnvme_transport_handle *hdl);
+
+__u64 sndk_get_enc_drive_capabilities(struct libnvme_global_ctx *ctx,
+	    struct libnvme_transport_handle *hdl);
+
+int sndk_get_serial_name(struct libnvme_transport_handle *hdl, char *file, size_t len,
+			 const char *suffix);
+
+void sndk_UtilsGetTime(struct SNDK_UtilsTimeInfo *timeInfo);
+
+int sndk_UtilsSnprintf(char *buffer, unsigned int sizeOfBuffer,
+		       const char *format, ...);
+
+int sndk_check_ctrl_telemetry_option_disabled(struct libnvme_transport_handle *hdl);
+
+int sndk_get_c0_log_page(struct libnvme_global_ctx *ctx,
+		struct libnvme_transport_handle *hdl,
+		__u32 device_id,
+		char *format,
+		int uuid_index,
+		__u32 namespace_id);
+
+int sndk_get_ca_log_page(struct libnvme_global_ctx *ctx,
+		struct libnvme_transport_handle *hdl,
+		char *format);
+
+int sndk_get_c1_log_page(struct libnvme_global_ctx *ctx,
+		struct libnvme_transport_handle *hdl,
+		char *format,
+		uint8_t interval);
+

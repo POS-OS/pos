@@ -1,0 +1,46 @@
+nvme-ocp-tcg-configuration-log(1)
+=================================
+
+NAME
+----
+nvme-ocp-tcg-configuration-log - Retrieves tcg configuration of given OCP
+compliant device
+
+SYNOPSIS
+--------
+[verse]
+'nvme' [<global-options>] 'ocp tcg-configuration-log' <device> [--no-uuid | -n]
+
+DESCRIPTION
+-----------
+For the NVMe device given, send a tcg-configuration-log command and
+provide the tcg configuration log.
+
+The <device> parameter is mandatory and may be either the NVMe character
+device (ex: /dev/nvme0) or block device (ex: /dev/nvme0n1).
+
+This will only work on OCP compliant devices supporting this feature.
+Results for any other device are undefined.
+
+On success it returns 0, error code otherwise.
+
+OPTIONS
+-------
+-n::
+--no-uuid::
+	Do not try to automatically detect UUID index for this command (default
+	UUID index to 0).
+
+include::global-options.txt[]
+
+EXAMPLES
+--------
+* Has the program issue a tcg-configuration-log command to retrieve the 0xC7 log page.
++
+------------
+# nvme ocp tcg-configuration-log /dev/nvme0
+------------
+
+NVME
+----
+Part of the nvme-user suite.

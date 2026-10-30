@@ -1,0 +1,14 @@
+.TH "libnvme_next_host" 9 "libnvme_next_host" "September 2026" "libnvme API manual" LINUX
+.SH NAME
+libnvme_next_host \- Next host iterator
+.SH SYNOPSIS
+.B "struct libnvme_host *" libnvme_next_host
+.BI "(struct libnvme_global_ctx *ctx "  ","
+.BI "struct libnvme_host *h "  ");"
+.SH ARGUMENTS
+.IP "ctx" 12
+struct libnvme_global_ctx object
+.IP "h" 12
+Previous \fIstruct libnvme_host\fP iterator
+.SH "RETURN"
+Next \fIstruct libnvme_host\fP object in an iterator

@@ -1,0 +1,66 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+/*
+ * Copyright (c) 2023-2024 Solidigm.
+ *
+ * Author: leonardo.da.cunha@solidigm.com
+ */
+
+#include <errno.h>
+
+#include "solidigm-util.h"
+
+const unsigned char solidigm_uuid[NVME_UUID_LEN] = {
+	0x96, 0x19, 0x58, 0x6e, 0xc1, 0x1b, 0x43, 0xad,
+	0xaa, 0xaa, 0x65, 0x41, 0x87, 0xf6, 0xbb, 0xb2
+};
+
+int sldgm_find_uuid_index(struct nvme_id_uuid_list *uuid_list, __u8 *index)
+{
+	int i = libnvme_find_uuid(uuid_list, solidigm_uuid);
+
+	*index = 0;
+	/* not in the list: index 0, no UUID */
+	if (i == -ENOENT)
+		return 0;
+	if (i < 0)
+		return i;
+	*index = i;
+
+	return 0;
+}
+
+int sldgm_get_uuid_index(struct libnvme_transport_handle *hdl, __u8 *index)
+{
+	struct nvme_id_uuid_list uuid_list;
+	struct libnvme_passthru_cmd cmd;
+	int err;
+
+	*index = 0;
+
+	nvme_init_identify_uuid_list(&cmd, &uuid_list);
+
+	err = libnvme_exec_admin_passthru(hdl, &cmd);
+	if (err)
+		return err;
+
+	return sldgm_find_uuid_index(&uuid_list, index);
+}
+
+int sldgm_dynamic_telemetry(struct libnvme_transport_handle *hdl, bool create,
+			    bool ctrl, bool log_page, __u8 mtds,
+			    enum nvme_telemetry_da da,
+			    struct nvme_telemetry_log **log_buffer,
+			    size_t *log_buffer_size)
+{
+	size_t max_data_tx = (1 << mtds) * NVME_LOG_PAGE_PDU_SIZE;
+	int err;
+
+	do {
+		err = libnvme_get_telemetry_log(hdl, create, ctrl, log_page, max_data_tx, da,
+					     log_buffer, log_buffer_size);
+		max_data_tx /= 2;
+		create = false;
+	} while ((err == -EPERM || err == -EINVAL) &&
+		 max_data_tx >= NVME_LOG_PAGE_PDU_SIZE);
+	return err;
+}

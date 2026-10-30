@@ -1,0 +1,33 @@
+nvme-seagate-cloud-SSD-plugin-version (1)
+=========================================
+
+NAME
+----
+nvme-seagate-cloud-SSD-plugin-version - Shows OCP Seagate plugin's version information 
+
+SYNOPSIS
+--------
+[verse]
+'nvme' [<global-options>] 'seagate cloud-SSD-plugin-version'
+
+DESCRIPTION
+-----------
+Shows OCP Seagate plugin's version information 
+
+OPTIONS
+-------
+No Options
+
+include::global-options.txt[]
+
+EXAMPLES
+--------
+Get the OCP plugin version of the specific nvme device.
+
+------------
+# nvme seagate cloud-SSD-plugin-version
+------------
+
+NVME
+----
+Part of the nvme-user suite

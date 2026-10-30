@@ -1,0 +1,124 @@
+nvme-wdc-vs-internal-log(1)
+===========================
+
+NAME
+----
+nvme-wdc-vs-internal-log - Retrieve WDC device's internal firmware log and save to file.
+
+SYNOPSIS
+--------
+[verse]
+'nvme' [<global-options>] 'wdc vs-internal-log' <device>
+			[--output-file=<FILE>, -O <FILE>]
+			[--transfer-size=<SIZE>, -s <SIZE>]
+			[--data-area=<DATA AREA>, -d <DATA_AREA>]
+			[--file-size=<FILE SIZE>, -f <FILE SIZE>]
+			[--offset=<OFFSET>, -e <OFFSET>]
+			[--type=<TYPE>, -t <type>]
+
+DESCRIPTION
+-----------
+
+For the NVMe device given, sends the WDC Vendor Specific Internal Log request
+and saves the result to a file.
+
+The <device> parameter is mandatory NVMe character device (ex: /dev/nvme0).
+
+This will only work on WDC devices supporting this feature.
+Results for any other device are undefined.
+
+OPTIONS
+-------
+-O <FILE>::
+--output-file=<FILE>::
+	Output file; defaults to device serial number followed by
+	"_internal_fw_log_<date>_<time>.bin" suffix.
+
+-s <SIZE>::
+--transfer-size=<SIZE>::
+	Transfer size; defaults to 0x10000 (65536 decimal) bytes.
+
+-d <DATA AREA>::
+--data-area=<DATA AREA>::
+	Data area to retrieve. For capture with a --type value that includes
+	telemetry (CONTROLLER or HOST), this specifies the NVMe telemetry data
+	area to capture, containing data from areas 1 to <DATA AREA>. For
+	capture without such a --type value, this specifies the amount of
+	vendor defined debug data to capture, and this is only supported on the
+	SN340, SN350, SN530, SN570, SN730, SN740, SN840, SN850X, SN5000,
+	SN5100S, SN7000S, SN7100, and SN7150 devices.
+
+-t <TYPE>::
+--type=<TYPE>::
+	Specifies the telemetry type - NONE, HOST, or CONTROLLER. This parameter
+	is used to get either the host-initiated or controller-initiated
+	telemetry log page. If not specified or if <TYPE> is NONE, the command
+	will return vendor defined debug data.
+
+-f <FILE SIZE>::
+--file-size=<FILE SIZE>::
+	Deprecated. Specifies the desired size of the data file starting at the
+	passed in offset. This allows the user to retrieve the data in several
+	smaller files of the passed in size. This parameter is only supported on
+	the devices mentioned in the documentation of the --data-area parameter,
+	and only for capture with --type=NONE or --type not specified.
+
+-e <OFFSET>::
+--offset=<OFFSET>::
+	Deprecated. Specifies the data offset at which to start retrieving the
+	data. This parameter is used in combination with the file size parameter
+	to retrieve the data in several smaller files. This parameter is only
+	supported on the devices mentioned in the documentation of the
+	--data-area parameter, and only for capture with --type=NONE or --type
+	not specified.
+
+include::global-options.txt[]
+
+EXAMPLES
+--------
+* Gets the internal firmware log from the device and saves to default file in current directory (e.g. STM00019F3F9_internal_fw_log_20171127_095704.bin):
++
+------------
+# nvme wdc vs-internal-log /dev/nvme0
+------------
+* Gets the internal firmware log from the device and saves to defined file in current directory (e.g. test.bin):
++
+------------
+# nvme wdc vs-internal-log /dev/nvme0 -O test.bin
+------------
+* Gets the internal firmware log from the device and saves to defined file with pathname (e.g. /tmp/test):
++
+------------
+# nvme wdc vs-internal-log /dev/nvme0 -O /tmp/test
+------------
+* Gets the internal firmware log from the device transferring the data in 64k chunks and saves to default file in current directory (e.g. STM00019F3F9_internal_fw_log_20171127_100754.bin):
++
+------------
+# nvme wdc vs-internal-log /dev/nvme0 -s 0x10000
+------------
+* Gets the internal firmware log from the device transferring the data in 16k chunks and saves to default file in current directory (e.g. STM00019F3F9_internal_fw_log_20171127_100950.bin):
++
+------------
+# nvme wdc vs-internal-log /dev/nvme0 -s 16384
+------------
+* Gets the internal firmware log up to data area 3 from the device in 3 files of 0x1000000 bytes:
++
+------------
+# nvme wdc vs-internal-log /dev/nvme0 -d 3 -f 0x1000000 -t 0x0000000 -O /tmp/sn340_dui_data_1.bin
+# nvme wdc vs-internal-log /dev/nvme0 -d 3 -f 0x1000000 -t 0x1000000 -O /tmp/sn340_dui_data_2.bin
+# nvme wdc vs-internal-log /dev/nvme0 -d 3 -f 0x1000000 -t 0x2000000 -O /tmp/sn340_dui_data_3.bin
+------------
+* Gets the host telemetry log page to data area 3 from the device and stores it in file host-telem-log-da3.bin:
++
+------------
+# nvme wdc vs-internal-log /dev/nvme1 -t host -O host-telem-log-da3.bin -d 3
+------------
+* Gets the controller telemetry log page to data area 3 from the device and stores it in file ctlr-telem-log-da3.bin:
++
+------------
+# nvme wdc vs-internal-log /dev/nvme1 -t controller -O ctlr-telem-log-da3.bin -d 3
+------------
+
+NVME
+----
+Part of the nvme-user suite.

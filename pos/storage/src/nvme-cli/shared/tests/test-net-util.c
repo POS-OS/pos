@@ -1,0 +1,389 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
+/*
+ * This file is part of nvme-cli.
+ * Copyright (c) 2026 Dell Technologies Inc. or its subsidiaries.
+ *
+ * Authors: Martin Belanger <martin.belanger@dell.com>
+ */
+
+#include <arpa/inet.h>
+#include <errno.h>
+#include <ifaddrs.h>
+#include <net/if.h>
+#include <netinet/in.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/socket.h>
+
+#include <shared/net-util.h>
+
+static bool check_bool(const char *name, bool got, bool want)
+{
+	if (got == want) {
+		printf(" - %s [PASS]\n", name);
+		return true;
+	}
+
+	printf(" - %s: got %d, want %d [FAIL]\n", name, got, want);
+	return false;
+}
+
+static bool check_str(const char *name, const char *got, const char *want)
+{
+	bool eq = (got == want) || (got && want && !strcmp(got, want));
+
+	if (eq) {
+		printf(" - %s [PASS]\n", name);
+		return true;
+	}
+
+	printf(" - %s: got \"%s\", want \"%s\" [FAIL]\n",
+	       name, got ? got : "(null)", want ? want : "(null)");
+	return false;
+}
+
+static bool test_ipaddrs_eq(void)
+{
+	/*
+	 * Two distinct buffers with identical content -- guards against the
+	 * compiler pooling two identical string literals into one address,
+	 * which would trigger the addr1 == addr2 pointer shortcut instead of
+	 * exercising the "hostnames are never numeric" rejection path below.
+	 */
+	char hostname1[] = "example.com";
+	char hostname2[] = "example.com";
+	bool pass = true;
+
+	printf("test_ipaddrs_eq:\n");
+
+	pass &= check_bool("NULL == NULL", shr_ipaddrs_eq(NULL, NULL), true);
+	pass &= check_bool("NULL != a real address",
+			    shr_ipaddrs_eq(NULL, "1.2.3.4"), false);
+	pass &= check_bool("identical IPv4 strings",
+			    shr_ipaddrs_eq("1.2.3.4", "1.2.3.4"), true);
+	pass &= check_bool("different IPv4 addresses",
+			    shr_ipaddrs_eq("1.2.3.4", "1.2.3.5"), false);
+	pass &= check_bool("compressed vs. expanded IPv6, same address",
+			    shr_ipaddrs_eq("2001:db8::1",
+					   "2001:0db8:0000:0000:0000:0000:0000:0001"),
+			    true);
+	pass &= check_bool("IPv4-mapped IPv6 matches its plain IPv4 form",
+			    shr_ipaddrs_eq("::ffff:192.168.1.1", "192.168.1.1"),
+			    true);
+	pass &= check_bool("plain IPv4 matches its IPv4-mapped IPv6 form (reversed order)",
+			    shr_ipaddrs_eq("192.168.1.1", "::ffff:192.168.1.1"),
+			    true);
+	pass &= check_bool("link-local IPv6 with a %scope suffix parses and matches",
+			    shr_ipaddrs_eq("fe80::1%lo", "fe80::1%lo"),
+			    true);
+	pass &= check_bool("a hostname is never treated as equal to anything",
+			    shr_ipaddrs_eq(hostname1, hostname2), false);
+
+	return pass;
+}
+
+/* Build a 3-entry synthetic interface list, no real NICs required. */
+struct fake_iface {
+	struct ifaddrs pub;
+	struct sockaddr_storage ss;
+};
+
+static void set_addr(struct fake_iface *f, const char *name,
+		     sa_family_t family, const char *addr)
+{
+	f->pub.ifa_name = (char *)name;
+	f->pub.ifa_addr = (struct sockaddr *)&f->ss;
+
+	if (family == AF_INET) {
+		struct sockaddr_in *s4 = (struct sockaddr_in *)&f->ss;
+
+		s4->sin_family = AF_INET;
+		inet_pton(AF_INET, addr, &s4->sin_addr);
+	} else {
+		struct sockaddr_in6 *s6 = (struct sockaddr_in6 *)&f->ss;
+
+		s6->sin6_family = AF_INET6;
+		inet_pton(AF_INET6, addr, &s6->sin6_addr);
+	}
+}
+
+static struct ifaddrs *build_fake_ifaddrs(struct fake_iface *nodes, int n)
+{
+	int i;
+
+	for (i = 0; i < n - 1; i++)
+		nodes[i].pub.ifa_next = &nodes[i + 1].pub;
+	nodes[n - 1].pub.ifa_next = NULL;
+
+	return &nodes[0].pub;
+}
+
+static bool test_ipv6_is_link_local(void)
+{
+	bool pass = true;
+
+	printf("test_ipv6_is_link_local:\n");
+
+	pass &= check_bool("fe80:: is link-local",
+			   shr_ipv6_is_link_local("fe80::1"), true);
+	pass &= check_bool("a scope suffix is ignored",
+			   shr_ipv6_is_link_local("fe80::1%eth0"), true);
+	pass &= check_bool("a global IPv6 address is not link-local",
+			   shr_ipv6_is_link_local("2001:db8::1"), false);
+	pass &= check_bool("an IPv4 address is not link-local",
+			   shr_ipv6_is_link_local("169.254.1.1"), false);
+	pass &= check_bool("a hostname is not link-local",
+			   shr_ipv6_is_link_local("fe80.example.com"), false);
+	pass &= check_bool("NULL is not link-local",
+			   shr_ipv6_is_link_local(NULL), false);
+
+	return pass;
+}
+
+static bool test_iface_matching_addr(void)
+{
+	struct fake_iface nodes[3] = { 0 };
+	struct ifaddrs *list;
+	bool pass = true;
+
+	printf("test_iface_matching_addr:\n");
+
+	set_addr(&nodes[0], "eth0", AF_INET, "10.0.0.1");
+	set_addr(&nodes[1], "eth1", AF_INET6, "2001:db8::2");
+	set_addr(&nodes[2], "eth2", AF_INET, "10.0.0.3");
+	list = build_fake_ifaddrs(nodes, 3);
+
+	pass &= check_str("finds the IPv4 owner",
+			   shr_iface_matching_addr(list, "10.0.0.1"), "eth0");
+	pass &= check_str("finds the IPv6 owner",
+			   shr_iface_matching_addr(list, "2001:db8::2"),
+			   "eth1");
+	pass &= check_str("no owner for an address not in the list",
+			   shr_iface_matching_addr(list, "10.0.0.99"), NULL);
+	pass &= check_str("NULL list → NULL",
+			   shr_iface_matching_addr(NULL, "10.0.0.1"), NULL);
+
+	return pass;
+}
+
+static bool test_iface_primary_addr_matches(void)
+{
+	struct fake_iface nodes[3] = { 0 };
+	struct ifaddrs *list;
+	bool pass = true;
+
+	printf("test_iface_primary_addr_matches:\n");
+
+	/* eth0's primary IPv4, a secondary IPv4, then its primary IPv6. */
+	set_addr(&nodes[0], "eth0", AF_INET, "10.0.0.1");
+	set_addr(&nodes[1], "eth0", AF_INET, "10.0.0.99");
+	set_addr(&nodes[2], "eth0", AF_INET6, "2001:db8::5");
+	list = build_fake_ifaddrs(nodes, 3);
+
+	pass &= check_bool("matches the primary (first-listed) IPv4",
+			    shr_iface_primary_addr_matches(list, "eth0",
+							   "10.0.0.1"),
+			    true);
+	pass &= check_bool("the secondary IPv4 is not the primary",
+			    shr_iface_primary_addr_matches(list, "eth0",
+							   "10.0.0.99"),
+			    false);
+	pass &= check_bool("matches the primary IPv6",
+			    shr_iface_primary_addr_matches(list, "eth0",
+							   "2001:db8::5"),
+			    true);
+	pass &= check_bool("no such interface",
+			    shr_iface_primary_addr_matches(list, "eth9",
+							   "10.0.0.1"),
+			    false);
+
+	return pass;
+}
+
+#ifdef __linux__
+static bool check_ret(const char *name, int got, int want)
+{
+	if (got == want) {
+		printf(" - %s [PASS]\n", name);
+		return true;
+	}
+
+	printf(" - %s: got %d, want %d [FAIL]\n", name, got, want);
+	return false;
+}
+
+/*
+ * Whether the loopback interface has an IPv6 address: without one, as in
+ * a container with IPv6 disabled, there is no route to ::1.
+ */
+static bool lo_has_ipv6(void)
+{
+	struct ifaddrs *ifas, *ifa;
+	bool found = false;
+
+	if (getifaddrs(&ifas))
+		return false;
+	for (ifa = ifas; ifa; ifa = ifa->ifa_next)
+		if (ifa->ifa_addr && ifa->ifa_addr->sa_family == AF_INET6 &&
+		    !strcmp(ifa->ifa_name, "lo"))
+			found = true;
+	freeifaddrs(ifas);
+	return found;
+}
+
+static bool test_route_get_egress_iface(void)
+{
+	char ifname[IF_NAMESIZE];
+	char scoped[INET6_ADDRSTRLEN + IF_NAMESIZE];
+	char small_buf[8];
+	bool pass = true;
+	int ret;
+
+	printf("test_route_get_egress_iface:\n");
+
+	/* Invalid arguments */
+	pass &= check_ret("NULL daddr fails with -EINVAL",
+			  shr_route_get_egress_iface(NULL, NULL, ifname,
+					  sizeof(ifname)),
+			  -EINVAL);
+	pass &= check_ret("invalid daddr string fails with -EINVAL",
+			  shr_route_get_egress_iface(NULL, "invalid_ip",
+					  ifname, sizeof(ifname)),
+			  -EINVAL);
+	pass &= check_ret("invalid saddr string fails with -EINVAL",
+			  shr_route_get_egress_iface("invalid_ip", "127.0.0.1",
+					  ifname, sizeof(ifname)),
+			  -EINVAL);
+	pass &= check_ret("mismatched saddr IPv4 and daddr IPv6 families fails with -EINVAL",
+			  shr_route_get_egress_iface("127.0.0.1", "::1",
+					  ifname, sizeof(ifname)),
+			  -EINVAL);
+	pass &= check_ret("mismatched saddr IPv6 and daddr IPv4 families fails with -EINVAL",
+			  shr_route_get_egress_iface("::1", "127.0.0.1",
+					  ifname, sizeof(ifname)),
+			  -EINVAL);
+	pass &= check_ret("buffer smaller than IF_NAMESIZE fails with -EINVAL",
+			  shr_route_get_egress_iface(NULL, "127.0.0.1",
+					  small_buf, sizeof(small_buf)),
+			  -EINVAL);
+
+	/* Valid lookups (loopback routes always present) */
+	memset(ifname, 0, sizeof(ifname));
+	ret = shr_route_get_egress_iface(NULL, "127.0.0.1", ifname,
+			sizeof(ifname));
+	pass &= check_ret("IPv4 loopback destination lookup returns 0", ret, 0);
+	pass &= check_str("IPv4 loopback egress interface is lo", ifname, "lo");
+
+	memset(ifname, 0, sizeof(ifname));
+	ret = shr_route_get_egress_iface("127.0.0.1", "127.0.0.1", ifname,
+			sizeof(ifname));
+	pass &= check_ret("IPv4 loopback src and dst lookup returns 0", ret, 0);
+	pass &= check_str("IPv4 loopback src/dst egress interface is lo",
+			ifname, "lo");
+
+	if (!lo_has_ipv6()) {
+		printf(" - IPv6 loopback: lo has no IPv6 address [SKIP]\n");
+	} else {
+		memset(ifname, 0, sizeof(ifname));
+		ret = shr_route_get_egress_iface(NULL, "::1", ifname,
+				sizeof(ifname));
+		pass &= check_ret("IPv6 loopback destination lookup returns 0",
+				ret, 0);
+		pass &= check_str("IPv6 loopback egress interface is lo",
+				ifname, "lo");
+
+		memset(ifname, 0, sizeof(ifname));
+		ret = shr_route_get_egress_iface("::1", "::1", ifname,
+				sizeof(ifname));
+		pass &= check_ret("IPv6 loopback src and dst lookup returns 0",
+				ret, 0);
+		pass &= check_str(
+			"IPv6 loopback src/dst egress interface is lo",
+			ifname, "lo");
+	}
+
+	/* Link-local: the scope names the interface */
+	memset(ifname, 0, sizeof(ifname));
+	ret = shr_route_get_egress_iface(NULL, "fe80::1%lo", ifname,
+			sizeof(ifname));
+	pass &= check_ret("link-local with a scope name returns 0", ret, 0);
+	pass &= check_str("link-local scope name gives lo", ifname, "lo");
+
+	snprintf(scoped, sizeof(scoped), "fe80::1%%%u", if_nametoindex("lo"));
+	memset(ifname, 0, sizeof(ifname));
+	ret = shr_route_get_egress_iface(NULL, scoped, ifname, sizeof(ifname));
+	pass &= check_ret("link-local with a scope index returns 0", ret, 0);
+	pass &= check_str("link-local scope index gives lo", ifname, "lo");
+
+	pass &= check_ret("link-local without a scope fails with -EINVAL",
+			  shr_route_get_egress_iface(NULL, "fe80::1",
+					  ifname, sizeof(ifname)),
+			  -EINVAL);
+	pass &= check_ret("link-local with an unknown scope fails with -EINVAL",
+			  shr_route_get_egress_iface(NULL, "fe80::1%nosuchif0",
+					  ifname, sizeof(ifname)),
+			  -EINVAL);
+
+	return pass;
+}
+
+static bool test_netdev_get_hw_queues(void)
+{
+	uint32_t combined, tx, rx;
+	bool pass = true;
+	int ret;
+
+	printf("test_netdev_get_hw_queues:\n");
+
+	/* Invalid arguments */
+	pass &= check_ret("NULL ifname fails with -EINVAL",
+			  shr_netdev_get_hw_queues(NULL, &combined, &tx, &rx),
+			  -EINVAL);
+	pass &= check_ret("NULL combined_count fails with -EINVAL",
+			  shr_netdev_get_hw_queues("lo", NULL, &tx, &rx),
+			  -EINVAL);
+	pass &= check_ret("NULL tx_count fails with -EINVAL",
+			  shr_netdev_get_hw_queues("lo", &combined, NULL, &rx),
+			  -EINVAL);
+	pass &= check_ret("NULL rx_count fails with -EINVAL",
+			  shr_netdev_get_hw_queues("lo", &combined, &tx, NULL),
+			  -EINVAL);
+
+	/*
+	 * Non-existent interface. The kernel fails it with -ENODEV, but qemu
+	 * user mode, at least up to 7.2, does not emulate SIOCETHTOOL and
+	 * fails it with another error.
+	 */
+	ret = shr_netdev_get_hw_queues("nonexistent99", &combined, &tx, &rx);
+	pass &= check_bool("non-existent interface fails", ret < 0, true);
+
+	/*
+	 * Querying loopback interface ("lo") or an interface without ethtool
+	 * channel support typically returns -EOPNOTSUPP or -ENOTTY (or 0 if
+	 * supported).
+	 */
+	ret = shr_netdev_get_hw_queues("lo", &combined, &tx, &rx);
+	pass &= check_bool("querying loopback interface returns 0 or an error",
+			   ret <= 0, true);
+	return pass;
+}
+#endif /* __linux__ */
+
+int main(void)
+{
+	bool pass = true;
+
+	pass &= test_ipaddrs_eq();
+	pass &= test_ipv6_is_link_local();
+	pass &= test_iface_matching_addr();
+	pass &= test_iface_primary_addr_matches();
+#ifdef __linux__
+	pass &= test_route_get_egress_iface();
+	pass &= test_netdev_get_hw_queues();
+#endif
+
+	fflush(stdout);
+	exit(pass ? EXIT_SUCCESS : EXIT_FAILURE);
+}

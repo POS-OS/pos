@@ -1,0 +1,2780 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: LGPL-2.1-or-later
+"""
+generate_accessors.py — Generate setter/getter accessor functions for C structs.
+
+This file is part of libnvme.
+Copyright (c) 2025, Dell Technologies Inc. or its subsidiaries.
+Authors: Martin Belanger <Martin.Belanger@dell.com>
+
+Parses C header files and produces:
+  accessors.h   — function declarations with KernelDoc comments
+  accessors.c   — function implementations
+  accessors.ld  — linker version-script entries
+
+Limitations:
+  - Does not support typedef struct.
+  - Nested struct members (annotated // !access:nested) are not included
+    in generated destructors (!generate-lifecycle).
+
+Annotations use // line-comment style.  After '//', each '!keyword' token
+(optionally followed by ':metadata') is a command.  The ':metadata' portion
+carries extra parameters such as 'read=generated,write=none'.  Multiple
+annotations can appear in one comment:
+  struct nvme_ctrl { // !generate-accessors !generate-lifecycle
+
+Optional whitespace between // and ! is accepted, so // !token, //!token,
+and //\t!token are all equivalent.  The canonical form used in this
+project's headers is "// !token" (one space).
+
+ACCESS MODEL — TWO INDEPENDENT AXES
+-----------------------------------
+Each struct member has two independent axes:
+  read  — whether a getter exists, and how
+  write — whether a setter exists, and how
+
+Each axis takes one of three modes:
+  generated — the generator emits the accessor
+  custom    — an accessor exists but is provided elsewhere as a hand-written
+              function in the public API; the generator emits nothing
+  none      — no accessor exists for this axis; the generator
+              emits nothing
+
+Only the 'generated' mode produces output in this generator.  'custom'
+and 'none' are semantic declarations for downstream consumers (the
+Python-binding generator, the nvme.i consistency check) that need to
+know the difference between "no accessor at all" and "accessor provided
+by hand".
+
+Struct inclusion — annotate the opening brace line of the struct.
+The optional spec sets the default mode for each axis of every member
+of the struct:
+  struct nvme_ctrl { // !generate-accessors
+    — shorthand for read=generated, write=generated
+  struct nvme_ctrl { // !generate-accessors:read=generated,write=generated
+    — explicit form of the same default
+  struct nvme_ctrl { // !generate-accessors:read=none,write=none
+    — include struct but emit nothing by default
+  struct nvme_ctrl { // !generate-accessors:read=generated
+    — read=generated, write inherits the built-in default (generated)
+
+Only structs carrying this annotation are processed.  Members of other
+structs are ignored.
+
+Naming override — a 'prefix=' key in the spec overrides the naming
+segment used in generated function names, without changing the C
+struct tag itself:
+  struct libnvme_global_ctx { // !generate-accessors:read=none,write=none,prefix=libnvme
+    — a member with write=generated (e.g. via !access:) gets
+      libnvme_set_<member>() instead of the mechanical
+      libnvme_global_ctx_set_<member>(); the generated function
+      signatures and doc comments still say 'struct libnvme_global_ctx'.
+Use this when a struct already has hand-written accessors under a
+shorter name and new generated accessors need to match them.
+
+Member-level override — annotate the member declaration line.  Any axis
+not named in the spec is inherited from the struct-level default:
+  char *state;     // !access:read=custom,write=none
+    — custom getter, no setter
+  char *token;     // !access:read=none,write=custom
+    — no getter, custom setter
+  char *secret;    // !access:read=none,write=none
+    — no accessor of any kind
+  char *name;      // !access:read=custom
+    — custom getter; write axis inherited from struct default
+  char *pw;        // !access:write=custom
+    — custom setter; read axis inherited from struct default
+
+The 'const' qualifier on a member forces write=none regardless of the
+annotation (you cannot generate a setter for a const member).  'const
+char *' members are also never freed by the destructor — they are
+assumed to point to externally owned storage.
+
+Lifecycle (constructor + destructor) — annotate the opening brace line:
+  struct nvme_ctrl { // !generate-lifecycle
+The two annotations are independent and may appear in the same comment:
+  struct nvme_ctrl { // !generate-accessors !generate-lifecycle
+
+Lifecycle member exclusion — annotate the member declaration line:
+  char *cache; // !lifecycle:none     — skip this member in the destructor
+
+Defaults — annotate the member declaration line with a value to assign:
+  int max_retries;  // !default:6
+  __u8 lsp;         // !default:NVMF_LOG_DISC_LSP_NONE
+  char *transport;  // !default:"tcp"
+When any member carries a default annotation, an init_defaults function is
+generated. If generate-lifecycle is also present, the constructor calls it.
+The init_defaults function is also useful standalone to re-initialise a
+struct to its defaults without reallocating it.
+For scalar members the value is assigned directly. For char* members the
+generated code avoids unnecessary work by comparing the current value with
+the default first (strcmp); if they differ it frees the old value and
+strdup()s the new one. const char* members are assigned directly (no
+strdup) since they are assumed to point to externally owned storage.
+
+Example usage:
+  ./generate_accessors.py private.h
+  ./generate_accessors.py --prefix nvme_ private.h
+"""
+
+import argparse
+import glob as glob_module
+import io
+import os
+import re
+import sys
+
+# ---------------------------------------------------------------------------
+# Output format — controls getter/setter function naming.
+#   {pre} = "{prefix}{struct_name}",  {mem} = member name
+#   Alternate style: "{pre}_{mem}_set" / "{pre}_{mem}_get"
+# ---------------------------------------------------------------------------
+SET_FMT = "{pre}_set_{mem}"
+GET_FMT = "{pre}_get_{mem}"
+
+SPDX_C  = "// SPDX-License-Identifier: LGPL-2.1-or-later"
+SPDX_H  = "/* SPDX-License-Identifier: LGPL-2.1-or-later */"
+SPDX_I  = SPDX_C
+SPDX_LD = "# SPDX-License-Identifier: LGPL-2.1-or-later"
+
+BANNER = (
+    "/*\n"
+    " * This file is part of libnvme.\n"
+    " *\n"
+    " * Copyright (c) 2025, Dell Technologies Inc. or its subsidiaries.\n"
+    " * Authors: Martin Belanger <Martin.Belanger@dell.com>\n"
+    " *\n"
+    " *   ____                           _           _    ____          _\n"
+    " *  / ___| ___ _ __   ___ _ __ __ _| |_ ___  __| |  / ___|___   __| | ___\n"
+    " * | |  _ / _ \\ '_ \\ / _ \\ '__/ _` | __/ _ \\/ _` | | |   / _ \\ / _` |/ _ \\\n"
+    " * | |_| |  __/ | | |  __/ | | (_| | ||  __/ (_| | | |__| (_) | (_| |  __/\n"
+    " *  \\____|\\___|_| |_|\\___|_|  \\__,_|\\__\\___|\\__,_|  \\____\\___/ \\__,_|\\___|\n"
+    " *\n"
+    " * Auto-generated struct member accessors (setter/getter)\n"
+    " *\n"
+    " * To update run: meson compile -C [BUILD-DIR] update-accessors\n"
+    " * Or:            make update-accessors\n"
+    " */"
+)
+
+LD_BANNER = (
+    "/*\n"
+    " * This file is part of libnvme.\n"
+    " *\n"
+    " * Copyright (c) 2025, Dell Technologies Inc. or its subsidiaries.\n"
+    " * Authors: Martin Belanger <Martin.Belanger@dell.com>\n"
+    " *\n"
+    " * This symbol list is maintained by hand, not auto-generated. When\n"
+    " * you run the update below, it does not rewrite this file -- it\n"
+    " * prints which symbols should be added or removed. Add or remove\n"
+    " * those symbols yourself, in the correct ABI version section.\n"
+    " *\n"
+    " * To check: meson compile -C [BUILD-DIR] update-accessors\n"
+    " * Or:       make update-accessors\n"
+    " */"
+)
+
+# ---------------------------------------------------------------------------
+# Regular expressions
+# ---------------------------------------------------------------------------
+
+# Matches:  struct name { body };
+# [^}]* matches any character except '}', including newlines.
+STRUCT_RE = re.compile(
+    r'struct\s+([A-Za-z_][A-Za-z0-9_]*)\s*\{([^}]*)\}\s*;'
+)
+
+# Matches:  [const] char name[size];
+CHAR_ARRAY_RE = re.compile(
+    r'^(const\s+)?char\s+([A-Za-z_][A-Za-z0-9_]*)\s*\[\s*([A-Za-z0-9_]+)\s*\]\s*;'
+)
+
+# Matches:  [const] type_word [type_word ...] [*[*]] name ;
+# Supports multi-word types such as "enum tag", "unsigned int", and
+# "unsigned long long".  Backtracking resolves the ambiguity between the
+# final type word and the member name: the engine tries the longest type
+# first and retreats until the pointer/space group and name can be satisfied.
+MEMBER_RE = re.compile(
+    r'^(const\s+)?'
+    r'((?:[A-Za-z_][A-Za-z0-9_]*)(?:\s+[A-Za-z_][A-Za-z0-9_]*)*)'
+    r'([*\s]+)'
+    r'([A-Za-z_][A-Za-z0-9_]*)\s*;'
+)
+
+# Matches:  [const] type_word [type_word ...] name[size] ;
+# For fixed-size arrays of scalar types (e.g. uint8_t eui64[8],
+# unsigned char uuid[NVME_UUID_LEN]).  char arrays are caught first
+# by CHAR_ARRAY_RE and never reach this regex.
+SCALAR_ARRAY_RE = re.compile(
+    r'^(const\s+)?'
+    r'((?:[A-Za-z_][A-Za-z0-9_]*)(?:\s+[A-Za-z_][A-Za-z0-9_]*)*)'
+    r'\s+'
+    r'([A-Za-z_][A-Za-z0-9_]*)'
+    r'\s*\[\s*([A-Za-z0-9_]+)\s*\]\s*;'
+)
+
+# Matches:  struct type_name field_name;
+# Used to identify nested struct members annotated with !access:nested.
+NESTED_MEMBER_RE = re.compile(
+    r'^struct\s+([A-Za-z_][A-Za-z0-9_]*)\s+([A-Za-z_][A-Za-z0-9_]*)\s*;'
+)
+
+
+# ---------------------------------------------------------------------------
+# Annotation helpers
+# ---------------------------------------------------------------------------
+
+def _comment_text(text):
+    """Return the portion of *text* after the first '//', or None.
+
+    This is the raw comment payload — the text the parser scans for
+    ``!keyword`` annotation tokens.  Leading whitespace is stripped so that
+    '// !token', '//!token', and '//\\t!token' are all equivalent.
+    """
+    idx = text.find('//')
+    return text[idx + 2:].lstrip() if idx >= 0 else None
+
+
+def has_annotation(text, annotation):
+    """Return True if *text* carries ``!annotation`` inside a ``//`` comment.
+
+    Annotations are ``!keyword`` tokens that appear anywhere after ``//`` on
+    the same line.  A single comment may carry several annotations, e.g.::
+
+        struct foo { // !generate-accessors !generate-lifecycle
+
+    Accepts '// !annotation', '//!annotation', '//\\t!annotation', etc.
+    The match is token-delimited: ``!generate-accessors`` will not match
+    inside ``!generate-accessors:read=none,write=none`` (the ':' is not
+    whitespace, '!', or end-of-string).
+    """
+    comment = _comment_text(text)
+    if comment is None:
+        return False
+    return bool(re.search(
+        rf'!{re.escape(annotation)}(?=[\s!]|$)', comment))
+
+
+def strip_block_comments(text):
+    """Remove /* ... */ block comments (replaced with a single space each)."""
+    return re.sub(r'/\*.*?\*/', ' ', text, flags=re.DOTALL)
+
+
+def strip_inline_comment(line):
+    """Remove a // comment and everything after it."""
+    idx = line.find('//')
+    return line[:idx] if idx >= 0 else line
+
+
+# ---------------------------------------------------------------------------
+# Misc helpers
+# ---------------------------------------------------------------------------
+
+def sanitize_identifier(s):
+    """Replace characters that are invalid in a C identifier with '_'."""
+    if not s:
+        return s
+    chars = list(s)
+    if not (chars[0].isalpha() or chars[0] == '_'):
+        chars[0] = '_'
+    for i in range(1, len(chars)):
+        if not (chars[i].isalnum() or chars[i] == '_'):
+            chars[i] = '_'
+    return ''.join(chars)
+
+
+def type_sep(type_str):
+    """Return '' when *type_str* ends with '*', else ' '.
+
+    checkpatch.pl requires that '*' in a pointer return type is attached to
+    the function name, not the type keyword (e.g. ``const char *foo(...)``
+    not ``const char * foo(...)``).
+    """
+    return '' if type_str.endswith('*') else ' '
+
+
+def makedirs_for(filepath):
+    """Create all intermediate directories needed to hold *filepath*."""
+    os.makedirs(os.path.dirname(os.path.abspath(filepath)), exist_ok=True)
+
+
+# ---------------------------------------------------------------------------
+# Line-length helpers
+#
+# checkpatch.pl enforces an 80-column limit.  Because generated function
+# names vary in length we must measure before committing to a layout.
+#
+# fits_80(s)          — True when len(s) <= 80.
+# fits_80_ntabs(n, s) — True when the line would be <= 80 visible columns
+#                       given that it starts with n hard tabs (each tab
+#                       expands to 8 spaces, costing 7 extra visible columns
+#                       beyond the 1 byte that len() counts).
+# ---------------------------------------------------------------------------
+
+def fits_80(s):
+    return len(s) <= 80
+
+
+def fits_80_ntabs(n, s):
+    return len(s) + n * 7 <= 80
+
+
+def kdoc_summary(fn, *descriptions):
+    """Return a KernelDoc summary line that fits within 80 columns.
+
+    Tries each description in order and returns the first that fits as
+    ' * fn() - description'.  Falls back to ' * fn()' if none fit.
+    """
+    for desc in descriptions:
+        line = f' * {fn}() - {desc}'
+        if fits_80(line):
+            return line
+    return f' * {fn}()'
+
+
+# ---------------------------------------------------------------------------
+# Member data class
+# ---------------------------------------------------------------------------
+
+class Member:
+    """Represents one member of a parsed C struct.
+
+    read_mode and write_mode each take one of:
+      'generated'  — this generator emits the accessor
+      'custom'     — an accessor exists elsewhere (hand-written or bridge)
+      'none'       — no accessor exists for this axis
+
+    Only 'generated' produces C accessor output in this generator.  Members
+    with at least one non-'none' axis are retained for the SWIG emitter.
+
+    py_visible: False when annotated with ``// !python:none``.
+    py_alias: alternate Python attribute name from ``// !python:alias=NAME``,
+              or None to use the C member name.
+
+    is_attr_lazy: True when this member's getter/setter use the
+                  sentinel-cache shape instead of the plain generated
+                  shape. Set directly by dict-driven generators (e.g.
+                  generate_attr_accessors.py) — this generator's own
+                  header-annotation parser never sets it.
+    attr_name: attribute name to read on cache miss, or None.
+    attr_loader: loader function name that fills this member (and
+                 possibly others in its group) on cache miss, or None.
+                 Mutually meaningful only when attr_name is None.
+    is_volatile: True when the member is always re-read on every call,
+                 never cached.
+    attr_reader: the C function name used to read a plain attr_name
+                 (e.g. libnvme_get_ctrl_attr, libnvme_get_path_attr).
+                 Meaningful only alongside attr_name.
+    is_absent: True when this platform has no source for the member at
+               all -- the getter always returns -ENOENT, no attr_name
+               or attr_loader call ever happens.
+    """
+
+    __slots__ = ('name', 'type', 'read_mode', 'write_mode',
+                 'is_char_array', 'is_char_ptr_array', 'is_scalar_array',
+                 'array_size', 'py_visible', 'py_alias', 'field_path',
+                 'is_attr_lazy', 'attr_name', 'attr_loader', 'is_volatile',
+                 'attr_reader', 'is_absent')
+
+    def __init__(self, name, type_str, read_mode, write_mode,
+                 is_char_array, is_char_ptr_array, is_scalar_array, array_size,
+                 py_visible=True, py_alias=None, field_path=None,
+                 is_attr_lazy=False, attr_name=None, attr_loader=None,
+                 is_volatile=False, attr_reader=None, is_absent=False):
+        self.name = name
+        self.type = type_str          # e.g. "const char *", "int", "__u32"
+        self.read_mode = read_mode    # 'generated' | 'custom' | 'none'
+        self.write_mode = write_mode  # 'generated' | 'custom' | 'none'
+        self.is_char_array = is_char_array
+        self.is_char_ptr_array = is_char_ptr_array
+        self.is_scalar_array = is_scalar_array
+        self.array_size = array_size  # for fixed-size arrays (char[N] or type[N])
+        self.py_visible = py_visible  # False → excluded from SWIG fragment
+        self.py_alias = py_alias      # str → rename Python attribute; None → use C name
+        self.field_path = field_path if field_path is not None else name
+        self.is_attr_lazy = is_attr_lazy
+        self.attr_name = attr_name
+        self.attr_loader = attr_loader
+        self.is_volatile = is_volatile
+        self.attr_reader = attr_reader
+        self.is_absent = is_absent
+
+    @property
+    def has_accessor(self):
+        """True when at least one axis has a real accessor (generated or custom)."""
+        return self.read_mode != 'none' or self.write_mode != 'none'
+
+    @property
+    def is_custom_accessor(self):
+        return self.read_mode == 'custom' or self.write_mode == 'custom'
+
+    @property
+    def gen_getter(self):
+        return self.read_mode == 'generated'
+
+    @property
+    def gen_setter(self):
+        return self.write_mode == 'generated'
+
+
+# ---------------------------------------------------------------------------
+# Parsing
+# ---------------------------------------------------------------------------
+
+def parse_members(struct_name, raw_body, struct_defaults, verbose,
+                  nested_map=None, field_prefix='', visiting=None,
+                  referenced=None, errors=None):
+    """Parse *raw_body* and return a list of Member objects.
+
+    *struct_defaults* is a (read_mode, write_mode) tuple taken from the
+    struct-level ``!generate-accessors`` or ``!nested-accessors`` annotation.
+    Each member inherits these defaults and may override one or both axes
+    with ``// !access:read=...,write=...``.
+
+    Modes: 'generated' | 'custom' | 'none'.
+
+    Members where both axes are 'none' are dropped entirely.  Members with
+    at least one non-'none' axis are retained so the SWIG fragment emitter
+    can see 'custom' axes alongside 'generated' ones.
+
+    *nested_map* maps struct type names to ``(raw_body, defaults)`` tuples
+    for every struct annotated ``// !nested-accessors``.  When a member is
+    annotated ``// !access:nested`` the resolver recurses into the nested
+    struct, prefixing each resolved member's field_path with
+    ``field_prefix + field_name + "."``.
+
+    *visiting* is the set of struct type names currently being expanded
+    (cycle detection).  *referenced* accumulates type names that were
+    successfully looked up, for post-pass unreferenced-struct warnings.
+    *errors* collects error messages; when None errors are printed immediately.
+
+    Per-member Python hints:
+      ``// !python:none``        → Member.py_visible = False (exclude from SWIG)
+      ``// !python:alias=NAME``  → Member.py_alias = 'NAME' (rename in Python)
+
+    Annotations are detected on the **raw** (un-stripped) line so that
+    comment masking cannot hide them.  Comments are stripped only afterwards,
+    for regex matching.
+    """
+    struct_read, struct_write = struct_defaults
+    members = []
+
+    _py_none_re  = re.compile(r'!python:none(?=[\s!]|$)')
+    _py_alias_re = re.compile(r'!python:alias=(\w+)(?=[\s!]|$)')
+
+    for raw_line in raw_body.splitlines():
+        # ----------------------------------------------------------------
+        # Annotation checks on the raw line — BEFORE stripping comments.
+        # ----------------------------------------------------------------
+        override = parse_access_override(raw_line)
+        if override is None:
+            read_mode = struct_read
+            write_mode = struct_write
+        else:
+            read_mode  = override.get('read',  struct_read)
+            write_mode = override.get('write', struct_write)
+
+        # Retain members that have any accessor (generated or custom) so the
+        # SWIG emitter can see them.  Only drop members with no accessor at
+        # all on either axis.
+        if read_mode == 'none' and write_mode == 'none':
+            continue
+
+        comment = _comment_text(raw_line) or ''
+        py_visible = _py_none_re.search(comment) is None
+        m_alias    = _py_alias_re.search(comment)
+        py_alias   = m_alias.group(1) if m_alias else None
+
+        # ----------------------------------------------------------------
+        # Strip comments for member-declaration parsing.
+        # ----------------------------------------------------------------
+        clean = strip_inline_comment(strip_block_comments(raw_line)).strip()
+
+        if not clean or ';' not in clean:
+            continue
+        if 'static' in clean:
+            continue
+
+        # --- nested struct member: struct type_name field_name; ---------
+        if 'struct' in clean:
+            nested_override = parse_nested_annotation(raw_line)
+            if nested_override is not None and nested_map is not None:
+                m = NESTED_MEMBER_RE.match(clean)
+                if m:
+                    nested_type  = m.group(1)
+                    nested_field = m.group(2)
+                    if nested_type not in nested_map:
+                        msg = (f'error: !access:nested references '
+                               f'struct {nested_type} which is not '
+                               f'annotated // !nested-accessors')
+                        if errors is not None:
+                            errors.append(msg)
+                        else:
+                            print(msg, file=sys.stderr)
+                    else:
+                        vis = visiting if visiting is not None else set()
+                        if nested_type in vis:
+                            msg = (f'error: !access:nested cycle '
+                                   f'detected at struct {nested_type}')
+                            if errors is not None:
+                                errors.append(msg)
+                            else:
+                                print(msg, file=sys.stderr)
+                        else:
+                            if referenced is not None:
+                                referenced.add(nested_type)
+                            nested_body, (nd_r, nd_w) = \
+                                nested_map[nested_type]
+                            # Apply any per-usage overrides from
+                            # !access:nested:read=M,write=M
+                            nd_r = nested_override.get('read',  nd_r)
+                            nd_w = nested_override.get('write', nd_w)
+                            sub = parse_members(
+                                struct_name,
+                                nested_body,
+                                (nd_r, nd_w),
+                                verbose,
+                                nested_map=nested_map,
+                                field_prefix=(
+                                    f'{field_prefix}{nested_field}.'),
+                                visiting=vis | {nested_type},
+                                referenced=referenced,
+                                errors=errors,
+                            )
+                            members.extend(sub)
+            continue
+
+        # --- char array: [const] char name[size]; -----------------------
+        m = CHAR_ARRAY_RE.match(clean)
+        if m:
+            is_const_qual = bool(m.group(1))
+            cname = m.group(2)
+            members.append(Member(
+                name=cname,
+                type_str='const char *',
+                read_mode=read_mode,
+                # const forces write=none — you cannot generate a setter
+                # for a const member.
+                write_mode='none' if is_const_qual else write_mode,
+                is_char_array=True,
+                is_char_ptr_array=False,
+                is_scalar_array=False,
+                array_size=m.group(3),
+                py_visible=py_visible,
+                py_alias=py_alias,
+                field_path=f'{field_prefix}{cname}',
+            ))
+            continue
+
+        # --- fixed-size scalar array: [const] type name[size]; ----------
+        m = SCALAR_ARRAY_RE.match(clean)
+        if m:
+            is_const_qual = bool(m.group(1))
+            sname = m.group(3)
+            members.append(Member(
+                name=sname,
+                type_str=m.group(2),
+                read_mode=read_mode,
+                write_mode='none' if is_const_qual else write_mode,
+                is_char_array=False,
+                is_char_ptr_array=False,
+                is_scalar_array=True,
+                array_size=m.group(4),
+                py_visible=py_visible,
+                py_alias=py_alias,
+                field_path=f'{field_prefix}{sname}',
+            ))
+            continue
+
+        # --- general member: [const] type[*] name; ----------------------
+        m = MEMBER_RE.match(clean)
+        if m:
+            is_const_qual = bool(m.group(1))
+            type_base = m.group(2)
+            ptr_part  = m.group(3)
+            name      = m.group(4)
+
+            ptr_depth = ptr_part.count('*')
+            if ptr_depth:
+                if type_base != 'char':
+                    continue  # only char* pointers are supported
+                if ptr_depth == 1:
+                    type_str = 'const char *'
+                elif ptr_depth == 2:
+                    type_str = 'const char *const *'
+                else:
+                    continue
+            else:
+                type_str = type_base
+
+            members.append(Member(
+                name=name,
+                type_str=type_str,
+                read_mode=read_mode,
+                write_mode='none' if is_const_qual else write_mode,
+                is_char_array=False,
+                is_char_ptr_array=(ptr_depth == 2),
+                is_scalar_array=False,
+                array_size=None,
+                py_visible=py_visible,
+                py_alias=py_alias,
+                field_path=f'{field_prefix}{name}',
+            ))
+
+    return members
+
+
+_VALID_MODES = frozenset(('generated', 'custom', 'none'))
+
+
+def parse_access_spec(spec, origin, extra_keys=()):
+    """Parse a spec body like ``read=generated,write=custom``.
+
+    Returns a dict mapping axis names ('read', 'write') to mode strings.
+    Partial specs are allowed — any axis not named in the spec is absent
+    from the returned dict.  Unknown axes or modes trigger a warning and
+    are dropped from the result.
+
+    *extra_keys* names additional keys accepted alongside 'read'/'write'
+    whose value is taken verbatim (not checked against _VALID_MODES) —
+    used for the struct-level 'prefix' key, which takes a naming string
+    rather than an access mode.
+
+    *origin* is a human-readable description of where the spec came from,
+    used only for warning messages (e.g. "!generate-accessors" or
+    "!access").
+    """
+    result = {}
+    for part in spec.split(','):
+        part = part.strip()
+        if not part:
+            continue
+        if '=' not in part:
+            print(f"warning: {origin} spec token '{part}' has no '='; "
+                  f"expected 'read=MODE' or 'write=MODE'.",
+                  file=sys.stderr)
+            continue
+        key, value = part.split('=', 1)
+        key   = key.strip()
+        value = value.strip()
+        if key in extra_keys:
+            result[key] = value
+            continue
+        if key not in ('read', 'write'):
+            print(f"warning: {origin} spec axis '{key}' is unknown; "
+                  f"expected 'read' or 'write'.",
+                  file=sys.stderr)
+            continue
+        if value not in _VALID_MODES:
+            print(f"warning: {origin} spec mode '{value}' for axis "
+                  f"'{key}' is unknown; expected one of: "
+                  f"{', '.join(sorted(_VALID_MODES))}.",
+                  file=sys.stderr)
+            continue
+        result[key] = value
+    return result
+
+
+def parse_struct_annotation(raw_body):
+    """Return the (read_mode, write_mode, name_prefix) defaults for a struct.
+
+    Recognises::
+
+      // !generate-accessors
+          → ('generated', 'generated', None)  [shorthand]
+      // !generate-accessors:read=X,write=Y
+          → (X, Y, None)                      [explicit, both axes]
+      // !generate-accessors:read=X
+          → (X, 'generated', None)            [partial — write inherits built-in]
+      // !generate-accessors:write=Y
+          → ('generated', Y, None)            [partial — read inherits built-in]
+      // !generate-accessors:...,prefix=NAME
+          → (..., NAME)                       [override the naming segment
+                                                used in generated function
+                                                names; the real struct tag
+                                                is still used for C types
+                                                and doc comments]
+
+    Returns None when the annotation is absent.
+
+    The built-in default for any axis not named at the struct level is
+    'generated'.
+    """
+    # Bare form first: "!generate-accessors" with no ':spec'.
+    bare_re = re.compile(r'!generate-accessors(?=[\s!]|$)')
+    # Specced form: "!generate-accessors:spec".
+    spec_re = re.compile(r'!generate-accessors:(\S+)(?=[\s!]|$)')
+
+    m = spec_re.search(raw_body)
+    if m:
+        parsed = parse_access_spec(m.group(1), '!generate-accessors',
+                                    extra_keys=('prefix',))
+        return (parsed.get('read',  'generated'),
+                parsed.get('write', 'generated'),
+                parsed.get('prefix'))
+
+    if bare_re.search(raw_body):
+        return ('generated', 'generated', None)
+
+    return None
+
+
+def parse_access_override(raw_line):
+    """Parse a member-level ``!access:<spec>`` annotation.
+
+    Returns a dict ``{'read': mode}`` / ``{'write': mode}`` / both, or
+    ``None`` when no ``!access`` annotation is present on the line.  A
+    partial spec yields a dict with only the named axes — missing axes
+    are the caller's responsibility to fill in (typically from the
+    struct-level default).
+
+    ``!access:nested`` is handled separately by parse_nested_annotation()
+    and is intentionally ignored here.
+    """
+    comment = _comment_text(raw_line)
+    if comment is None:
+        return None
+    m = re.search(r'!access:(\S+)(?=[\s!]|$)', comment)
+    if not m:
+        return None
+    spec = m.group(1)
+    if spec == 'nested' or spec.startswith('nested:'):
+        return None
+    return parse_access_spec(spec, '!access')
+
+
+def parse_nested_annotation(raw_line):
+    """Return an override dict from ``!access:nested[:spec]``, or None if absent.
+
+    Bare ``// !access:nested``            → {}   (no overrides)
+    ``// !access:nested:write=none``      → {'write': 'none'}
+    ``// !access:nested:read=M,write=M``  → {'read': M, 'write': M}
+
+    The returned dict is applied on top of the nested struct's own
+    ``!nested-accessors`` defaults at the call site.  Returns None when
+    the annotation is not present on the line.
+    """
+    comment = _comment_text(raw_line)
+    if comment is None:
+        return None
+    m = re.search(r'!access:nested(?::(\S+))?(?=[\s!]|$)', comment)
+    if not m:
+        return None
+    return parse_access_spec(m.group(1), '!access:nested') if m.group(1) else {}
+
+
+_NESTED_ACCESSORS_BARE_RE = re.compile(r'!nested-accessors(?=[\s!]|$)')
+_NESTED_ACCESSORS_SPEC_RE = re.compile(r'!nested-accessors:(\S+)(?=[\s!]|$)')
+
+
+def parse_nested_accessors_annotation(raw_body):
+    """Return (read_mode, write_mode) from ``// !nested-accessors[:spec]``.
+
+    Returns None when the annotation is absent.  Follows the same rules as
+    parse_struct_annotation() — bare form defaults to ('generated', 'generated').
+    """
+    for line in raw_body.splitlines():
+        comment = _comment_text(line)
+        if comment is None:
+            continue
+        m = _NESTED_ACCESSORS_SPEC_RE.search(comment)
+        if m:
+            parsed = parse_access_spec(m.group(1), '!nested-accessors')
+            return (parsed.get('read',  'generated'),
+                    parsed.get('write', 'generated'))
+        if _NESTED_ACCESSORS_BARE_RE.search(comment):
+            return ('generated', 'generated')
+    return None
+
+
+def parse_lifecycle_annotation(raw_body):
+    """Return True if ``!generate-lifecycle`` is present, else None.
+
+    Recognises (on the struct's opening brace line)::
+
+        // !generate-lifecycle   → True  (emit constructor + destructor)
+
+    Returns None when the annotation is absent.
+    """
+    _lc_re = re.compile(r'!generate-lifecycle(?=[\s!]|$)')
+    for line in raw_body.splitlines():
+        comment = _comment_text(line)
+        if comment is None:
+            continue
+        if _lc_re.search(comment):
+            return True
+    return None
+
+
+_GEN_PYTHON_RE = re.compile(r'!generate-python(?::alias=(\w+))?(?=[\s!]|$)')
+
+
+def parse_generate_python(raw_body):
+    """Return ``(emit_py, alias)`` from a ``// !generate-python[:alias=NAME]`` annotation.
+
+    *emit_py* is True when ``!generate-python`` is present on any line of
+    *raw_body*.  *alias* is the NAME string from ``:alias=NAME``, or None
+    when the option is absent.
+    """
+    for line in raw_body.splitlines():
+        comment = _comment_text(line)
+        if comment is None:
+            continue
+        m = _GEN_PYTHON_RE.search(comment)
+        if m:
+            return True, m.group(1)
+    return False, None
+
+
+_GEN_DICT_TABLE_RE = re.compile(r'!generate-dict-table(?=[\s!]|$)')
+
+
+def parse_generate_dict_table(raw_body):
+    """Return True if ``!generate-dict-table`` is present on any line."""
+    for line in raw_body.splitlines():
+        comment = _comment_text(line)
+        if comment is None:
+            continue
+        if _GEN_DICT_TABLE_RE.search(comment):
+            return True
+    return False
+
+
+def parse_dict_table_none(raw_line):
+    """Return True if ``!dict-table:none`` is present on *raw_line*."""
+    comment = _comment_text(raw_line)
+    if comment is None:
+        return False
+    return bool(re.search(r'!dict-table:none(?=[\s!]|$)', comment))
+
+
+# Types that map to the 'int' bucket (4-byte signed/unsigned integers).
+# The table loop writes them via *(int *)ptr, which is safe for same-sized
+# types.  Smaller types (__u8, short, etc.) are intentionally excluded —
+# writing 4 bytes to a 1- or 2-byte field would corrupt adjacent memory.
+_DICT_TABLE_INT_TYPES = frozenset({
+    'int', 'unsigned int',
+    'int32_t', '__s32',
+    'uint32_t', '__u32',
+})
+
+# Types that map to the 'long' bucket (8-byte integers on 64-bit Linux).
+_DICT_TABLE_LONG_TYPES = frozenset({
+    'long', 'unsigned long',
+    'long long', 'unsigned long long',
+    'int64_t', '__s64',
+    'uint64_t', '__u64',
+})
+
+# Types that map to the 'bool' bucket.
+_DICT_TABLE_BOOL_TYPES = frozenset({'bool', '_Bool'})
+
+# Scalar types that are KNOWN but not yet supported (wrong width or need
+# special handling).  A member with one of these types will trigger a
+# warning instead of being silently dropped.
+_DICT_TABLE_UNSUPPORTED_SCALAR = frozenset({
+    'short', 'unsigned short',
+    'int8_t',  'int16_t',
+    'uint8_t', 'uint16_t',
+    '__s8',  '__s16',
+    '__u8',  '__u16',
+    'signed char', 'unsigned char', 'char',
+    'float', 'double',
+})
+
+
+def parse_members_for_dict_table(raw_body, struct_name='<unknown>'):
+    """Bucket members by C type for dict-table generation.
+
+    Returns ``{'int': [...], 'long': [...], 'bool': [...], 'char *': [...]}``,
+    where each list holds the member names belonging to that type.
+
+    Members annotated ``// !dict-table:none`` are skipped silently.
+    Members of unsupported scalar types produce a warning on stderr.
+    Members of unrecognised non-scalar types (pointers, enums, structs)
+    also produce a warning.
+    """
+    buckets = {'int': [], 'long': [], 'bool': [], 'char *': []}
+
+    for raw_line in raw_body.splitlines():
+        if parse_dict_table_none(raw_line):
+            continue
+
+        clean = strip_inline_comment(strip_block_comments(raw_line)).strip()
+
+        if not clean or ';' not in clean:
+            continue
+        if 'static' in clean or 'struct' in clean:
+            continue
+
+        # Fixed-size scalar arrays (e.g. uint8_t eui64[8]) and char arrays
+        # are not supported; CHAR_ARRAY_RE / SCALAR_ARRAY_RE would match
+        # them, but we only run MEMBER_RE here.  Skip array declarations
+        # so they do not fall through to the warning path.
+        if CHAR_ARRAY_RE.match(clean) or SCALAR_ARRAY_RE.match(clean):
+            continue
+
+        m = MEMBER_RE.match(clean)
+        if not m:
+            continue
+
+        if bool(m.group(1)):    # const — skip silently
+            continue
+
+        type_base = m.group(2)
+        ptr_part  = m.group(3)
+        name      = m.group(4)
+
+        ptr_depth = ptr_part.count('*')
+
+        if ptr_depth == 1 and type_base == 'char':
+            buckets['char *'].append(name)
+        elif ptr_depth == 0:
+            if type_base in _DICT_TABLE_INT_TYPES:
+                buckets['int'].append(name)
+            elif type_base in _DICT_TABLE_LONG_TYPES:
+                buckets['long'].append(name)
+            elif type_base in _DICT_TABLE_BOOL_TYPES:
+                buckets['bool'].append(name)
+            else:
+                print(
+                    f"warning: struct {struct_name}: member '{name}' has "
+                    f"type '{type_base}' which is not supported by "
+                    f"!generate-dict-table; annotate with "
+                    f"// !dict-table:none to silence this warning.",
+                    file=sys.stderr)
+        else:
+            # Multi-level pointer (char **, void *, struct foo *, …)
+            print(
+                f"warning: struct {struct_name}: member '{name}' has "
+                f"pointer type '{type_base} {"*" * ptr_depth}' which is "
+                f"not supported by !generate-dict-table; annotate with "
+                f"// !dict-table:none to silence this warning.",
+                file=sys.stderr)
+
+    return buckets
+
+
+# ---------------------------------------------------------------------------
+# Lifecycle member: name + whether it is a char** (string array)
+# ---------------------------------------------------------------------------
+
+class LifecycleMember:
+    """A char* or char** member that the destructor must free."""
+
+    __slots__ = ('name', 'is_char_ptr_array')
+
+    def __init__(self, name, is_char_ptr_array):
+        self.name = name
+        self.is_char_ptr_array = is_char_ptr_array
+
+
+def parse_members_for_lifecycle(raw_body):
+    """Return a list of LifecycleMember for every char* or char** member.
+
+    Unlike parse_members(), this function:
+      - ignores the ``!access`` annotation entirely (the destructor must
+        free all heap strings regardless of accessor mode)
+      - respects ``lifecycle:none`` to let callers opt a member out
+      - collects only char* and char** members (the only types that need
+        explicit freeing)
+    """
+    members = []
+
+    for raw_line in raw_body.splitlines():
+        if has_annotation(raw_line, 'lifecycle:none'):
+            continue
+
+        clean = strip_inline_comment(strip_block_comments(raw_line)).strip()
+
+        if not clean or ';' not in clean:
+            continue
+        if 'static' in clean or 'struct' in clean:
+            continue
+
+        m = MEMBER_RE.match(clean)
+        if not m:
+            continue
+
+        is_const  = bool(m.group(1))
+        type_base = m.group(2)
+        ptr_part  = m.group(3)
+        name      = m.group(4)
+
+        # const char * members are not owned by the struct (no strdup),
+        # so the destructor must not free them.
+        if is_const:
+            continue
+
+        ptr_depth = ptr_part.count('*')
+        if not ptr_depth or type_base != 'char':
+            continue
+
+        if ptr_depth > 2:
+            continue
+
+        members.append(LifecycleMember(
+            name=name,
+            is_char_ptr_array=(ptr_depth == 2),
+        ))
+
+    return members
+
+
+# ---------------------------------------------------------------------------
+# Default member: name + default value expression
+# ---------------------------------------------------------------------------
+
+class DefaultMember:
+    """A member that carries a ``// !default:VALUE`` annotation."""
+
+    __slots__ = ('name', 'value', 'is_char_ptr')
+
+    def __init__(self, name, value, is_char_ptr=False):
+        self.name       = name
+        self.value      = value       # raw value string, emitted verbatim
+        self.is_char_ptr = is_char_ptr  # True → emit strdup/free pattern
+
+
+def parse_default_annotation(raw_line):
+    """Return the default value string from a ``!default:VALUE`` annotation.
+
+    The annotation must appear inside a ``//`` comment::
+
+        int port;   // !default:4420
+        char *host; // !default:"localhost"
+
+    VALUE may be a quoted C string literal (``"foo bar"``), which may contain
+    spaces, or any non-whitespace token (integer literal, macro name, etc.).
+
+    Returns None when no annotation is found.
+    """
+    comment = _comment_text(raw_line)
+    if comment is None:
+        return None
+    # Quoted string (double-quoted, with basic escape support) or bare token.
+    _val = r'"(?:[^"\\]|\\.)*"|\S+'
+    m = re.search(rf'!default:({_val})', comment)
+    return m.group(1) if m else None
+
+
+def parse_members_for_defaults(raw_body):
+    """Return a list of DefaultMember for every member with a default annotation.
+
+    Any member in the struct body that carries ``// !default:VALUE`` is
+    collected here, regardless of its accessor or lifecycle status.
+    The value is emitted verbatim in the generated assignment, so any
+    valid C expression (integer literal, macro name, etc.) is accepted.
+    """
+    defaults = []
+
+    for raw_line in raw_body.splitlines():
+        value = parse_default_annotation(raw_line)
+        if value is None:
+            continue
+
+        clean = strip_inline_comment(strip_block_comments(raw_line)).strip()
+
+        if not clean or ';' not in clean:
+            continue
+        if 'static' in clean or 'struct' in clean:
+            continue
+
+        # Try char array first, then general member regex.
+        m = CHAR_ARRAY_RE.match(clean)
+        if m:
+            defaults.append(DefaultMember(name=m.group(2), value=value,
+                                          is_char_ptr=False))
+            continue
+
+        m = MEMBER_RE.match(clean)
+        if m:
+            is_const  = bool(m.group(1))
+            type_base = m.group(2)
+            ptr_part  = m.group(3)
+            name      = m.group(4)
+            is_char_ptr = (type_base == 'char'
+                           and ptr_part.count('*') == 1
+                           and not is_const)
+            defaults.append(DefaultMember(name=name, value=value,
+                                          is_char_ptr=is_char_ptr))
+
+    return defaults
+
+
+def collect_nested_map(text):
+    """Pass 1: collect all ``// !nested-accessors`` struct definitions.
+
+    Returns a dict mapping struct type names to ``(raw_body, defaults)``
+    tuples, where *defaults* is the ``(read_mode, write_mode)`` pair from
+    the ``!nested-accessors`` annotation (bare form → ``('generated',
+    'generated')``).
+
+    Only structs carrying ``// !nested-accessors`` are collected; all others
+    are ignored.
+    """
+    result = {}
+    for match in STRUCT_RE.finditer(text):
+        struct_name = match.group(1)
+        raw_body    = match.group(2)
+        defaults = parse_nested_accessors_annotation(raw_body)
+        if defaults is not None:
+            result[struct_name] = (raw_body, defaults)
+    return result
+
+
+def parse_file(text, verbose, nested_map=None, referenced=None, errors=None):
+    """Return list of (struct_name, [Member], [LifecycleMember],
+    [DefaultMember], emit_py_fragment, struct_alias, name_prefix) tuples.
+
+    Only structs annotated with ``// !generate-accessors`` as the first token
+    inside the opening brace, or with ``// !generate-lifecycle`` anywhere
+    inside the opening brace line, are processed.
+
+    *emit_py_fragment* is True when the struct also carries ``!generate-python``.
+
+    *name_prefix* is the struct-level ``prefix=`` override (see
+    ``parse_struct_annotation()``), or None when not specified. It overrides
+    only the naming segment used in generated function names; callers must
+    keep using *struct_name* itself for C type references and doc comments.
+
+    *nested_map* is the dict produced by ``collect_nested_map()`` across all
+    input headers (Pass 1).  It is forwarded to ``parse_members()`` so that
+    ``// !access:nested`` members can be resolved.  *referenced* and *errors*
+    are also forwarded for validation bookkeeping.
+    """
+    result = []
+
+    for match in STRUCT_RE.finditer(text):
+        struct_name = match.group(1)
+        raw_body    = match.group(2)
+
+        struct_annotation           = parse_struct_annotation(raw_body)
+        lifecycle_mode              = parse_lifecycle_annotation(raw_body)
+        emit_py_fragment, struct_alias = parse_generate_python(raw_body)
+
+        if struct_annotation is None and lifecycle_mode is None and not emit_py_fragment:
+            continue
+
+        if struct_annotation is not None:
+            struct_read, struct_write, name_prefix = struct_annotation
+            struct_defaults = (struct_read, struct_write)
+        else:
+            struct_defaults = None
+            name_prefix = None
+
+        # If the struct has !generate-python but no !generate-accessors, parse
+        # members with default mode (none, none) so the SWIG emitter can see
+        # any explicit !access: overrides on individual members.
+        members = []
+        acc_defaults = struct_defaults if struct_defaults is not None else ('none', 'none')
+        if struct_defaults is not None or emit_py_fragment:
+            members = parse_members(
+                struct_name, raw_body, acc_defaults, verbose,
+                nested_map=nested_map, referenced=referenced,
+                errors=errors)
+
+        lc_members = None
+        if lifecycle_mode:
+            lc_members = parse_members_for_lifecycle(raw_body)
+
+        default_members = parse_members_for_defaults(raw_body)
+
+        if verbose and (members or lc_members is not None or default_members
+                        or emit_py_fragment):
+            if struct_defaults is not None and members:
+                sr, sw = struct_defaults
+                acc = (f"{len(members)} members "
+                       f"[defaults: read={sr}, write={sw}]")
+            elif struct_defaults is not None:
+                acc = "no accessors"
+            else:
+                acc = "no accessors (python-only)"
+            if lifecycle_mode:
+                lc = f"{len(lc_members)} lifecycle members"
+            else:
+                lc = "no lifecycle"
+            df = (f"{len(default_members)} defaults" if default_members
+                  else "no defaults")
+            py = "generate-python" if emit_py_fragment else "no python"
+            print(f"Found struct: {struct_name} — {acc}, {lc}, {df}, {py}")
+
+        if members or lc_members is not None or default_members or emit_py_fragment:
+            result.append((struct_name, members, lc_members, default_members,
+                           emit_py_fragment, struct_alias, name_prefix))
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Header (*.h) code emitters
+# ---------------------------------------------------------------------------
+
+def _set_name(prefix, sname, mname):
+    return SET_FMT.format(pre=f'{prefix}{sname}', mem=mname)
+
+
+def _get_name(prefix, sname, mname):
+    return GET_FMT.format(pre=f'{prefix}{sname}', mem=mname)
+
+
+def emit_hdr_setter_str(f, prefix, sname, type_name, mname, is_dyn_str):
+    """Emit a header declaration for a string setter."""
+    fn = _set_name(prefix, sname, mname)
+    f.write(
+        f'/**\n'
+        f'{kdoc_summary(fn, f"Set {mname}.", "Setter.")}\n'
+        f' * @p: The &struct {type_name} instance to update.\n'
+    )
+    if is_dyn_str:
+        f.write(
+            f' * @{mname}: New string; a copy is stored. Pass NULL to clear.\n'
+        )
+    else:
+        f.write(
+            f' * @{mname}: New string; truncated to fit, always NUL-terminated.\n'
+        )
+    f.write(' */\n')
+
+    single = (f'void {_set_name(prefix, sname, mname)}'
+              f'(struct {type_name} *p, const char *{mname});')
+    if fits_80(single):
+        f.write(single + '\n\n')
+    else:
+        f.write(
+            f'void {_set_name(prefix, sname, mname)}(\n'
+            f'\t\tstruct {type_name} *p,\n'
+            f'\t\tconst char *{mname});\n\n'
+        )
+
+
+def emit_hdr_setter_str_array(f, prefix, sname, type_name, mname):
+    """Emit a header declaration for a string-array setter."""
+    fn = _set_name(prefix, sname, mname)
+    f.write(
+        f'/**\n'
+        f'{kdoc_summary(fn, f"Set {mname}.", "Setter.")}\n'
+        f' * @p: The &struct {type_name} instance to update.\n'
+        f' * @{mname}: New NULL-terminated string array; deep-copied.\n'
+        f' */\n'
+    )
+
+    single = (f'void {_set_name(prefix, sname, mname)}'
+              f'(struct {type_name} *p, const char *const *{mname});')
+    if fits_80(single):
+        f.write(single + '\n\n')
+    else:
+        f.write(
+            f'void {_set_name(prefix, sname, mname)}(\n'
+            f'\t\tstruct {type_name} *p,\n'
+            f'\t\tconst char *const *{mname});\n\n'
+        )
+
+
+def emit_hdr_setter_val(f, prefix, sname, type_name, mname, mtype):
+    """Emit a header declaration for a value setter."""
+    fn = _set_name(prefix, sname, mname)
+    param = f' * @{mname}: Value to assign to the {mname} field.'
+    if not fits_80(param):
+        param = f' * @{mname}: New value.'
+    f.write(
+        f'/**\n'
+        f'{kdoc_summary(fn, f"Set {mname}.", "Setter.")}\n'
+        f' * @p: The &struct {type_name} instance to update.\n'
+        f'{param}\n'
+        f' */\n'
+    )
+
+    single = (f'void {_set_name(prefix, sname, mname)}'
+              f'(struct {type_name} *p, {mtype} {mname});')
+    if fits_80(single):
+        f.write(single + '\n\n')
+    else:
+        f.write(
+            f'void {_set_name(prefix, sname, mname)}(\n'
+            f'\t\tstruct {type_name} *p,\n'
+            f'\t\t{mtype} {mname});\n\n'
+        )
+
+
+def emit_hdr_getter(f, prefix, sname, type_name, mname, mtype, is_dyn_str):
+    """Emit a header declaration for a getter."""
+    fn = _get_name(prefix, sname, mname)
+    tail = ', or NULL if not set.' if is_dyn_str else '.'
+    ret = f' * Return: The value of the {mname} field{tail}'
+    if not fits_80(ret):
+        ret = f' * Return: Current value{tail}'
+    f.write(
+        f'/**\n'
+        f'{kdoc_summary(fn, f"Get {mname}.", "Getter.")}\n'
+        f' * @p: The &struct {type_name} instance to query.\n'
+        f' *\n'
+        f'{ret}\n'
+        f' */\n'
+    )
+
+    sep    = type_sep(mtype)
+    single = (f'{mtype}{sep}{_get_name(prefix, sname, mname)}'
+              f'(const struct {type_name} *p);')
+    if fits_80(single):
+        f.write(single + '\n\n')
+    else:
+        f.write(
+            f'{mtype}{sep}{_get_name(prefix, sname, mname)}(\n'
+            f'\t\tconst struct {type_name} *p);\n\n'
+        )
+
+
+def emit_hdr_getter_lazy(f, prefix, sname, type_name, mname, mtype):
+    """Emit a header declaration for a lazy attribute getter.
+
+    Unlike a plain getter, an attribute read (or the loader behind it) can
+    fail, and a bare return value has no room to say so -- lazy getters
+    return int and deliver the value through an out-param instead. A
+    third argument, dflt, is what gets stored in that out-param when the
+    call fails, so a caller who only wants a display fallback (not the
+    fine-grained reason) never has to pre-initialize its own local or
+    check the return code: pass NULL (or 0 for a numeric member) to opt
+    out and get nothing back on failure but a return code to check.
+    """
+    fn = _get_name(prefix, sname, mname)
+    is_str = mtype == 'const char *'
+    # mtype itself may already end in '*' (e.g. a cached-buffer pointer
+    # member) -- type_sep() decides whether boxing it as an out-param
+    # needs a space before the extra '*' or not, same as dflt_sep below,
+    # so two adjacent '*'s never end up with a stray space between them.
+    out_type = 'const char **' if is_str else f'{mtype}{type_sep(mtype)}*'
+    dflt_type = 'const char *' if is_str else mtype
+    dflt_sep = type_sep(dflt_type)
+    f.write(
+        f'/**\n'
+        f'{kdoc_summary(fn, f"Get {mname}.", "Getter.")}\n'
+        f' * @p: The &struct {type_name} instance to query.\n'
+        f' * @{mname}: Where to store the value on success.\n'
+        f' * @dflt: Value to store in @{mname} on failure.\n'
+        f' *\n'
+        f' * Return: 0 on success, -ENOENT if the attribute does not\n'
+        f' *	   exist, or a negative errno on failure.\n'
+        f' */\n'
+    )
+
+    single = (f'int {fn}(const struct {type_name} *p, {out_type}{mname}, '
+              f'{dflt_type}{dflt_sep}dflt);')
+    if fits_80(single):
+        f.write(single + '\n\n')
+    else:
+        f.write(
+            f'int {fn}(\n'
+            f'\t\tconst struct {type_name} *p,\n'
+            f'\t\t{out_type}{mname},\n'
+            f'\t\t{dflt_type}{dflt_sep}dflt);\n\n'
+        )
+
+
+def emit_hdr_setter_scalar_array(f, prefix, sname, type_name, mname, elem_type,
+                                 array_size):
+    """Emit a header declaration for a fixed-size scalar-array setter."""
+    fn = _set_name(prefix, sname, mname)
+    f.write(
+        f'/**\n'
+        f'{kdoc_summary(fn, f"Set {mname}.", "Setter.")}\n'
+        f' * @p: The &struct {type_name} instance to update.\n'
+        f' * @{mname}: Array of {array_size} elements; copied into the struct.\n'
+        f' */\n'
+    )
+    single = (f'void {_set_name(prefix, sname, mname)}'
+              f'(struct {type_name} *p, const {elem_type} {mname}[{array_size}]);')
+    if fits_80(single):
+        f.write(single + '\n\n')
+    else:
+        f.write(
+            f'void {_set_name(prefix, sname, mname)}(\n'
+            f'\t\tstruct {type_name} *p,\n'
+            f'\t\tconst {elem_type} {mname}[{array_size}]);\n\n'
+        )
+
+
+def emit_hdr_getter_scalar_array(f, prefix, sname, type_name, mname, elem_type,
+                                 array_size):
+    """Emit a header declaration for a fixed-size scalar-array getter."""
+    fn = _get_name(prefix, sname, mname)
+    ret_type = f'const {elem_type} *'
+    f.write(
+        f'/**\n'
+        f'{kdoc_summary(fn, f"Get {mname}.", "Getter.")}\n'
+        f' * @p: The &struct {type_name} instance to query.\n'
+        f' *\n'
+        f' * Return: Pointer to the {mname} array'
+        f' of {array_size} {elem_type} elements.\n'
+        f' */\n'
+    )
+    single = (f'{ret_type}{_get_name(prefix, sname, mname)}'
+              f'(const struct {type_name} *p);')
+    if fits_80(single):
+        f.write(single + '\n\n')
+    else:
+        f.write(
+            f'{ret_type}{_get_name(prefix, sname, mname)}(\n'
+            f'\t\tconst struct {type_name} *p);\n\n'
+        )
+
+
+def generate_hdr(f, prefix, sname, type_name, members):
+    """Write header declarations for all members of one struct."""
+    for member in members:
+        if member.is_scalar_array:
+            if member.write_mode == 'generated':
+                emit_hdr_setter_scalar_array(f, prefix, sname, type_name,
+                                             member.name, member.type,
+                                             member.array_size)
+            if member.read_mode == 'generated':
+                emit_hdr_getter_scalar_array(f, prefix, sname, type_name,
+                                             member.name, member.type,
+                                             member.array_size)
+            continue
+        is_dyn_str = (not member.is_char_array and
+                      not member.is_char_ptr_array and
+                      member.type == 'const char *')
+        if member.write_mode == 'generated':
+            if member.is_char_ptr_array:
+                emit_hdr_setter_str_array(f, prefix, sname, type_name,
+                                          member.name)
+            elif member.is_char_array or is_dyn_str:
+                emit_hdr_setter_str(f, prefix, sname, type_name,
+                                    member.name, is_dyn_str)
+            else:
+                emit_hdr_setter_val(f, prefix, sname, type_name,
+                                    member.name, member.type)
+        if member.read_mode == 'generated':
+            if member.is_attr_lazy:
+                emit_hdr_getter_lazy(f, prefix, sname, type_name,
+                                     member.name, member.type)
+            else:
+                emit_hdr_getter(f, prefix, sname, type_name,
+                                member.name, member.type, is_dyn_str)
+        elif member.read_mode == 'custom' and member.is_attr_lazy:
+            # The struct is opaque, so even a hand-written getter's
+            # prototype must come from this generator -- no other file
+            # may declare a function that reaches inside the struct. The
+            # body itself lives in a hand-written *-custom-<os>.c file.
+            emit_hdr_getter_lazy(f, prefix, sname, type_name,
+                                 member.name, member.type)
+
+
+# ---------------------------------------------------------------------------
+# Source (*.c) code emitters
+# ---------------------------------------------------------------------------
+
+PUB = '__shr_public '
+
+# scanf format for each numeric lazy-getter type this generator has ever
+# needed. Deliberately not a general type->format mapper -- add an entry
+# only when a real member needs it (mirrors generate_attr_accessors.py's
+# own restraint on its _PY_FROM dict).
+_SCANF_FMT = {
+    'long': '%ld',
+    'int': '%d',
+}
+
+
+def emit_src_setter_dynstr(f, prefix, sname, type_name, mname, field_path):
+    """Emit a dynamic-string setter (free old + strdup new)."""
+    sig = (f'{PUB}void {_set_name(prefix, sname, mname)}'
+           f'(struct {type_name} *p, const char *{mname})')
+    if fits_80(sig):
+        f.write(sig + '\n')
+    else:
+        f.write(
+            f'{PUB}void {_set_name(prefix, sname, mname)}(\n'
+            f'\t\tstruct {type_name} *p,\n'
+            f'\t\tconst char *{mname})\n'
+        )
+
+    f.write(f'{{\n\tfree(p->{field_path});\n')
+    body = f'\tp->{field_path} = {mname} ? strdup({mname}) : NULL;'
+    if fits_80_ntabs(1, body):
+        f.write(body + '\n')
+    else:
+        f.write(f'\tp->{field_path} =\n\t\t{mname} ? strdup({mname}) : NULL;\n')
+    f.write('}\n\n')
+
+
+def emit_src_setter_chararray(f, prefix, sname, type_name, mname, array_size,
+                              field_path):
+    """Emit a fixed char-array setter (snprintf)."""
+    sig = (f'{PUB}void {_set_name(prefix, sname, mname)}'
+           f'(struct {type_name} *p, const char *{mname})')
+    if fits_80(sig):
+        f.write(sig + '\n')
+    else:
+        f.write(
+            f'{PUB}void {_set_name(prefix, sname, mname)}(\n'
+            f'\t\tstruct {type_name} *p,\n'
+            f'\t\tconst char *{mname})\n'
+        )
+
+    f.write(
+        f'{{\n\tsnprintf(p->{field_path}, {array_size}, "%s", {mname});\n}}\n\n'
+    )
+
+
+def emit_src_setter_str_array(f, prefix, sname, type_name, mname, field_path):
+    """Emit a NULL-terminated string-array setter (deep copy)."""
+    sig = (f'{PUB}void {_set_name(prefix, sname, mname)}'
+           f'(struct {type_name} *p, const char *const *{mname})')
+    if fits_80(sig):
+        f.write(sig + '\n')
+    else:
+        f.write(
+            f'{PUB}void {_set_name(prefix, sname, mname)}(\n'
+            f'\t\tstruct {type_name} *p,\n'
+            f'\t\tconst char *const *{mname})\n'
+        )
+
+    f.write(
+        '{\n'
+        '\tchar **new_array = NULL;\n'
+        '\tsize_t i;\n\n'
+        f'\tif ({mname}) {{\n'
+        f'\t\tfor (i = 0; {mname}[i]; i++)\n'
+        '\t\t\t;\n'
+        '\n'
+        '\t\tnew_array = calloc(i + 1, sizeof(char *));\n'
+        '\t\tif (new_array != NULL) {\n'
+        f'\t\t\tfor (i = 0; {mname}[i]; i++) {{\n'
+        f'\t\t\t\tnew_array[i] = strdup({mname}[i]);\n'
+        '\t\t\t\tif (!new_array[i]) {\n'
+        '\t\t\t\t\twhile (i > 0)\n'
+        '\t\t\t\t\t\tfree(new_array[--i]);\n'
+        '\t\t\t\t\tfree(new_array);\n'
+        '\t\t\t\t\tnew_array = NULL;\n'
+        '\t\t\t\t\tbreak;\n'
+        '\t\t\t\t}\n'
+        '\t\t\t}\n'
+        '\t\t}\n'
+        '\t}\n\n'
+        f'\tfor (i = 0; p->{field_path} && p->{field_path}[i]; i++)\n'
+        f'\t\tfree(p->{field_path}[i]);\n'
+        f'\tfree(p->{field_path});\n'
+        f'\tp->{field_path} = new_array;\n'
+        '}\n\n'
+    )
+
+
+def emit_src_setter_val(f, prefix, sname, type_name, mname, mtype, field_path):
+    """Emit a value setter (direct assignment)."""
+    sig = (f'{PUB}void {_set_name(prefix, sname, mname)}'
+           f'(struct {type_name} *p, {mtype} {mname})')
+    if fits_80(sig):
+        f.write(
+            sig + '\n'
+            f'{{\n\tp->{field_path} = {mname};\n}}\n\n'
+        )
+    else:
+        f.write(
+            f'{PUB}void {_set_name(prefix, sname, mname)}(\n'
+            f'\t\tstruct {type_name} *p,\n'
+            f'\t\t{mtype} {mname})\n'
+            f'{{\n\tp->{field_path} = {mname};\n}}\n\n'
+        )
+
+
+def emit_src_getter(f, prefix, sname, type_name, mname, mtype, field_path,
+                    cast=None):
+    """Emit a getter (return member value).
+
+    *cast* is an optional C cast expression (e.g. ``'(const char *const *)'``)
+    inserted before ``p->field_path`` in the return statement.  Required when
+    the declared return type differs from the member's raw storage type (e.g. a
+    ``char **`` field exposed as ``const char *const *``).
+    """
+    sep = type_sep(mtype)
+    sig = (f'{PUB}{mtype}{sep}{_get_name(prefix, sname, mname)}'
+           f'(const struct {type_name} *p)')
+    ret = (f'\treturn {cast}p->{field_path};\n' if cast
+           else f'\treturn p->{field_path};\n')
+    if fits_80(sig):
+        f.write(sig + '\n' f'{{\n{ret}}}\n\n')
+    else:
+        f.write(
+            f'{PUB}{mtype}{sep}{_get_name(prefix, sname, mname)}(\n'
+            f'\t\tconst struct {type_name} *p)\n'
+            f'{{\n{ret}}}\n\n'
+        )
+
+
+def emit_src_setter_scalar_array(f, prefix, sname, type_name, mname, elem_type,
+                                 array_size, field_path):
+    """Emit a fixed-size scalar-array setter (memcpy)."""
+    sig = (f'{PUB}void {_set_name(prefix, sname, mname)}'
+           f'(struct {type_name} *p, const {elem_type} {mname}[{array_size}])')
+    if fits_80(sig):
+        f.write(sig + '\n')
+    else:
+        f.write(
+            f'{PUB}void {_set_name(prefix, sname, mname)}(\n'
+            f'\t\tstruct {type_name} *p,\n'
+            f'\t\tconst {elem_type} {mname}[{array_size}])\n'
+        )
+    f.write(
+        f'{{\n\tmemcpy(p->{field_path}, {mname},'
+        f' sizeof(p->{field_path}));\n}}\n\n'
+    )
+
+
+def emit_src_getter_scalar_array(f, prefix, sname, type_name, mname, elem_type,
+                                 field_path):
+    """Emit a fixed-size scalar-array getter (return pointer to first element)."""
+    ret_type = f'const {elem_type} *'
+    sig = (f'{PUB}{ret_type}{_get_name(prefix, sname, mname)}'
+           f'(const struct {type_name} *p)')
+    if fits_80(sig):
+        f.write(sig + '\n')
+    else:
+        f.write(
+            f'{PUB}{ret_type}{_get_name(prefix, sname, mname)}(\n'
+            f'\t\tconst struct {type_name} *p)\n'
+        )
+    f.write(f'{{\n\treturn p->{field_path};\n}}\n\n')
+
+
+def emit_src_setter_lazy_dynstr(f, prefix, sname, type_name, mname, field_path):
+    """Emit a dynamic-string setter for a lazy attribute member.
+
+    Frees the old value with ATTR_FREE() instead of free(): the cached
+    value may be the NO_ATTR sentinel, and free()ing that address
+    would crash. An explicit NULL argument stores the sentinel, not NULL
+    -- otherwise setting NULL (e.g. clearing a key) would look identical
+    to "never read," and the next getter call would silently re-fetch
+    it and undo the clear.
+    """
+    sig = (f'{PUB}void {_set_name(prefix, sname, mname)}'
+           f'(struct {type_name} *p, const char *{mname})')
+    if fits_80(sig):
+        f.write(sig + '\n')
+    else:
+        f.write(
+            f'{PUB}void {_set_name(prefix, sname, mname)}(\n'
+            f'\t\tstruct {type_name} *p,\n'
+            f'\t\tconst char *{mname})\n'
+        )
+
+    f.write(f'{{\n\tATTR_FREE(p->{field_path});\n')
+    body = f'\tp->{field_path} = {mname} ? strdup({mname}) : NO_ATTR;'
+    if fits_80_ntabs(1, body):
+        f.write(body + '\n')
+    else:
+        f.write(
+            f'\tp->{field_path} =\n'
+            f'\t\t{mname} ? strdup({mname}) : NO_ATTR;\n'
+        )
+    f.write('}\n\n')
+
+
+def emit_src_getter_lazy_attr(f, prefix, sname, type_name, mname, field_path,
+                              attr_name, attr_reader):
+    """Emit a lazy getter that caches one plain attribute.
+
+    First call reads the attribute and caches the result: a real pointer
+    if the attribute exists, or the NO_ATTR sentinel if it does not
+    (a raw NULL there would look "not yet read" and re-fire every call).
+    Every later call returns the cached value without reading it
+    again. Returns -ENOENT when the attribute does not exist, so the
+    caller can tell "absent" from "not yet checked". *val is set to dflt
+    unconditionally before anything else, so a failure path never leaves
+    it unset -- a caller who does not want the fine-grained distinction
+    can skip checking the return code and get a safe value regardless.
+    """
+    f.write(
+        f'{PUB}int {_get_name(prefix, sname, mname)}(\n'
+        f'\t\tconst struct {type_name} *p,\n'
+        f'\t\tconst char **val,\n'
+        f'\t\tconst char *dflt)\n'
+    )
+    f.write(
+        '{\n'
+        f'\tstruct {type_name} *c = (struct {type_name} *)p;\n\n'
+        '\t*val = dflt;\n\n'
+        f'\tif (__shr_unlikely(!ATTR_IS_LOADED(c->{field_path}))) {{\n'
+    )
+    load = f'\t\tc->{field_path} = {attr_reader}(c, "{attr_name}");'
+    if fits_80_ntabs(2, load.lstrip()):
+        f.write(load + '\n')
+    else:
+        f.write(
+            f'\t\tc->{field_path} =\n'
+            f'\t\t\t{attr_reader}(c, "{attr_name}");\n'
+        )
+    f.write(
+        f'\t\tif (!c->{field_path})\n'
+        f'\t\t\tc->{field_path} = NO_ATTR;\n'
+        '\t}\n\n'
+    )
+    f.write(
+        f'\tif (ATTR_IS_ABSENT(c->{field_path}))\n'
+        f'\t\treturn -ENOENT;\n\n'
+        f'\t*val = c->{field_path};\n'
+        f'\treturn 0;\n'
+        '}\n\n'
+    )
+
+
+def emit_src_getter_lazy_attr_num(f, prefix, sname, type_name, mname, mtype,
+                                  field_path, attr_name, attr_reader):
+    """Emit a lazy getter that caches one plain attribute, boxed.
+
+    Same cache-once shape as emit_src_getter_lazy_attr(), but the cached
+    field is a heap-allocated TYPE * rather than a plain value: mtype has
+    no spare value to serve as "not loaded" (0 is a legitimate reading),
+    so the field reuses the string members' NULL/NO_ATTR/real-value
+    tri-state instead of inventing a second mechanism. *val is set to
+    dflt unconditionally before anything else -- see
+    emit_src_getter_lazy_attr()'s docstring.
+    """
+    f.write(
+        f'{PUB}int {_get_name(prefix, sname, mname)}(\n'
+        f'\t\tconst struct {type_name} *p,\n'
+        f'\t\t{mtype} *val,\n'
+        f'\t\t{mtype} dflt)\n'
+    )
+    f.write(
+        '{\n'
+        f'\tstruct {type_name} *c = (struct {type_name} *)p;\n\n'
+        '\t*val = dflt;\n\n'
+        f'\tif (__shr_unlikely(!ATTR_IS_LOADED(c->{field_path}))) {{\n'
+        '\t\t__cleanup_free char *str = NULL;\n\n'
+        f'\t\tstr = {attr_reader}(c, "{attr_name}");\n'
+        f'\t\tif (!str)\n'
+        f'\t\t\tc->{field_path} = ({mtype} *)NO_ATTR;\n'
+        '\t\telse {\n'
+        f'\t\t\tc->{field_path} = malloc(sizeof({mtype}));\n'
+        f'\t\t\tif (!c->{field_path})\n'
+        '\t\t\t\treturn -ENOMEM;\n'
+    )
+    scanf_check = (f'\t\t\tif (sscanf(str, "{_SCANF_FMT[mtype]}", '
+                   f'c->{field_path}) != 1) {{')
+    f.write(
+        f'{scanf_check}\n'
+        f'\t\t\t\tfree(c->{field_path});\n'
+        f'\t\t\t\tc->{field_path} = NULL;\n'
+        '\t\t\t\treturn -EINVAL;\n'
+        '\t\t\t}\n'
+        '\t\t}\n'
+        '\t}\n\n'
+        f'\tif (ATTR_IS_ABSENT(c->{field_path}))\n'
+        f'\t\treturn -ENOENT;\n\n'
+        f'\t*val = *c->{field_path};\n'
+        f'\treturn 0;\n'
+        '}\n\n'
+    )
+
+
+def emit_src_getter_lazy_loader(f, prefix, sname, type_name, mname,
+                                field_path, attr_loader):
+    """Emit a lazy getter backed by a loader-function call.
+
+    The loader may populate several members of the same group in one call
+    (e.g. kxchap_host_key/kxchap_ctrl_key/keyring from one sysfs read
+    pass), writing NULL to any it leaves absent. After it returns, a
+    member still at NULL means no value exists for it -- stamp the
+    NO_ATTR sentinel so the guard doesn't re-fire the loader on
+    every subsequent call. A negative loader return means the load
+    itself failed (not just "attribute absent") and is propagated to
+    the caller unchanged. *val is set to dflt unconditionally before
+    anything else -- see emit_src_getter_lazy_attr()'s docstring.
+    """
+    f.write(
+        f'{PUB}int {_get_name(prefix, sname, mname)}(\n'
+        f'\t\tconst struct {type_name} *p,\n'
+        f'\t\tconst char **val,\n'
+        f'\t\tconst char *dflt)\n'
+    )
+    f.write(
+        '{\n'
+        f'\tstruct {type_name} *c = (struct {type_name} *)p;\n'
+        '\tint ret;\n\n'
+        '\t*val = dflt;\n\n'
+        f'\tif (__shr_unlikely(!ATTR_IS_LOADED(c->{field_path}))) {{\n'
+        f'\t\tret = {attr_loader}(c);\n'
+        '\t\tif (ret)\n'
+        '\t\t\treturn ret;\n'
+        f'\t\tif (!c->{field_path})\n'
+        f'\t\t\tc->{field_path} = NO_ATTR;\n'
+        '\t}\n\n'
+    )
+    f.write(
+        f'\tif (ATTR_IS_ABSENT(c->{field_path}))\n'
+        f'\t\treturn -ENOENT;\n\n'
+        f'\t*val = c->{field_path};\n'
+        f'\treturn 0;\n'
+        '}\n\n'
+    )
+
+
+def emit_src_getter_volatile_num(f, prefix, sname, type_name, mname, mtype,
+                                 field_path, attr_name, attr_reader):
+    """Emit an always-live numeric getter for a volatile lazy member.
+
+    No sentinel, no cache: every call re-reads the attribute and
+    parses it into the member. Returns -ENOENT when the attribute cannot
+    be read and -EINVAL when it can be read but not parsed, rather than
+    the previous value -- the caller can tell a real absence, or bad
+    content, from a transient read error the same way every other lazy
+    getter does. *val is set to dflt unconditionally before anything
+    else -- see emit_src_getter_lazy_attr()'s docstring.
+    """
+    f.write(
+        f'{PUB}int {_get_name(prefix, sname, mname)}(\n'
+        f'\t\tconst struct {type_name} *p,\n'
+        f'\t\t{mtype} *val,\n'
+        f'\t\t{mtype} dflt)\n'
+    )
+    f.write(
+        '{\n'
+        f'\tstruct {type_name} *c = (struct {type_name} *)p;\n'
+        '\t__cleanup_free char *str = NULL;\n\n'
+        '\t*val = dflt;\n\n'
+        f'\tstr = {attr_reader}(c, "{attr_name}");\n'
+        '\tif (!str)\n'
+        '\t\treturn -ENOENT;\n\n'
+        f'\tif (sscanf(str, "{_SCANF_FMT[mtype]}", &c->{field_path}) != 1)\n'
+        '\t\treturn -EINVAL;\n\n'
+        f'\t*val = c->{field_path};\n'
+        '\treturn 0;\n'
+        '}\n\n'
+    )
+
+
+def emit_src_getter_volatile_str(f, prefix, sname, type_name, mname,
+                                 field_path, attr_name, attr_reader):
+    """Emit an always-live string getter for a volatile lazy member.
+
+    Re-reads the attribute on every call like emit_src_getter_volatile_num(),
+    but keeps the previous string cached and only replaces it when the new
+    read differs -- free-and-replace-if-changed, matching what the
+    hand-written volatile getters this replaces already did, so a caller
+    holding the returned pointer across two calls that read the same
+    value never sees it freed out from under it. Returns -ENOENT (not the
+    stale value) when the attribute cannot be read. *val is set to dflt
+    unconditionally before anything else -- see
+    emit_src_getter_lazy_attr()'s docstring.
+    """
+    f.write(
+        f'{PUB}int {_get_name(prefix, sname, mname)}(\n'
+        f'\t\tconst struct {type_name} *p,\n'
+        f'\t\tconst char **val,\n'
+        f'\t\tconst char *dflt)\n'
+    )
+    f.write(
+        '{\n'
+        f'\tstruct {type_name} *c = (struct {type_name} *)p;\n'
+        '\t__cleanup_free char *str = NULL;\n\n'
+        '\t*val = dflt;\n\n'
+        f'\tstr = {attr_reader}(c, "{attr_name}");\n'
+        '\tif (!str)\n'
+        '\t\treturn -ENOENT;\n\n'
+        f'\tif (!c->{field_path} || strcmp(str, c->{field_path})) {{\n'
+        f'\t\tfree(c->{field_path});\n'
+        f'\t\tc->{field_path} = strdup(str);\n'
+        f'\t\tif (!c->{field_path})\n'
+        '\t\t\treturn -ENOMEM;\n'
+        '\t}\n\n'
+        f'\t*val = c->{field_path};\n'
+        '\treturn 0;\n'
+        '}\n\n'
+    )
+
+
+def emit_src_getter_absent(f, prefix, sname, type_name, mname, mtype):
+    """Emit a getter for a member with no source at all on this platform.
+
+    Always returns -ENOENT; never touches the struct or calls any attr
+    reader or loader. Used when a per-OS override marks a member
+    'absent' -- e.g. every libnvme_path member on Windows, since paths
+    (multipath) are a Linux-only concept. *val is set to dflt
+    unconditionally before returning -- see emit_src_getter_lazy_attr()'s
+    docstring.
+    """
+    is_str = mtype == 'const char *'
+    out_type = 'const char **' if is_str else f'{mtype} *'
+    dflt_type = 'const char *' if is_str else mtype
+    dflt_sep = type_sep(dflt_type)
+    f.write(
+        f'{PUB}int {_get_name(prefix, sname, mname)}(\n'
+        f'\t\t__shr_unused const struct {type_name} *p,\n'
+        f'\t\t{out_type}val,\n'
+        f'\t\t{dflt_type}{dflt_sep}dflt)\n'
+    )
+    f.write('{\n\t*val = dflt;\n\n\treturn -ENOENT;\n}\n\n')
+
+
+def generate_src(f, prefix, sname, type_name, members):
+    """Write source implementations for all members of one struct."""
+    for member in members:
+        fp = member.field_path
+        if member.is_scalar_array:
+            if member.write_mode == 'generated':
+                emit_src_setter_scalar_array(f, prefix, sname, type_name,
+                                             member.name, member.type,
+                                             member.array_size, fp)
+            if member.read_mode == 'generated':
+                emit_src_getter_scalar_array(f, prefix, sname, type_name,
+                                             member.name, member.type, fp)
+            continue
+
+        if member.is_attr_lazy:
+            if member.write_mode == 'generated':
+                emit_src_setter_lazy_dynstr(f, prefix, sname, type_name,
+                                            member.name, fp)
+            if member.read_mode == 'generated':
+                is_str = member.type == 'const char *'
+                if member.is_absent:
+                    emit_src_getter_absent(f, prefix, sname, type_name,
+                                           member.name, member.type)
+                elif member.is_volatile:
+                    if is_str:
+                        emit_src_getter_volatile_str(
+                            f, prefix, sname, type_name, member.name, fp,
+                            member.attr_name, member.attr_reader)
+                    else:
+                        emit_src_getter_volatile_num(
+                            f, prefix, sname, type_name, member.name,
+                            member.type, fp, member.attr_name,
+                            member.attr_reader)
+                elif member.attr_loader:
+                    emit_src_getter_lazy_loader(f, prefix, sname, type_name,
+                                                member.name, fp,
+                                                member.attr_loader)
+                elif is_str:
+                    emit_src_getter_lazy_attr(f, prefix, sname, type_name,
+                                              member.name, fp,
+                                              member.attr_name,
+                                              member.attr_reader)
+                else:
+                    emit_src_getter_lazy_attr_num(
+                        f, prefix, sname, type_name, member.name,
+                        member.type, fp, member.attr_name,
+                        member.attr_reader)
+            continue
+
+        is_dyn_str = (not member.is_char_array and
+                      not member.is_char_ptr_array and
+                      member.type == 'const char *')
+        if member.write_mode == 'generated':
+            if is_dyn_str:
+                emit_src_setter_dynstr(f, prefix, sname, type_name,
+                                       member.name, fp)
+            elif member.is_char_ptr_array:
+                emit_src_setter_str_array(f, prefix, sname, type_name,
+                                          member.name, fp)
+            elif member.is_char_array:
+                emit_src_setter_chararray(f, prefix, sname, type_name,
+                                          member.name, member.array_size, fp)
+            else:
+                emit_src_setter_val(f, prefix, sname, type_name,
+                                    member.name, member.type, fp)
+        if member.read_mode == 'generated':
+            cast = '(const char *const *)' if member.is_char_ptr_array else None
+            emit_src_getter(f, prefix, sname, type_name, member.name,
+                            member.type, fp, cast=cast)
+
+
+# ---------------------------------------------------------------------------
+# Lifecycle (constructor / destructor) emitters
+# ---------------------------------------------------------------------------
+
+def _new_name(prefix, sname):
+    return f'{prefix}{sname}_new'
+
+
+def _free_name(prefix, sname):
+    return f'{prefix}{sname}_free'
+
+
+def _init_defaults_name(prefix, sname):
+    return f'{prefix}{sname}_init_defaults'
+
+
+def emit_hdr_defaults(f, prefix, sname, type_name, default_members):
+    """Emit header declaration for the init_defaults function."""
+    fn = _init_defaults_name(prefix, sname)
+    new_fn = _new_name(prefix, sname)
+    f.write(
+        f'/**\n'
+        f'{kdoc_summary(fn, f"Apply default values to a {type_name} instance.", "Set fields to their defaults.", "Initialise to defaults.")}\n'
+        f' * @p: The &struct {type_name} instance to initialise.\n'
+        f' *\n'
+        f' * Sets each field that carries a default annotation to its\n'
+        f' * compile-time default value.  Called automatically by\n'
+        f' * {new_fn}() but may also be called directly to reset an\n'
+        f' * instance to its defaults without reallocating it.\n'
+        f' */\n'
+    )
+    single = f'void {fn}(struct {type_name} *p);'
+    if fits_80(single):
+        f.write(single + '\n\n')
+    else:
+        f.write(f'void {fn}(\n\t\tstruct {type_name} *p);\n\n')
+
+
+def emit_src_defaults(f, prefix, sname, type_name, default_members):
+    """Emit the init_defaults function implementation."""
+    fn = _init_defaults_name(prefix, sname)
+    sig = f'{PUB}void {fn}(struct {type_name} *p)'
+    if fits_80(sig):
+        f.write(sig + '\n')
+    else:
+        f.write(f'{PUB}void {fn}(\n\t\tstruct {type_name} *p)\n')
+
+    f.write('{\n')
+    f.write('\tif (!p)\n\t\treturn;\n')
+    for dm in default_members:
+        if dm.is_char_ptr:
+            # Skip the assignment when the string is already at its default
+            # value; otherwise free the old value and strdup the new one.
+            cmp = f'\tif (!p->{dm.name} || strcmp(p->{dm.name}, {dm.value}) != 0) {{'
+            if fits_80_ntabs(1, cmp.lstrip()):
+                f.write(cmp + '\n')
+            else:
+                f.write(
+                    f'\tif (!p->{dm.name} ||\n'
+                    f'\t    strcmp(p->{dm.name}, {dm.value}) != 0) {{\n'
+                )
+            f.write(f'\t\tfree(p->{dm.name});\n')
+            f.write(f'\t\tp->{dm.name} = strdup({dm.value});\n')
+            f.write('\t}\n')
+        else:
+            f.write(f'\tp->{dm.name} = {dm.value};\n')
+    f.write('}\n\n')
+
+
+def emit_hdr_lifecycle(f, prefix, sname, type_name, lc_members):
+    """Emit header declarations for the constructor and destructor."""
+
+    # --- constructor -------------------------------------------------------
+    new_fn = _new_name(prefix, sname)
+    f.write(
+        f'/**\n'
+        f'{kdoc_summary(new_fn, f"Allocate and initialise a {type_name} object.", "Allocate and initialise a new instance.", "Constructor.")}\n'
+        f' * @pp: On success, ``*pp`` is set to the newly allocated object.\n'
+        f' *\n'
+        f' * Allocates a zeroed &struct {type_name} on the heap.\n'
+        f' * The caller must release it with {_free_name(prefix, sname)}().\n'
+        f' *\n'
+        f' * Return: 0 on success, -EINVAL if @pp is NULL,\n'
+        f' *         -ENOMEM if allocation fails.\n'
+        f' */\n'
+    )
+    single = f'int {new_fn}(struct {type_name} **pp);'
+    if fits_80(single):
+        f.write(single + '\n\n')
+    else:
+        f.write(f'int {new_fn}(\n\t\tstruct {type_name} **pp);\n\n')
+
+    # --- destructor --------------------------------------------------------
+    free_fn = _free_name(prefix, sname)
+    f.write(
+        f'/**\n'
+        f'{kdoc_summary(free_fn, f"Release a {type_name} object.", "Release this instance.", "Destructor.")}\n'
+        f' * @p: Object previously returned by {new_fn}().\n'
+        f' *     A NULL pointer is silently ignored.\n'
+        f' */\n'
+    )
+    single = f'void {free_fn}(struct {type_name} *p);'
+    if fits_80(single):
+        f.write(single + '\n\n')
+    else:
+        f.write(f'void {free_fn}(\n\t\tstruct {type_name} *p);\n\n')
+
+
+def emit_src_lifecycle(f, prefix, sname, type_name, lc_members, default_members):
+    """Emit constructor and destructor implementations."""
+
+    # --- constructor -------------------------------------------------------
+    new_fn = _new_name(prefix, sname)
+    sig = f'{PUB}int {new_fn}(struct {type_name} **pp)'
+    if fits_80(sig):
+        f.write(sig + '\n')
+    else:
+        f.write(f'{PUB}int {new_fn}(\n\t\tstruct {type_name} **pp)\n')
+
+    if default_members:
+        init_fn = _init_defaults_name(prefix, sname)
+        f.write(
+            '{\n'
+            '\tif (!pp)\n'
+            '\t\treturn -EINVAL;\n'
+            f'\t*pp = calloc(1, sizeof(struct {type_name}));\n'
+            '\tif (!*pp)\n'
+            '\t\treturn -ENOMEM;\n'
+            f'\t{init_fn}(*pp);\n'
+            '\treturn 0;\n'
+            '}\n\n'
+        )
+    else:
+        f.write(
+            '{\n'
+            '\tif (!pp)\n'
+            '\t\treturn -EINVAL;\n'
+            f'\t*pp = calloc(1, sizeof(struct {type_name}));\n'
+            '\treturn *pp ? 0 : -ENOMEM;\n'
+            '}\n\n'
+        )
+
+    # --- destructor --------------------------------------------------------
+    free_fn = _free_name(prefix, sname)
+    sig = f'{PUB}void {free_fn}(struct {type_name} *p)'
+    if fits_80(sig):
+        f.write(sig + '\n')
+    else:
+        f.write(f'{PUB}void {free_fn}(\n\t\tstruct {type_name} *p)\n')
+
+    f.write('{\n')
+
+    if lc_members:
+        # Members must be dereferenced, so guard against NULL p.
+        f.write('\tif (!p)\n\t\treturn;\n')
+        for m in lc_members:
+            if m.is_char_ptr_array:
+                # free each element then the container
+                loop = (f'\tfor (size_t i = 0;'
+                        f' p->{m.name} && p->{m.name}[i]; i++)')
+                free = f'\t\tfree(p->{m.name}[i]);'
+                if fits_80_ntabs(1, loop.lstrip()):
+                    f.write(loop + '\n')
+                else:
+                    f.write(
+                        f'\tfor (size_t i = 0;\n'
+                        f'\t     p->{m.name} && p->{m.name}[i]; i++)\n'
+                    )
+                f.write(free + '\n')
+                f.write(f'\tfree(p->{m.name});\n')
+            else:
+                f.write(f'\tfree(p->{m.name});\n')
+
+    # free(NULL) is safe — no NULL check needed when there are no members.
+    f.write('\tfree(p);\n}\n\n')
+
+
+# ---------------------------------------------------------------------------
+# Linker script (*.ld) emitter
+# ---------------------------------------------------------------------------
+
+def generate_ld(f, prefix, sname, members, lc_members, default_members):
+    """Write linker version-script entries for all members of one struct."""
+    if lc_members is not None:
+        f.write(f'\t\t{_new_name(prefix, sname)};\n')
+        f.write(f'\t\t{_free_name(prefix, sname)};\n')
+    if default_members:
+        f.write(f'\t\t{_init_defaults_name(prefix, sname)};\n')
+    for member in members:
+        custom_lazy = member.read_mode == 'custom' and member.is_attr_lazy
+        if member.read_mode == 'generated' or custom_lazy:
+            f.write(f'\t\t{_get_name(prefix, sname, member.name)};\n')
+        if member.write_mode == 'generated':
+            f.write(f'\t\t{_set_name(prefix, sname, member.name)};\n')
+
+
+# ---------------------------------------------------------------------------
+# SWIG fragment emitters
+# ---------------------------------------------------------------------------
+
+def generate_swig_prelude(f):
+    """Emit the shared ``_nvme_guarded_setattr`` helper.
+
+    Written once at the top of the first (common) generated fragment.
+    The fabrics fragment imports it from the common module at runtime.
+    """
+    f.write(
+        '%pythoncode %{\n'
+        'def _nvme_guarded_setattr(self, name, value):\n'
+        '    """Reject writes to unknown attributes.\n\n'
+        '    Typos like ``ctrl.nqn = x`` (should be ``ctrl.subsysnqn``) are\n'
+        '    silently ignored by default Python ``__setattr__``.  This guard\n'
+        '    raises ``AttributeError`` for any name not already present on the\n'
+        '    object, keeping the struct-like API strict.\n'
+        '    """\n'
+        '    if name.startswith(\'_\') or name in (\'this\', \'thisown\') or hasattr(type(self), name):\n'
+        '        object.__setattr__(self, name, value)\n'
+        '    else:\n'
+        '        raise AttributeError(\n'
+        '            f"{type(self).__name__!r} has no attribute {name!r}")\n'
+        '%}\n\n'
+    )
+
+
+def generate_swig_fragment(f, prefix, sname, struct_name, members, errors,
+                           struct_alias=None):
+    """Emit SWIG struct decl with per-axis read/write routing.
+
+    *sname* is the naming segment used to build ``%rename``/``#define``
+    bridge names for 'custom' axes (the struct-level ``prefix=`` override,
+    or *struct_name* itself when absent). *struct_name* is always the real
+    C struct tag, used for the struct declaration and comments.
+
+    Access routing per member:
+
+      is_custom_accessor (read==custom OR write==custom)
+          → member goes inside ``%extend {}`` so SWIG calls the hand-written
+            accessor function.  A ``%rename`` directive maps the function to
+            SWIG's expected ``prefix_name_get`` / ``prefix_name_set`` name.
+
+      all-generated (neither axis is custom, at least one is non-none)
+          → plain struct field declaration (outside ``%extend``); SWIG reads/
+            writes the field directly via ``p->member``.
+
+      write == none (on either kind)
+          → ``%immutable name;`` immediately before the field declaration
+            makes the attribute read-only.
+
+      read == none (all-generated only)
+          → SWIG has no write-only counterpart to ``%immutable``, so the
+            member keeps its Python getter even though no C getter exists.
+            A trailing comment marks the mismatch in the generated file.
+
+      both axes == none  →  member is not Python-visible; already excluded
+                             by the ``has_accessor`` filter.
+
+    SWIG does not support mixed mechanisms (direct read + accessor write) on
+    a single member, so any ``custom`` axis forces the whole member into
+    ``%extend``.
+
+    ``%extend {}`` is omitted entirely when no member needs it.
+
+    Struct-level naming:
+      struct_alias=NAME → emits ``%rename(NAME) struct_name;`` before the
+                          struct body, and uses NAME in ``%pythoncode``.
+      struct_alias=None → no struct-level ``%rename``; C struct name used
+                          everywhere.
+
+    Invariant: the number of ``%rename`` directives emitted equals the number
+    of ``custom`` axes among Python-visible members, plus one when struct_alias
+    is set.
+    """
+    py_class = struct_alias or struct_name
+    pre = f'{prefix}{sname}'
+    f.write(f'/* struct {struct_name} */\n')
+    if struct_alias:
+        f.write(f'%rename({struct_alias}) {struct_name};\n')
+
+    # Collect Python-visible members (has accessor AND py_visible flag set).
+    # Nested members (field_path contains a dot) cannot be accessed as direct
+    # struct fields in SWIG — exclude them from the Python fragment.
+    visible = [m for m in members
+               if m.py_visible and m.has_accessor and m.field_path == m.name]
+
+    # Collision detection — report all collisions before emitting anything.
+    seen = {}
+    for m in visible:
+        py_name = m.py_alias or m.name
+        if py_name in seen:
+            errors.append(
+                f"error: struct {struct_name}: Python name '{py_name}' "
+                f"is used by both '{seen[py_name]}' and '{m.name}'")
+        else:
+            seen[py_name] = m.name
+
+    # Pass 1 — %rename directives.  Emitted ONLY for 'custom' axes.
+    for m in visible:
+        if not m.is_custom_accessor:
+            continue
+        py_name = m.py_alias or m.name
+        if m.read_mode == 'custom':
+            f.write(f'%rename({pre}_{py_name}_get) {pre}_get_{m.name};\n')
+        if m.write_mode == 'custom':
+            f.write(f'%rename({pre}_{py_name}_set) {pre}_set_{m.name};\n')
+
+    # Pass 1.5 — #define bridges for custom members.
+    # SWIG generates wrapper code that calls <struct>_<member>_get/set (SWIG
+    # naming convention), but the hand-written C accessors follow the libnvme
+    # convention <struct>_get/set_<member>.  A #define makes the generated C
+    # code compile without requiring the hand-written functions to be renamed.
+    bridges = []
+    for m in visible:
+        if not m.is_custom_accessor:
+            continue
+        py_name = m.py_alias or m.name
+        if m.read_mode == 'custom':
+            bridges.append(
+                f'#define {pre}_{py_name}_get {pre}_get_{m.name}')
+        if m.write_mode == 'custom':
+            bridges.append(
+                f'#define {pre}_{py_name}_set {pre}_set_{m.name}')
+    if bridges:
+        f.write('%{\n')
+        for bridge in bridges:
+            f.write(f'\t{bridge}\n')
+        f.write('%}\n')
+
+    # Pass 2 — struct body.
+    f.write(f'struct {struct_name} {{\n')
+
+    # Generated members: plain struct fields — SWIG accesses p->member directly.
+    for m in visible:
+        if m.is_custom_accessor:
+            continue
+        py_name = m.py_alias or m.name
+        if m.write_mode == 'none':
+            f.write(f'\t%immutable {py_name};\n')
+        # SWIG has no write-only counterpart to %immutable, so a read=none
+        # member still gets a Python getter.  Flag the mismatch in place.
+        note = '\t// no C getter; SWIG emits one anyway' \
+            if m.read_mode == 'none' else ''
+        if m.is_scalar_array:
+            f.write(f'\t{m.type} {py_name}[{m.array_size}];{note}\n')
+        else:
+            f.write(f'\t{m.type} {py_name};{note}\n')
+
+    # Custom members: inside %extend — SWIG calls the hand-written accessor.
+    # Members with read=none are excluded: SWIG always generates a getter for
+    # %extend members, and there is no C function to call for a read=none axis.
+    custom = [m for m in visible if m.is_custom_accessor and m.read_mode != 'none']
+    if custom:
+        f.write('\t%extend {\n')
+        for m in custom:
+            py_name = m.py_alias or m.name
+            if m.write_mode == 'none':
+                f.write(f'\t\t%immutable {py_name};\n')
+            if m.is_scalar_array:
+                f.write(f'\t\t{m.type} {py_name}[{m.array_size}];\n')
+            else:
+                f.write(f'\t\t{m.type} {py_name};\n')
+        f.write('\t}\n')
+
+    f.write('};\n\n')
+
+    # Install __setattr__ guard at module import time.
+    f.write(
+        f'%pythoncode %{{\n'
+        f'{py_class}.__setattr__ = _nvme_guarded_setattr\n'
+        f'%}}\n\n'
+    )
+
+
+# ---------------------------------------------------------------------------
+# Dict-table emitters
+# ---------------------------------------------------------------------------
+
+_DICT_TABLE_SUFFIXES = (
+    ('int',    'int_fields'),
+    ('long',   'long_fields'),
+    ('bool',   'bool_fields'),
+    ('char *', 'str_fields'),
+)
+
+
+def emit_dict_table(f, struct_name, buckets, source_header):
+    """Emit field tables and key array for *struct_name* into *f*."""
+    f.write(f'/* Derived from struct {struct_name} in {source_header}. */\n\n')
+    f.write(f'#define _OFF(m) offsetof(struct {struct_name}, m)\n\n')
+
+    for type_key, suffix in _DICT_TABLE_SUFFIXES:
+        names = buckets.get(type_key, [])
+        if not names:
+            continue
+        arr_name = f'{struct_name}_{suffix}'
+        f.write(f'static const struct fctx_field {arr_name}[] = {{\n')
+        for mname in names:
+            f.write(f'\t{{ "{mname}", _OFF({mname}) }},\n')
+        f.write('\t{ NULL, 0 },\n')
+        f.write('};\n\n')
+
+    f.write('#undef _OFF\n\n')
+
+    all_names = [n for type_key, _ in _DICT_TABLE_SUFFIXES
+                 for n in buckets.get(type_key, [])]
+    if all_names:
+        f.write(f'static const char * const {struct_name}_keys[] = {{\n')
+        for mname in all_names:
+            f.write(f'\t"{mname}",\n')
+        f.write('\tNULL,\n')
+        f.write('};\n\n')
+
+
+def generate_dict_table_file(header_files, out_path, verbose):
+    """Write the dict-table header for all ``!generate-dict-table`` structs."""
+    results = []
+
+    for in_hdr in header_files:
+        try:
+            with open(in_hdr) as f:
+                text = f.read()
+        except OSError as e:
+            print(f"error: cannot read '{in_hdr}': {e}", file=sys.stderr)
+            sys.exit(1)
+
+        for match in STRUCT_RE.finditer(text):
+            struct_name = match.group(1)
+            raw_body    = match.group(2)
+
+            if not parse_generate_dict_table(raw_body):
+                continue
+
+            buckets = parse_members_for_dict_table(raw_body, struct_name)
+            results.append((struct_name, buckets, in_hdr))
+
+            if verbose:
+                total = sum(len(v) for v in buckets.values())
+                print(f"  dict-table: {struct_name} — {total} fields")
+
+    guard = '_' + sanitize_identifier(
+        os.path.basename(out_path).upper().replace('.', '_')) + '_'
+
+    makedirs_for(out_path)
+    with open(out_path, 'w') as f:
+        f.write(
+            f'{SPDX_H}\n'
+            f'\n'
+            f'{BANNER}\n'
+            f'\n'
+            f'#ifndef {guard}\n'
+            f'#define {guard}\n'
+            f'\n'
+            f'#include <stddef.h>\n'
+            f'\n'
+            f'struct fctx_field {{\n'
+            f'\tconst char *key;\n'
+            f'\tsize_t off;\n'
+            f'}};\n'
+            f'\n'
+        )
+        for struct_name, buckets, source_header in results:
+            emit_dict_table(f, struct_name, buckets,
+                            os.path.basename(source_header))
+        f.write(f'#endif /* {guard} */\n')
+
+    if verbose and results:
+        print(f"Generated {out_path}")
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+def main():
+    parser = argparse.ArgumentParser(
+        description='Generate C struct accessor functions.',
+        add_help=False,   # -h is reserved for --h-out
+    )
+    parser.add_argument('-c', '--c-out',   default='accessors.c',
+                        dest='c_fname',   metavar='FILE',
+                        help='Generated *.c file. Default: accessors.c')
+    parser.add_argument('-h', '--h-out',   default='accessors.h',
+                        dest='h_fname',   metavar='FILE',
+                        help='Generated *.h file. Default: accessors.h')
+    parser.add_argument('-l', '--ld-out',  default='accessors.ld',
+                        dest='l_fname',   metavar='FILE',
+                        help='Generated *.ld file. Default: accessors.ld')
+    parser.add_argument('-s', '--swig-out', default=None,
+                        dest='s_fname',   metavar='FILE',
+                        help='Generated SWIG fragment (*.i). Omit to skip.')
+    parser.add_argument('-d', '--dict-table-out', default=None,
+                        dest='d_fname',   metavar='FILE',
+                        help='Generated dict-table header (*.h). Omit to skip.')
+    parser.add_argument('-n', '--nested-source', default=[], nargs='+',
+                        dest='nested_sources', metavar='FILE',
+                        help='Headers scanned for // !nested-accessors structs '
+                             'only; no accessor output is generated from them.')
+    parser.add_argument('-p', '--prefix',  default='',
+                        dest='prefix',    metavar='STR',
+                        help='Prefix prepended to every generated function name.')
+    parser.add_argument('-v', '--verbose', action='store_true',
+                        help='Verbose output.')
+    parser.add_argument('-H', '--help',    action='help',
+                        default=argparse.SUPPRESS,
+                        help='Show this message and exit.')
+    parser.add_argument('headers', nargs='+',
+                        help='Header files to parse (wildcards accepted).')
+    args = parser.parse_args()
+
+    # Expand wildcards in the header file arguments.
+    header_files = []
+    for pattern in args.headers:
+        expanded = glob_module.glob(pattern)
+        if expanded:
+            header_files.extend(os.path.realpath(p) for p in sorted(expanded))
+        else:
+            print(f"Warning: No match for {pattern}", file=sys.stderr)
+
+    if not header_files:
+        print("error: no input headers found", file=sys.stderr)
+        sys.exit(1)
+
+    # -----------------------------------------------------------------------
+    # Pass 1 — collect all !nested-accessors struct definitions across every
+    # input header, building nested_map before any accessor generation starts.
+    # --nested-source headers contribute to nested_map only; no accessor
+    # output is generated from them.
+    # -----------------------------------------------------------------------
+    file_texts = {}
+    nested_map = {}
+
+    nested_source_files = []
+    for pattern in args.nested_sources:
+        expanded = glob_module.glob(pattern)
+        if expanded:
+            nested_source_files.extend(
+                os.path.realpath(p) for p in sorted(expanded))
+        else:
+            print(f"Warning: No match for {pattern}", file=sys.stderr)
+
+    for in_hdr in nested_source_files + header_files:
+        if in_hdr in file_texts:
+            continue  # already read (avoid duplicates if listed in both)
+        try:
+            with open(in_hdr) as f:
+                text = f.read()
+        except OSError as e:
+            print(f"error: cannot read '{in_hdr}': {e}", file=sys.stderr)
+            sys.exit(1)
+        file_texts[in_hdr] = text
+        nested_map.update(collect_nested_map(text))
+
+    if args.verbose and nested_map:
+        print(f"\nPass 1: collected {len(nested_map)} !nested-accessors "
+              f"struct(s): {', '.join(sorted(nested_map))}")
+
+    # -----------------------------------------------------------------------
+    # Pass 2 — parse all header files, accumulate generated fragments.
+    # -----------------------------------------------------------------------
+    files_to_include = []   # '../' + basename of headers that contributed
+                             # structs -- '../' because the generated .c
+                             # always lands one directory below the header
+                             # it was parsed from (src/nvme/generated/ vs.
+                             # src/nvme/). Not computed via os.path.relpath
+                             # against args.c_fname: the update script stages
+                             # output in a throwaway mktemp -d before copying
+                             # it to its real destination, so args.c_fname's
+                             # own directory does not reflect where the file
+                             # actually ends up.
+    forward_declares = []   # struct names needing forward declarations
+    hdr_parts = []          # fragments for accessors.h
+    src_parts = []          # fragments for accessors.c
+    ld_parts  = []          # fragments for accessors.ld
+    swig_parts = []         # fragments for accessors.i (if --swig-out given)
+    swig_errors = []        # deferred SWIG validation errors
+    nested_errors = []      # deferred !access:nested validation errors
+    referenced_nested = set()  # !nested-accessors types actually resolved
+    swig_aliases = set()    # alias names seen so far — uniqueness guard
+
+    # Pre-scan for !access:nested references that Pass 2 will not see:
+    #   - references inside !nested-accessors struct bodies (e.g. the
+    #     transitive libnvme_ctrl_params::cfg -> libnvme_fabrics_config)
+    #   - references inside !generate-accessors struct bodies that live in
+    #     --nested-source files (Pass 2 skips those files entirely)
+    # Both are collected here to suppress false-positive unreferenced warnings.
+    for in_hdr, text in file_texts.items():
+        is_nested_src = in_hdr in nested_source_files
+        for match in STRUCT_RE.finditer(text):
+            raw_body = match.group(2)
+            has_generate = parse_struct_annotation(raw_body) is not None
+            has_nested = parse_nested_accessors_annotation(raw_body) is not None
+            if not (has_nested or (is_nested_src and has_generate)):
+                continue
+            for raw_line in raw_body.splitlines():
+                if parse_nested_annotation(raw_line) is None:
+                    continue
+                clean = strip_inline_comment(
+                    strip_block_comments(raw_line)).strip()
+                m = NESTED_MEMBER_RE.match(clean)
+                if m:
+                    referenced_nested.add(m.group(1))
+
+    emit_swig   = args.s_fname is not None
+    first_swig  = True      # prelude emitted once, before first struct
+
+    for in_hdr in header_files:
+        if args.verbose:
+            print(f"\nProcessing {in_hdr}")
+
+        text = file_texts[in_hdr]
+
+        structs = parse_file(text, args.verbose,
+                             nested_map=nested_map,
+                             referenced=referenced_nested,
+                             errors=nested_errors)
+
+        if not structs:
+            if args.verbose:
+                print(f"No annotated structs found in {in_hdr}.")
+            continue
+
+        files_to_include.append('../' + os.path.basename(in_hdr))
+
+        for (struct_name, members, lc_members, default_members, emit_py,
+             struct_alias, name_prefix) in structs:
+            has_c_output = bool(members or lc_members is not None
+                                or default_members)
+
+            # accessor_sname feeds only the naming segment in generated
+            # function names (via a struct-level prefix= override);
+            # struct_name itself always stays the real C struct tag used
+            # for types and doc comments.
+            accessor_sname = name_prefix or struct_name
+
+            if has_c_output:
+                forward_declares.append(struct_name)
+
+                section_banner = (
+                    f'/****************************************************************************\n'
+                    f' * Accessors for: struct {struct_name}\n'
+                    f' ****************************************************************************/\n'
+                    f'\n'
+                )
+
+                hdr_buf = io.StringIO()
+                hdr_buf.write(section_banner)
+                if lc_members is not None:
+                    emit_hdr_lifecycle(hdr_buf, args.prefix, accessor_sname,
+                                       struct_name, lc_members)
+                if default_members:
+                    emit_hdr_defaults(hdr_buf, args.prefix, accessor_sname,
+                                      struct_name, default_members)
+                generate_hdr(hdr_buf, args.prefix, accessor_sname,
+                            struct_name, members)
+                hdr_parts.append(hdr_buf.getvalue())
+
+                src_buf = io.StringIO()
+                src_buf.write(section_banner)
+                if lc_members is not None:
+                    emit_src_lifecycle(src_buf, args.prefix, accessor_sname,
+                                       struct_name, lc_members, default_members)
+                if default_members:
+                    emit_src_defaults(src_buf, args.prefix, accessor_sname,
+                                      struct_name, default_members)
+                generate_src(src_buf, args.prefix, accessor_sname,
+                            struct_name, members)
+                src_parts.append(src_buf.getvalue())
+
+                ld_buf = io.StringIO()
+                generate_ld(ld_buf, args.prefix, accessor_sname, members,
+                            lc_members, default_members)
+                ld_parts.append(ld_buf.getvalue())
+
+            if emit_swig and emit_py:
+                if struct_alias is not None:
+                    if not struct_alias.isidentifier():
+                        swig_errors.append(
+                            f"error: struct {struct_name}: "
+                            f"alias={struct_alias!r} is not a valid "
+                            f"Python identifier")
+                    elif struct_alias in swig_aliases:
+                        swig_errors.append(
+                            f"error: struct {struct_name}: "
+                            f"alias={struct_alias!r} is already used by "
+                            f"another struct")
+                    else:
+                        swig_aliases.add(struct_alias)
+                swig_buf = io.StringIO()
+                if first_swig:
+                    generate_swig_prelude(swig_buf)
+                    first_swig = False
+                generate_swig_fragment(swig_buf, args.prefix, accessor_sname,
+                                       struct_name, members, swig_errors,
+                                       struct_alias)
+                swig_parts.append(swig_buf.getvalue())
+
+    # Warn about !nested-accessors structs that were never referenced.
+    for type_name in sorted(nested_map):
+        if type_name not in referenced_nested:
+            print(f"warning: struct {type_name} is annotated "
+                  f"// !nested-accessors but is never referenced by "
+                  f"// !access:nested", file=sys.stderr)
+
+    if nested_errors:
+        for msg in nested_errors:
+            print(msg, file=sys.stderr)
+        sys.exit(1)
+
+    if swig_errors:
+        for msg in swig_errors:
+            print(msg, file=sys.stderr)
+        sys.exit(1)
+
+    # -----------------------------------------------------------------------
+    # Pass 2 — write output files.
+    # -----------------------------------------------------------------------
+
+    # --- accessors.h -------------------------------------------------------
+    guard = '_' + sanitize_identifier(os.path.basename(args.h_fname).upper()) + '_'
+
+    makedirs_for(args.h_fname)
+    with open(args.h_fname, 'w') as f:
+        f.write(
+            f'{SPDX_H}\n'
+            f'\n'
+            f'{BANNER}\n'
+            f'#ifndef {guard}\n'
+            f'#define {guard}\n'
+            f'\n'
+            f'#include <stdlib.h>\n'
+            f'#include <string.h>\n'
+            f'#include <stdbool.h>\n'
+            f'#include <stdint.h>\n\n'
+            f'#include <nvme/types.h>\n'
+            f'#include <nvme/nvme-types.h>\n'
+            f'\n'
+        )
+        f.write('/* Forward declarations. These are internal (opaque) structs. */\n')
+        for s in forward_declares:
+            f.write(f'struct {s};\n')
+        f.write('\n')
+        f.write(''.join(hdr_parts))
+        f.write(f'#endif /* {guard} */\n')
+
+    # --- accessors.c -------------------------------------------------------
+    makedirs_for(args.c_fname)
+    with open(args.c_fname, 'w') as f:
+        f.write(
+            f'{SPDX_C}\n'
+            f'\n'
+            f'{BANNER}\n'
+            f'#include <errno.h>\n'
+            f'#include <stdlib.h>\n'
+            f'#include <string.h>\n\n'
+            f'#include <shared/compiler-attributes-util.h>\n\n'
+            f'#include "{os.path.basename(args.h_fname)}"\n'
+            f'\n'
+        )
+        for fname in files_to_include:
+            f.write(f'#include "{fname}"\n')
+        f.write('\n')
+        f.write(''.join(src_parts))
+
+    # --- accessors.ld ------------------------------------------------------
+    makedirs_for(args.l_fname)
+    with open(args.l_fname, 'w') as f:
+        f.write(
+            f'{SPDX_LD}\n'
+            f'\n'
+            f'{LD_BANNER}\n'
+            f'\n'
+            f'LIBNVME_ACCESSORS_3 {{\n'
+            f'\tglobal:\n'
+        )
+        f.write(''.join(ld_parts))
+        f.write('};\n')
+
+    # --- accessors.i (SWIG fragment) ---------------------------------------
+    if emit_swig and args.s_fname:
+        makedirs_for(args.s_fname)
+        with open(args.s_fname, 'w') as f:
+            f.write(
+                f'{SPDX_I}\n'
+                f'\n'
+                f'{BANNER}\n'
+            )
+            f.write(''.join(swig_parts))
+
+    if args.verbose:
+        print(f"\nGenerated {args.h_fname} and {args.c_fname}")
+        if emit_swig and args.s_fname:
+            print(f"Generated {args.s_fname}")
+
+    # --- fctx_field_tables.h (dict-table) ----------------------------------
+    if args.d_fname:
+        generate_dict_table_file(header_files, args.d_fname, args.verbose)
+
+
+if __name__ == '__main__':
+    main()

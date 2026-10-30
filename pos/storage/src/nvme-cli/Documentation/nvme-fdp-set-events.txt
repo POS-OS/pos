@@ -1,0 +1,38 @@
+nvme-fdp-set-events(1)
+======================
+
+NAME
+----
+nvme-fdp-set-events - Enable or disable FDP events
+
+SYNOPSIS
+--------
+[verse]
+'nvme' [<global-options>] 'fdp set-events' <device>
+			[--namespace-id=<NUM> | -n <NUM>]
+			[--placement-handle=<NUM> | -p <NUM>]
+			[--enable | -e]
+			[--event-types=<NUM,> | -t <NUM,>]
+
+DESCRIPTION
+-----------
+For the NVMe device given, enable or disable a list of event types from being
+generated for the Reclaim Unit Handle reference by the specified Placement
+Handle.
+
+OPTIONS
+-------
+-n <NUM>::
+--namespace-id=<NUM>::
+	Namespace identifier.
+	The broadcast value 0xffffffff can also be given as 'all' or '-1'.
+
+-b::
+--raw-binary::
+	Print the raw buffer to the standard output stream.
+
+include::global-options.txt[]
+
+NVME
+----
+Part of nvme-cli

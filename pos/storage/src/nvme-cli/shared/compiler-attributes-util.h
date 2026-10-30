@@ -1,0 +1,71 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
+/*
+ * This file is part of libnvme.
+ * Copyright (c) 2026, Dell Technologies Inc. or its subsidiaries.
+ *
+ * Authors: Martin Belanger <Martin.Belanger@dell.com>
+ */
+#pragma once
+
+/**
+ * __shr_public - mark a symbol as part of the public API.
+ *
+ * When the library is built with -fvisibility=hidden all symbols are hidden
+ * by default.  Annotating a function with __shr_public overrides that
+ * and makes the symbol visible in the shared library ABI.
+ */
+#define __shr_public __attribute__((visibility("default")))
+
+/**
+ * __shr_weak - Declares a symbol as "weak"
+ *
+ * A weak symbol provides a default implementation that can be
+ * replaced by another (strong) definition during linking. Useful for
+ * optional overrides and platform hooks.
+ */
+#define __shr_weak __attribute__((weak))
+
+/**
+ * __shr_unused - Mark a symbol or parameter as intentionally unused.
+ *
+ * Suppresses compiler warnings for symbols or parameters that are unused
+ * by design (e.g. no-op stubs that must match a specific signature).
+ */
+#define __shr_unused __attribute__((__unused__))
+
+/**
+ * __shr_likely - Hint that an expression is usually true.
+ * __shr_unlikely - Hint that an expression is usually false.
+ *
+ * Wrap a branch condition to help the compiler order the generated code
+ * for the common case, e.g. a lazy-cache guard that is false on every
+ * call after the first.
+ */
+#define __shr_likely(x)   __builtin_expect(!!(x), 1)
+#define __shr_unlikely(x) __builtin_expect(!!(x), 0)
+
+/**
+ * __shr_constructor - run a function automatically before main().
+ *
+ * Commonly used to self-register a plugin or command group at load time,
+ * without requiring an explicit call from an init sequence.
+ */
+#define __shr_constructor __attribute__((constructor))
+
+/**
+ * __shr_destructor - run a function automatically after main() returns.
+ *
+ * The counterpart of __shr_constructor, e.g. to release what a
+ * constructor allocated.
+ */
+#define __shr_destructor __attribute__((destructor))
+
+/*
+ * __packed - mark a struct/union as having no padding between members.
+ *
+ * Some platforms' system headers already define this bare (kernel-style)
+ * name; only supply it here if nothing else already has.
+ */
+#ifndef __packed
+#define __packed __attribute__((__packed__))
+#endif

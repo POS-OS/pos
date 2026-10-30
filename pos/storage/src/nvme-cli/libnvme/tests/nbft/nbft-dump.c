@@ -1,0 +1,171 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
+/**
+ * This file is part of libnvme.
+ * Copyright (c) 2023 Red Hat Inc.
+ */
+
+#include <inttypes.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+
+#include <libnvme.h>
+
+static void print_hex(unsigned char *buf, int len)
+{
+	int i;
+
+	for (i = 0; i < len; i++, buf++)
+		printf("%x", *buf);
+}
+
+static void print_nbft(struct libnbft_info *table)
+{
+	unsigned int i, j;
+	struct libnbft_hfi **hfi;
+	struct libnbft_security **sec;
+	struct libnbft_discovery **disc;
+	struct libnbft_subsystem_ns **ssns;
+
+	printf("raw_nbft_size=%zd\n", table->raw_nbft_size);
+
+	printf("host.id=");
+	print_hex(table->host.id, NVME_UUID_LEN);
+	printf("\n");
+	printf("host.nqn=%s\n", table->host.nqn);
+	printf("host.flags=0x%02x\n", table->host.flags);
+
+	for (hfi = table->hfi_list, i = 0; hfi && *hfi; hfi++, i++) {
+		printf("hfi_list[%u]->index=%d\n", i, (*hfi)->index);
+		printf("hfi_list[%u]->transport=%.*s\n", i, (int)sizeof((*hfi)->transport), (*hfi)->transport);
+		printf("hfi_list[%u]->tcp_info.pci_sbdf=%"PRIu32"\n", i, (*hfi)->tcp_info.pci_sbdf);
+		printf("hfi_list[%u]->tcp_info.mac_addr=", i);
+		print_hex((*hfi)->tcp_info.mac_addr, sizeof((*hfi)->tcp_info.mac_addr));
+		printf("\n");
+		printf("hfi_list[%u]->tcp_info.vlan=%"PRIu16"\n", i, (*hfi)->tcp_info.vlan);
+		printf("hfi_list[%u]->tcp_info.ip_origin=%u\n", i, (*hfi)->tcp_info.ip_origin);
+		printf("hfi_list[%u]->tcp_info.ipaddr=%s\n", i, (*hfi)->tcp_info.ipaddr);
+		printf("hfi_list[%u]->tcp_info.subnet_mask_prefix=%u\n", i, (*hfi)->tcp_info.subnet_mask_prefix);
+		printf("hfi_list[%u]->tcp_info.gateway_ipaddr=%s\n", i, (*hfi)->tcp_info.gateway_ipaddr);
+		printf("hfi_list[%u]->tcp_info.route_metric=%"PRIu16"\n", i, (*hfi)->tcp_info.route_metric);
+		printf("hfi_list[%u]->tcp_info.primary_dns_ipaddr=%s\n", i, (*hfi)->tcp_info.primary_dns_ipaddr);
+		printf("hfi_list[%u]->tcp_info.secondary_dns_ipaddr=%s\n", i, (*hfi)->tcp_info.secondary_dns_ipaddr);
+		printf("hfi_list[%u]->tcp_info.dhcp_server_ipaddr=%s\n", i, (*hfi)->tcp_info.dhcp_server_ipaddr);
+		printf("hfi_list[%u]->tcp_info.host_name=%s\n", i, (*hfi)->tcp_info.host_name);
+		printf("hfi_list[%u]->tcp_info.flags=0x%02x\n", i, (*hfi)->tcp_info.flags);
+		printf("hfi_list[%u]->tcp_info.pcie_seg_num=%u\n", i, (*hfi)->tcp_info.pcie_seg_num);
+		printf("hfi_list[%u]->tcp_info.dhcp_iaid=%"PRIu32"\n", i, (*hfi)->tcp_info.dhcp_iaid);
+		printf("hfi_list[%u]->tcp_info.dhcp_duid=", i);
+		print_hex((*hfi)->tcp_info.dhcp_duid, (*hfi)->tcp_info.dhcp_duid_len);
+		printf("\n");
+		printf("hfi_list[%u]->tcp_info.dhcp_duid_len=%u\n", i, (*hfi)->tcp_info.dhcp_duid_len);
+	}
+
+	for (sec = table->security_list, i = 0; sec && *sec; sec++, i++) {
+		printf("security_list[%u]->index=%d\n", i, (*sec)->index);
+		printf("security_list[%u]->flags=%"PRIu16"\n",
+		       i, (*sec)->flags);
+		printf("security_list[%u]->secret_type=%u\n",
+		       i, (*sec)->secret_type);
+		printf("security_list[%u]->sec_chan_algs=", i);
+		print_hex((*sec)->sec_chan_algs, (*sec)->sec_chan_algs_len);
+		printf("\n");
+		printf("security_list[%u]->sec_chan_algs_len=%"PRIu16"\n",
+		       i, (*sec)->sec_chan_algs_len);
+		printf("security_list[%u]->auth_protocols=", i);
+		print_hex((*sec)->auth_protocols, (*sec)->auth_protocols_len);
+		printf("\n");
+		printf("security_list[%u]->auth_protocols_len=%"PRIu16"\n",
+		       i, (*sec)->auth_protocols_len);
+		printf("security_list[%u]->cipher_suites=", i);
+		print_hex((*sec)->cipher_suites, (*sec)->cipher_suites_len);
+		printf("\n");
+		printf("security_list[%u]->cipher_suites_len=%"PRIu16"\n",
+		       i, (*sec)->cipher_suites_len);
+		printf("security_list[%u]->kx_groups=", i);
+		print_hex((*sec)->kx_groups, (*sec)->kx_groups_len);
+		printf("\n");
+		printf("security_list[%u]->kx_groups_len=%"PRIu16"\n",
+		       i, (*sec)->kx_groups_len);
+		printf("security_list[%u]->sec_hash_funcs=", i);
+		print_hex((*sec)->sec_hash_funcs, (*sec)->sec_hash_funcs_len);
+		printf("\n");
+		printf("security_list[%u]->sec_hash_funcs_len=%"PRIu16"\n",
+		       i, (*sec)->sec_hash_funcs_len);
+		printf("security_list[%u]->secret_keypath=%s\n", i,
+		       (*sec)->secret_keypath ?
+		       (*sec)->secret_keypath : "(null)");
+	}
+
+	for (disc = table->discovery_list, i = 0; disc && *disc; disc++, i++) {
+		printf("discovery_list[%u]->index=%d\n", i, (*disc)->index);
+		if ((*disc)->security)
+			printf("discovery_list[%u]->security->index=%d\n", i, (*disc)->security->index);
+		if ((*disc)->hfi)
+			printf("discovery_list[%u]->hfi->index=%d\n", i, (*disc)->hfi->index);
+		printf("discovery_list[%u]->uri=%s\n", i, (*disc)->uri);
+		printf("discovery_list[%u]->nqn=%s\n", i, (*disc)->nqn);
+	}
+
+	for (ssns = table->subsystem_ns_list, i = 0; ssns && *ssns; ssns++, i++) {
+		printf("subsystem_ns_list[%u]->index=%d\n", i, (*ssns)->index);
+		if ((*ssns)->discovery)
+			printf("subsystem_ns_list[%u]->discovery->index=%d\n", i, (*ssns)->discovery->index);
+		if ((*ssns)->security)
+			printf("subsystem_ns_list[%u]->security->index=%d\n", i, (*ssns)->security->index);
+		printf("subsystem_ns_list[%u]->num_hfis=%d\n", i, (*ssns)->num_hfis);
+		for (hfi = (*ssns)->hfis, j = 0; hfi && *hfi; hfi++, j++)
+			printf("subsystem_ns_list[%u]->hfis[%u]->index=%d\n", i, j, (*hfi)->index);
+		printf("subsystem_ns_list[%u]->transport=%s\n", i, (*ssns)->transport);
+		printf("subsystem_ns_list[%u]->traddr=%s\n", i, (*ssns)->traddr);
+		printf("subsystem_ns_list[%u]->trsvcid=%s\n", i, (*ssns)->trsvcid);
+		printf("subsystem_ns_list[%u]->subsys_port_id=%"PRIu16"\n", i, (*ssns)->subsys_port_id);
+		printf("subsystem_ns_list[%u]->nsid=%"PRIu32"\n", i, (*ssns)->nsid);
+		printf("subsystem_ns_list[%u]->nid_type=%d\n", i, (*ssns)->nid_type);
+		printf("subsystem_ns_list[%u]->nid=", i);
+		print_hex((*ssns)->nid, 16);
+		printf("\n");
+		printf("subsystem_ns_list[%u]->subsys_nqn=%s\n", i, (*ssns)->subsys_nqn);
+		printf("subsystem_ns_list[%u]->trflags=0x%04x\n", i, (*ssns)->trflags);
+		printf("subsystem_ns_list[%u]->controller_id=%d\n", i, (*ssns)->controller_id);
+		printf("subsystem_ns_list[%u]->asqsz=%d\n", i, (*ssns)->asqsz);
+		printf("subsystem_ns_list[%u]->dhcp_root_path_string=%s\n", i, (*ssns)->dhcp_root_path_string);
+		printf("subsystem_ns_list[%u]->naed=0x%02x\n", i, (*ssns)->naed);
+		printf("subsystem_ns_list[%u]->cipeec=0x%02x\n", i, (*ssns)->cipeec);
+		printf("subsystem_ns_list[%u]->cto=%"PRIu16"\n", i, (*ssns)->cto);
+		printf("subsystem_ns_list[%u]->nceec=0x%02x\n", i, (*ssns)->nceec);
+		printf("subsystem_ns_list[%u]->flags=0x%04x\n", i, (*ssns)->flags);
+	}
+}
+
+int main(int argc, char **argv)
+{
+	struct libnbft_info *table = NULL;
+	struct libnvme_global_ctx *ctx;
+
+	if (argc < 2) {
+		fprintf(stderr, "Usage: %s TABLE\n", argv[0]);
+		return 1;
+	}
+
+	ctx = libnvme_create_global_ctx();
+	if (!ctx) {
+		fprintf(stderr, "Failed to create global context");
+		return 1;
+	}
+	libnvme_set_logging_level(ctx, LIBNVME_LOG_ERR, false, false);
+
+	if (libnvmf_read_nbft(ctx, &table, argv[1]) != 0) {
+		fprintf(stderr, "Error parsing the NBFT table %s: %m\n",
+			argv[1]);
+		libnvme_free_global_ctx(ctx);
+		return 2;
+	}
+
+	print_nbft(table);
+
+	libnvmf_free_nbft(ctx, table);
+	libnvme_free_global_ctx(ctx);
+	return 0;
+}

@@ -1,0 +1,35 @@
+#
+# Unit file used by 70-nvmf-autoconnect.rules.
+#
+
+[Unit]
+Description=NVMf auto-connect scan upon nvme discovery controller Events
+DefaultDependencies=no
+After=systemd-udevd.service
+# A TLS connection fails at once if tlshd is not running.
+After=tlshd.service
+Before=local-fs-pre.target
+PartOf=nvmf-connect.target
+Requires=nvmf-connect.target
+
+[Service]
+ProtectSystem=full
+ProtectHome=true
+ProtectHostname=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectProc=invisible
+RestrictRealtime=true
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RemoveIPC=yes
+RestrictAddressFamilies=AF_INET AF_INET6
+Type=simple
+Environment="CONNECT_ARGS=%i"
+# Skip FC kickstart (--device=none) while nvme-discoverd is active.
+# nvme-discoverd handles the same uevent. For an existing DC, the owner
+# check in connect-all decides. '+' runs systemctl outside
+# RestrictAddressFamilies, which blocks AF_UNIX.
+ExecCondition=+/bin/sh -c 'case "$$(/bin/echo -e "$$CONNECT_ARGS")" in --device=none*) ! @SYSTEMCTL@ -q is-active nvme-discoverd.service ;; esac'
+ExecStart=/bin/sh -c "@SBINDIR@/nvme connect-all --owner=autoconnect --quiet `/bin/echo -e '${CONNECT_ARGS}'`"

@@ -1,0 +1,35 @@
+nvme-help(1)
+=============
+
+NAME
+----
+nvme-help - Help information.
+
+SYNOPSIS
+--------
+[verse]
+'nvme' [<global-options>] 'help' [<command>]
+
+DESCRIPTION
+-----------
+Provides help information, with detailed information about the given command if provided.
+
+OPTIONS
+-------
+No Options
+
+include::global-options.txt[]
+
+EXAMPLES
+--------
+* Show help for nvme smart log:
++
+------------
+# nvme help smart-log
+------------
++
+Not much to it
+
+NVME
+----
+Part of the nvme-user suite

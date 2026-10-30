@@ -1,0 +1,35 @@
+nvme-fdp-update(1)
+==================
+
+NAME
+----
+nvme-fdp-update - Reclaim Unit Handle Update
+
+SYNOPSIS
+--------
+[verse]
+'nvme' [<global-options>] 'fdp update' <device>
+			[--namespace-id=<NUM> | -n <NUM>]
+			[--pids=<NUM,> | -p <NUM,>]
+
+DESCRIPTION
+-----------
+For the NVMe device given, update the given Placement Identifiers to reference
+a different Reclaim Unit accessible by the specified namespace.
+
+OPTIONS
+-------
+-n <NUM>::
+--namespace-id=<NUM>::
+	Namespace identifier.
+	The broadcast value 0xffffffff can also be given as 'all' or '-1'.
+
+-p <NUM,>::
+--pids=<NUM,>::
+	Comma-separated list of placement identifiers to update.
+
+include::global-options.txt[]
+
+NVME
+----
+Part of nvme-cli

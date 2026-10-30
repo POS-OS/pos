@@ -1,0 +1,133 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+#
+# This file is part of libnvme.
+# Copyright (c) 2023 Red Hat Inc.
+#
+# Authors: Tomas Bzatek <tbzatek@redhat.com>
+
+# NBFT parser tests over supplied NBFT ACPI table dumps
+
+tables_dir     = 'tables'
+tables_bad_dir = 'tables_bad'
+diff_dir       = 'diffs'
+
+tables = [
+    'NBFT-auto-ipv6',
+    'NBFT-dhcp-ipv6',
+    'NBFT-rhpoc',
+    'NBFT-static-ipv4',
+    'NBFT-static-ipv4-discovery',
+    'NBFT-static-ipv6',
+    'NBFT-Dell.PowerEdge.R760',
+    'NBFT-Dell.PowerEdge.R660-fw1.5.5-single',
+    'NBFT-Dell.PowerEdge.R660-fw1.5.5-mpath+discovery',
+    'NBFT-mpath+disc-ipv4+6_half',
+    'NBFT-ipv6-noip+disc',
+    'NBFT-synthetic-security',
+    'NBFT-synthetic-2hfi-3ssns-disc-sec',
+    'NBFT-synthetic-dhcp-2hfi-3ssns-2sec',
+    'NBFT-synthetic-ipv6-3hfi-4ssns-2disc-2sec',
+    'NBFT-synthetic-mixed-nid-types',
+    'NBFT-empty'
+]
+
+tables_bad = [
+    'NBFT-bad-oldspec',
+    'NBFT-random-noise',
+]
+
+tables_rejected = [
+    'NBFT-bad-control',
+    'NBFT-bad-discovery-list-offset',
+    'NBFT-bad-security-list-offset',
+]
+
+nbft_dump = executable(
+    'nbft-dump',
+    ['nbft-dump.c'],
+    dependencies: [
+        config_dep,
+        ccan_dep,
+        libnvme_dep,
+    ],
+)
+
+
+helper_data = configuration_data()
+helper_data.set('NBFT_DUMP_PATH', nbft_dump.full_path())
+helper_data.set('TABLES_DIR', meson.current_source_dir()/tables_dir)
+helper_data.set('DIFF_DIR', meson.current_source_dir()/diff_dir)
+
+dump_helper = configure_file(
+    input: 'nbft-dump-diff.sh.in',
+    output: '@BASENAME@',
+    configuration: helper_data
+)
+
+gen_diffs_helper = configure_file(
+    input: 'gen-nbft-diffs.sh.in',
+    output: '@BASENAME@',
+    configuration: helper_data
+)
+
+
+run_target(
+    'nbft-diffs',
+    depends: nbft_dump,
+    command: [gen_diffs_helper]
+)
+
+
+diffcmd = find_program(
+    'diff',
+    required: false
+)
+if diffcmd.found()
+    foreach table: tables
+        test(
+            'libnvme - nbft/' + table.replace('NBFT-', ''),
+            dump_helper,
+            args: [
+                files(tables_dir/table),
+                files(diff_dir/table),
+            ],
+            suite: 'unit',
+        )
+    endforeach
+endif
+
+foreach table: tables_bad
+    if meson.version().version_compare('>=1.11.0')
+        test(
+            'libnvme - nbft/' + table.replace('NBFT-', ''),
+            nbft_dump,
+            args: [
+                files(tables_bad_dir/table),
+            ],
+            expected_fail: true,
+            suite: 'unit',
+        )
+    else
+        test(
+            'libnvme - nbft/' + table.replace('NBFT-', ''),
+            nbft_dump,
+            args: [
+                files(tables_bad_dir/table),
+            ],
+            should_fail: true,
+            suite: 'unit',
+        )
+    endif
+endforeach
+
+foreach table: tables_rejected
+    test(
+        'libnvme - nbft/' + table.replace('NBFT-', ''),
+        files('nbft-reject.sh'),
+        args: [
+            nbft_dump,
+            files(tables_bad_dir/table),
+        ],
+        suite: 'unit',
+    )
+endforeach

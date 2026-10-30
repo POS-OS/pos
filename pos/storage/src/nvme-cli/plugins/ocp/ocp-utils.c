@@ -1,0 +1,91 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+/*
+ * Copyright (c) 2022-2024 Solidigm.
+ *
+ * Author: leonardo.da.cunha@solidigm.com
+ */
+
+#include <errno.h>
+#include <unistd.h>
+
+#include <libnvme.h>
+
+#include <ccan/endian/endian.h>
+
+#include "nvme-cmds.h"
+#include "nvme-print.h"
+#include "ocp-nvme.h"
+#include "ocp-utils.h"
+
+static const unsigned char ocp_uuid[NVME_UUID_LEN] = {
+	0xc1, 0x94, 0xd5, 0x5b, 0xe0, 0x94, 0x47, 0x94, 0xa2, 0x1d,
+	0x29, 0x99, 0x8f, 0x56, 0xbe, 0x6f };
+
+int ocp_find_uuid_index(struct nvme_id_uuid_list *uuid_list, __u8 *index)
+{
+	int i = libnvme_find_uuid(uuid_list, ocp_uuid);
+
+	*index = 0;
+	/* not in the list: index 0, no UUID */
+	if (i == -ENOENT)
+		return 0;
+	if (i < 0)
+		return i;
+	*index = i;
+
+	return 0;
+}
+
+int ocp_get_uuid_index(struct libnvme_transport_handle *hdl, __u8 *index)
+{
+	struct nvme_id_uuid_list uuid_list;
+	struct libnvme_passthru_cmd cmd;
+	int err;
+
+	*index = 0;
+
+	nvme_init_identify_uuid_list(&cmd, &uuid_list);
+
+	err = libnvme_exec_admin_passthru(hdl, &cmd);
+	if (err)
+		return err;
+
+	return ocp_find_uuid_index(&uuid_list, index);
+}
+
+int ocp_get_log_simple(struct libnvme_transport_handle *hdl,
+		       enum ocp_dssd_log_id lid, __u32 len, void *log, bool uuid)
+{
+	struct libnvme_passthru_cmd cmd;
+	__u8 uidx = 0;
+	int err;
+
+	if (uuid) {
+		err = ocp_get_uuid_index(hdl, &uidx);
+		if (err || !uidx) {
+			nvme_show_error("ERROR : OCP : No OCP UUID index found");
+			return err ? err : -ENOENT;
+		}
+	}
+
+	nvme_init_get_log(&cmd, NVME_NSID_ALL, (enum nvme_cmd_get_log_lid) lid,
+			   NVME_CSI_NVM, log, len);
+	cmd.cdw14 |= NVME_FIELD_ENCODE(uidx,
+				       NVME_LOG_CDW14_UUID_SHIFT,
+				       NVME_LOG_CDW14_UUID_MASK);
+
+	return libnvme_get_log(hdl, &cmd, false, NVME_LOG_PAGE_PDU_SIZE);
+}
+
+bool ocp_is_tcg_activity_event(struct nvme_persistent_event_entry *pevent_entry_head,
+			       __u16 el, __u16 vsil)
+{
+	struct nvme_vs_event_desc *vs_desc =
+		(struct nvme_vs_event_desc *)(pevent_entry_head + 1);
+
+	return pevent_entry_head->etype == NVME_PEL_VENDOR_SPECIFIC_EVENT &&
+	       pevent_entry_head->ehl == 0x15 && vsil == 0x04 && el == 0x30 &&
+	       le16_to_cpu(vs_desc->vsec) == 0x01 &&
+	       le16_to_cpu(vs_desc->vsedl) == 0x26 &&
+	       vs_desc->vsedt == NVME_PEL_VSEDT_BINARY;
+}

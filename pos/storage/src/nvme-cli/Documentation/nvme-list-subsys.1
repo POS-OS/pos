@@ -1,0 +1,185 @@
+'\" t
+.\"     Title: nvme-list-subsys
+.\"    Author: [FIXME: author] [see http://www.docbook.org/tdg5/en/html/author]
+.\" Generator: DocBook XSL Stylesheets vsnapshot <http://docbook.sf.net/>
+.\"      Date: 09/18/2026
+.\"    Manual: NVMe Manual
+.\"    Source: NVMe
+.\"  Language: English
+.\"
+.TH "NVME\-LIST\-SUBSYS" "1" "09/18/2026" "NVMe" "NVMe Manual"
+.\" -----------------------------------------------------------------
+.\" * Define some portability stuff
+.\" -----------------------------------------------------------------
+.\" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.\" http://bugs.debian.org/507673
+.\" http://lists.gnu.org/archive/html/groff/2009-02/msg00013.html
+.\" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.ie \n(.g .ds Aq \(aq
+.el       .ds Aq '
+.\" -----------------------------------------------------------------
+.\" * set default formatting
+.\" -----------------------------------------------------------------
+.\" disable hyphenation
+.nh
+.\" disable justification (adjust text to left margin only)
+.ad l
+.\" -----------------------------------------------------------------
+.\" * MAIN CONTENT STARTS HERE *
+.\" -----------------------------------------------------------------
+.SH "NAME"
+nvme-list-subsys \- List all NVMe subsystems
+.SH "SYNOPSIS"
+.sp
+.nf
+\fInvme\fR [<global\-options>] \fIlist\-subsys\fR <device>
+.fi
+.SH "DESCRIPTION"
+.sp
+Scan the sysfs tree for NVM Express subsystems and return the controllers for those subsystems as well as some pertinent information about them\&. If a device is given, print out only the values for the controllers and subsystems leading to the device\&.
+.SH "OPTIONS"
+.SH "GLOBAL OPTIONS"
+.sp
+The following options are defined at the top\-level nvme command and are available to this subcommand:
+.PP
+\-\-dry\-run
+.RS 4
+Print the command that would be executed, but do not actually execute it\&.
+.RE
+.PP
+\-\-no\-ioctl\-probing
+.RS 4
+Disable probing for 64\-bit IOCTL support\&.
+.RE
+.PP
+\-\-no\-retries
+.RS 4
+Disable retry logic on transient errors\&.
+.RE
+.PP
+\-o <fmt>, \-\-output\-format=<fmt>
+.RS 4
+Set the reporting format to
+\fInormal\fR,
+\fItabular, \*(Aqjson\fR, or
+\fIbinary\fR\&. Only one output format may be used at a time\&.
+.RE
+.PP
+\-\-output\-format\-version=<version>
+.RS 4
+Select the output format version\&. Version
+\fI1\fR
+uses the original field naming, while version
+\fI2\fR
+(default) provides more consistent and script\-friendly field names\&.
+.RE
+.PP
+\-\-timeout=<ms>
+.RS 4
+Set the timeout for the command in milliseconds\&.
+.RE
+.PP
+\-v, \-\-verbose
+.RS 4
+Increase the level of detail in the output\&. May be specified multiple times to further increase verbosity\&.
+.RE
+.sp
+These options can also be set as machine\-wide defaults in nvme\-cli\&.conf(5)\&. A command\-line flag always overrides the file\&.
+.SH "EXAMPLES"
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+\m[blue]\fBroot@host\fR\m[]\&\s-2\u[1]\d\s+2# nvme list\-subsys
+nvme\-subsys0 \- NQN=nvmf\-test
+\e
+ +\- nvme0 rdma traddr=1\&.1\&.1\&.3,trsvcid=4420,host_traddr=1\&.1\&.1\&.1
+ +\- nvme1 rdma traddr=1\&.1\&.1\&.3,trsvcid=4420,host_traddr=1\&.1\&.1\&.2
+nvme\-subsys1 \- NQN=nvmf\-test2
+\e
+ +\- nvme2 rdma traddr=1\&.1\&.1\&.3,trsvcid=4420,host_traddr=1\&.1\&.1\&.2
+ +\- nvme3 rdma traddr=1\&.1\&.1\&.3,trsvcid=4420,host_traddr=1\&.1\&.1\&.1
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+\m[blue]\fBroot@host\fR\m[]\&\s-2\u[1]\d\s+2# nvme list\-subsys \-o json
+{
+  "Subsystems" : [
+    {
+      "Name" : "nvme\-subsys0",
+      "NQN" : "nvmf\-test"
+    },
+    {
+      "Paths" : [
+        {
+          "Name" : "nvme0",
+          "Transport" : "rdma",
+          "Address" : "traddr=1\&.1\&.1\&.3,trsvcid=4420,host_traddr=1\&.1\&.1\&.1",
+          "AddressDetails" : {
+            "traddr" : "1\&.1\&.1\&.3",
+            "host_traddr" : "1\&.1\&.1\&.1",
+            "trsvcid" : "4420"
+          }
+        },
+        {
+          "Name" : "nvme1",
+          "Transport" : "rdma",
+          "Address" : "traddr=1\&.1\&.1\&.3,trsvcid=4420,host_traddr=1\&.1\&.1\&.2",
+          "AddressDetails" : {
+            "traddr" : "1\&.1\&.1\&.3",
+            "host_traddr" : "1\&.1\&.1\&.2",
+            "trsvcid" : "4420"
+          }
+        }
+      ]
+    },
+    {
+      "Name" : "nvme\-subsys1",
+      "NQN" : "nvmf\-test2"
+    },
+    {
+      "Paths" : [
+        {
+          "Name" : "nvme2",
+          "Transport" : "rdma",
+          "Address" : "traddr=1\&.1\&.1\&.3,trsvcid=4420,host_traddr=1\&.1\&.1\&.2",
+          "AddressDetails" : {
+            "traddr" : "1\&.1\&.1\&.3",
+            "host_traddr" : "1\&.1\&.1\&.2",
+            "trsvcid" : "4420"
+          }
+        },
+        {
+          "Name" : "nvme3",
+          "Transport" : "rdma",
+          "Address" : "traddr=1\&.1\&.1\&.3,trsvcid=4420,host_traddr=1\&.1\&.1\&.1",
+          "AddressDetails" : {
+            "traddr" : "1\&.1\&.1\&.3",
+            "host_traddr" : "1\&.1\&.1\&.1",
+            "trsvcid" : "4420"
+          }
+        }
+      ]
+    }
+  ]
+}
+.fi
+.if n \{\
+.RE
+.\}
+.SH "NVME"
+.sp
+Part of the nvme\-user suite
+.SH "NOTES"
+.IP " 1." 4
+root@host
+.RS 4
+\%mailto:root@host
+.RE

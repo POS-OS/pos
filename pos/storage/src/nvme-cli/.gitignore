@@ -1,0 +1,30 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+
+*.xml
+a.out
+*.o
+*~
+*.swp
+nvme-*.tar.gz
+
+subprojects/*
+!subprojects/*.wrap
+
+cscope.*
+compile_commands.json
+
+__pycache__/
+tests/nvmetests
+tests/**/*.pyc
+
+.build
+.build-ci
+.cache
+
+# Ignore PyPI build artifacts
+dist/
+
+.vscode/
+
+# Claude Code local state - never intended for this repo (see ../nvme-cli-ai/)
+.claude/

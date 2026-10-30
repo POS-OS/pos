@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+
+plugin_sources += [
+    'plugins/solidigm/solidigm-telemetry/cod.c',
+    'plugins/solidigm/solidigm-telemetry/header.c',
+    'plugins/solidigm/solidigm-telemetry/config.c',
+    'plugins/solidigm/solidigm-telemetry/data-area.c',
+    'plugins/solidigm/solidigm-telemetry/nlog.c',
+    'plugins/solidigm/solidigm-telemetry/tracker.c',
+    'plugins/solidigm/solidigm-telemetry/skht.c',
+    'plugins/solidigm/solidigm-telemetry/debug-info.c',
+    'plugins/solidigm/solidigm-telemetry/uart-log.c',
+    'plugins/solidigm/solidigm-telemetry/side-trace.c',
+]

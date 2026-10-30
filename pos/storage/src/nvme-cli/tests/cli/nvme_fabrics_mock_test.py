@@ -1,0 +1,1294 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-2.0-or-later
+#
+# This file is part of nvme-cli.
+# Copyright (c) 2026 SUSE LLC
+#
+# Authors: Daniel Wagner <dwagner@suse.com>
+"""Integration tests for 'nvme discover', 'nvme connect', and 'nvme connect-all'.
+
+Uses LD_PRELOAD mocking (see libmock_nvme.c), so no real NVMe hardware or
+root privileges are required. The mock shim forwards every connect() write
+and admin passthru ioctl() over a Unix socket to the FabricsMockIPCServer
+below, which is steered per-test to fabricate discovery log pages, Identify
+data, and simulated errno failures.
+
+Usage: python3 nvme_fabrics_mock_test.py <path-to-nvme-binary> <path-to-mock-lib>
+"""
+import shutil
+import struct
+from pathlib import Path
+
+from tests.cli.nvme_mock import (CNS_CTRL, MockController, MockTestCase,
+                                 Reply, id_ctrl, main, write_sysfs_ctrl)
+from tests.cli.nvme_mock_ipc import NIC_QUEUES_FMT
+
+DISCOVERY_NQN = "nqn.2014-08.org.nvmexpress.discovery"
+# Default TCP port used for discovery controller connections (NVME_DISC_IP_PORT).
+DISCOVERY_PORT = "8009"
+
+# struct nvmf_disc_log_entry SUBTYPE field (enum nvmf_disc_subtype).
+NVME_NQN_DISC = 1   # Referral to another Discovery Controller
+NVME_NQN_NVME = 2   # I/O (non-discovery) NVM subsystem
+NVME_NQN_CURR = 3   # This Discovery Controller's own port
+
+# struct nvmf_disc_log_entry EFLAGS bit (enum nvmf_disc_eflags).
+NVMF_DISC_EFLAGS_EPCSD = 1 << 1
+
+_DISCOVERY_LOG_LID = 0x70
+
+
+def _pack_disc_log_entry(portid, entry):
+    """Packs one 1024-byte struct nvmf_disc_log_entry from a test-supplied dict.
+
+    Recognized keys: transport, traddr, trsvcid, subsysnqn, eflags, subtype.
+    'adrfam' is IPv6 for a tcp/rdma traddr containing ':', IPv4 otherwise.
+    'subtype' defaults to NVME_NQN_DISC for referral-looking NQNs (containing
+    "discovery" or "dc-") and NVME_NQN_NVME otherwise; 'eflags' defaults to 0.
+    """
+    transport = entry.get('transport', 'tcp')
+    traddr = entry.get('traddr', '')
+    trsvcid = entry.get('trsvcid', '4420')
+    subsysnqn = entry.get('subsysnqn', '')
+    eflags = entry.get('eflags', 0)
+
+    subtype = entry.get('subtype')
+    if subtype is None:
+        subtype = NVME_NQN_DISC if ('discovery' in subsysnqn or 'dc-' in subsysnqn) else NVME_NQN_NVME
+
+    trtype = {'tcp': 3, 'rdma': 1, 'fc': 2}.get(transport, 254)
+    if transport == 'fc':
+        adrfam = 4
+    elif transport in ('tcp', 'rdma'):
+        adrfam = 2 if ':' in traddr else 1
+    else:
+        adrfam = 254
+
+    header = struct.pack("<BBBBHHHH", trtype, adrfam, subtype, 0, portid, 0xffff, 32, eflags)
+    rsvd12 = b"\x00" * 20
+    trsvcid_bytes = trsvcid.encode('utf-8').ljust(32, b"\x00")
+    rsvd64 = b"\x00" * 192
+    subnqn_bytes = subsysnqn.encode('utf-8').ljust(256, b"\x00")
+    traddr_bytes = traddr.encode('utf-8').ljust(256, b"\x00")
+    tsas = b"\x00" * 256
+
+    return header + rsvd12 + trsvcid_bytes + rsvd64 + subnqn_bytes + traddr_bytes + tsas
+
+
+class FabricsController(MockController):
+    def __init__(self, sock_path):
+        super().__init__(sock_path)
+        self.identify[CNS_CTRL] = self.id_ctrl
+        self.logs[_DISCOVERY_LOG_LID] = self.discovery_log
+
+        # Test-specific state overrides, steered from Python tests.
+        self.connect_errno = 0
+        self.ioctl_errno = 0
+        # Off by default: the mock hands out a fresh instance for every
+        # connect. Turn it on to make a repeat connect fail with EALREADY
+        # the way the kernel does.
+        self.reject_duplicate_connect = False
+        self.discovery_entries = []  # fallback list of dicts (see _pack_disc_log_entry)
+        self.discovery_map = {}      # maps subsysnqn (str) -> list of dicts
+        self.model_number = "Mock NVMe Controller"
+        self.serial_number = "MOCK_SERIAL_NUM_123"
+        self.next_instance = 0
+        self.sysfs_dir = None
+        self.controllers = {}        # maps instance (int) -> dict of connect options
+        self.log_page_fetch_count = {}  # maps subsysnqn (str) -> completed-fetch count
+        # Host network and CPU setup for the default --nr-io-queues. An
+        # unknown daddr has no route and an unknown ifname has no ethtool
+        # channel support, so by default nvme-cli sets no nr_io_queues.
+        self.egress_ifaces = {}      # maps daddr (str) -> egress ifname
+        self.nic_queues = {}         # maps ifname -> (combined, tx, rx)
+        self.nprocs = None           # online CPUs, None for the real count
+        self.route_lookups = []      # (daddr, saddr) of every route lookup
+        self.nic_queue_queries = []  # ifname of every h/w queue query
+
+    def handle_write(self, conn, payload):
+        """A write() on /dev/nvme-fabrics: fabrics connect args."""
+        if self.connect_errno != 0:
+            self.send_response(conn, -1, errno_val=self.connect_errno)
+            return
+
+        opts = {}
+        flags = set()
+        for part in payload.decode('utf-8', errors='ignore').split(','):
+            if '=' in part:
+                k, v = part.split('=', 1)
+                opts[k.strip()] = v.strip()
+            else:
+                flags.add(part.strip())
+
+        subsysnqn = opts.get('nqn', opts.get('subsysnqn', ''))
+        transport = opts.get('transport', 'tcp')
+        traddr = opts.get('traddr', '')
+        trsvcid = opts.get('trsvcid', '4420')
+
+        if self.reject_duplicate_connect:
+            key = (transport, traddr, trsvcid, subsysnqn)
+            for c in self.controllers.values():
+                if (c['transport'], c['traddr'], c['trsvcid'],
+                        c['subsysnqn']) == key:
+                    self.send_response(conn, -1, errno_val=114)  # EALREADY
+                    return
+
+        inst = int(opts.get('instance', self.next_instance))
+        if 'instance' not in opts:
+            self.next_instance += 1
+
+        host_traddr = opts.get('host_traddr', 'none')
+        host_iface = opts.get('host_iface', 'none')
+        hostnqn = opts.get('hostnqn', '')
+        hostid = opts.get('hostid', '')
+
+        self.controllers[inst] = {
+            'subsysnqn': subsysnqn,
+            'transport': transport,
+            'traddr': traddr,
+            'trsvcid': trsvcid,
+            'keep_alive_tmo': opts.get('keep_alive_tmo'),
+            'nr_io_queues': opts.get('nr_io_queues'),
+            'discovery': 'discovery' in flags,
+            'dhchap_secret': opts.get('dhchap_secret'),
+            'dhchap_ctrl_secret': opts.get('dhchap_ctrl_secret'),
+        }
+
+        if self.sysfs_dir:
+            self._write_sysfs_ctrl(inst, subsysnqn, transport, traddr, trsvcid,
+                                    host_traddr, host_iface, hostnqn, hostid)
+
+        resp_payload = f"instance={inst}\n".encode('utf-8')
+        self.send_response(conn, 0, payload=resp_payload)
+
+    def _write_sysfs_ctrl(self, inst, subsysnqn, transport, traddr, trsvcid,
+                           host_traddr, host_iface, hostnqn, hostid):
+        addr_str = f"traddr={traddr},trsvcid={trsvcid}"
+        if host_traddr not in ('none', ''):
+            addr_str += f",host_traddr={host_traddr}"
+        if host_iface not in ('none', ''):
+            addr_str += f",host_iface={host_iface}"
+
+        attrs = {'delete_controller': ''}
+        if hostnqn:
+            attrs['hostnqn'] = hostnqn
+        if hostid:
+            attrs['hostid'] = hostid
+        # Like the kernel: the secret, or "none" when the connect had none.
+        for attr in ('dhchap_secret', 'dhchap_ctrl_secret'):
+            attrs[attr] = self.controllers[inst][attr] or 'none'
+        write_sysfs_ctrl(self.sysfs_dir, inst, transport, addr_str,
+                         subsysnqn, **attrs)
+
+    def handle_route(self, conn, daddr, saddr):
+        self.route_lookups.append((daddr, saddr))
+        ifname = self.egress_ifaces.get(daddr)
+        if ifname is None:
+            super().handle_route(conn, daddr, saddr)
+            return
+        self.send_response(conn, 0, payload=ifname.encode('utf-8'))
+
+    def handle_nic_queues(self, conn, ifname):
+        self.nic_queue_queries.append(ifname)
+        queues = self.nic_queues.get(ifname)
+        if queues is None:
+            super().handle_nic_queues(conn, ifname)
+            return
+        self.send_response(conn, 0, payload=struct.pack(NIC_QUEUES_FMT, *queues))
+
+    def handle_nprocs(self, conn):
+        if self.nprocs is None:
+            super().handle_nprocs(conn)
+            return
+        self.send_response(conn, 0, result=self.nprocs)
+
+    def answer(self, cmd):
+        if self.ioctl_errno != 0:
+            return Reply(errno=self.ioctl_errno)
+        return super().answer(cmd)
+
+    def discovery_log(self, cmd):
+        ctrl_nqn = self.controllers.get(cmd.instance, {}).get('subsysnqn', '')
+        entries = self.discovery_map.get(ctrl_nqn, self.discovery_entries)
+
+        log_entries = b"".join(_pack_disc_log_entry(i + 1, e)
+                               for i, e in enumerate(entries))
+        log_header = struct.pack("<QQH", 1, len(entries), 0) + b"\x00" * 1006
+        full_log = log_header + log_entries
+
+        # libnvmf_get_discovery_log() reads the header twice (lpo=0: once
+        # to size the entries, once after to re-check genctr) but the
+        # entries themselves (lpo != 0) exactly once per completed
+        # fetch -- count that one, not the header reads, so a caller can
+        # tell "was this DC's DLP walked" from "was it walked twice".
+        if cmd.lpo != 0:
+            self.log_page_fetch_count[ctrl_nqn] = \
+                self.log_page_fetch_count.get(ctrl_nqn, 0) + 1
+
+        return full_log[cmd.lpo:]
+
+    def id_ctrl(self, cmd):
+        return id_ctrl(vid=0x105b, ssvid=0x105b, sn=self.serial_number[:20],
+                       mn=self.model_number[:40], fr='MOCK1234')
+
+
+class FabricsMockCLITest(MockTestCase):
+
+    controller_class = FabricsController
+
+    def setUp(self):
+        super().setUp()
+        self.server.sysfs_dir = self.sysfs_dir
+
+    def _run(self, *args, expect_fail=False):
+        result = self.nvme(*args)
+
+        if not expect_fail:
+            self.assertEqual(result.returncode, 0,
+                             f'Command {args} failed:\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}')
+        else:
+            self.assertNotEqual(result.returncode, 0,
+                                f'Command {args} was expected to fail but succeeded')
+        return result
+
+    def _ctrl_path(self, instance):
+        return Path(f"{self.sysfs_dir}/sys/class/nvme/nvme{instance}")
+
+    def _owner_path(self, instance):
+        return Path(f"{self.base_dir}/registry/nvme{instance}/owner")
+
+    def _owner(self, instance):
+        path = self._owner_path(instance)
+        return path.read_text().strip() if path.exists() else None
+
+    def _subsysnqn(self, instance):
+        return (self._ctrl_path(instance) / "subsysnqn").read_text().strip()
+
+    def _assert_persisted(self, instance, msg=""):
+        """delete_controller stays empty as long as libnvmf_disconnect_ctrl()
+        (which writes "1" to it) is never called for this controller."""
+        content = (self._ctrl_path(instance) / "delete_controller").read_text()
+        self.assertEqual(content, "", msg or f"nvme{instance} was disconnected, expected it to persist")
+
+    def _assert_disconnected(self, instance, msg=""):
+        content = (self._ctrl_path(instance) / "delete_controller").read_text()
+        self.assertEqual(content, "1", msg or f"nvme{instance} was not disconnected")
+
+    # ------------------------------------------------------------------ #
+    # Test cases                                                         #
+    # ------------------------------------------------------------------ #
+
+    def test_discover_simple(self):
+        """Test simple discovery retrieval."""
+        self.server.discovery_entries = [
+            {
+                'transport': 'tcp',
+                'traddr': '192.168.1.200',
+                'trsvcid': '4420',
+                'subsysnqn': 'nqn.2014-08.org.nvmexpress:mock-target-nvm-subsystem',
+            },
+        ]
+        res = self._run('discover', '-t', 'tcp', '-a', '192.168.1.1')
+
+        # Verify stdout contains our mock subsystem NQN and address.
+        self.assertIn("mock-target-nvm-subsystem", res.stdout)
+        self.assertIn("192.168.1.200", res.stdout)
+        self.assertIn("4420", res.stdout)
+
+    def test_connect_simple(self):
+        """Test connecting to a single target."""
+        subsysnqn = "nqn.2014-08.org.nvmexpress:my-io-subsys-1"
+        self._run('connect', '-t', 'tcp', '-a', '192.168.1.10', '-s', '4420', '-n', subsysnqn)
+
+        # The command should succeed, and our mock should have created the sysfs entries.
+        ctrl_path = self._ctrl_path(0)
+        self.assertTrue(ctrl_path.exists(), "Mock controller directory was not created under sysfs")
+
+        self.assertEqual((ctrl_path / "transport").read_text().strip(), "tcp")
+        self.assertEqual(self._subsysnqn(0), subsysnqn)
+        self.assertIn("traddr=192.168.1.10", (ctrl_path / "address").read_text())
+
+    def test_connect_all_recursive(self):
+        """Test connect-all recursive discovery cascade."""
+        # Setup pre-configured mock discovery log entries pointing to two standard I/O controllers.
+        subsys1 = "nqn.2014-08.org.nvmexpress:io-subsys-A"
+        subsys2 = "nqn.2014-08.org.nvmexpress:io-subsys-B"
+        self.server.discovery_entries = [
+            {'transport': 'tcp', 'traddr': '192.168.5.1', 'trsvcid': '4420', 'subsysnqn': subsys1},
+            {'transport': 'tcp', 'traddr': '192.168.5.2', 'trsvcid': '4420', 'subsysnqn': subsys2},
+        ]
+
+        self._run('connect-all', '-t', 'tcp', '-a', '192.168.1.1')
+
+        # Connecting with connect-all to a discovery controller should first connect to the
+        # discovery controller (nvme0), read the discovery log (returning our 2 entries),
+        # and then connect to the two listed I/O controllers (nvme2 and nvme3).
+        self.assertTrue(self._ctrl_path(0).exists(), "Discovery controller (nvme0) not created")
+        self.assertTrue(self._ctrl_path(2).exists(), "First I/O controller (nvme2) not created")
+        self.assertTrue(self._ctrl_path(3).exists(), "Second I/O controller (nvme3) not created")
+
+        self.assertEqual(self._subsysnqn(2), subsys1)
+        self.assertEqual(self._subsysnqn(3), subsys2)
+
+    def test_connect_all_link_local_inherits_scope(self):
+        """A link-local traddr from the DLP inherits the DC's IPv6 scope.
+
+        The DLP never carries a scope; without it the kernel cannot tell
+        which link a fe80:: address is on, and RDMA has no host_iface to
+        fall back on (GitHub issue #2648).
+        """
+        io_subsys = "nqn.2014-08.org.nvmexpress:io-subsys-ll"
+        self.server.discovery_entries = [
+            {'transport': 'rdma', 'traddr': 'FE80::20C:CAFF:FE12:6747',
+             'trsvcid': '4420', 'subsysnqn': io_subsys},
+            {'transport': 'rdma', 'traddr': '2001:db8::1',
+             'trsvcid': '4420', 'subsysnqn': io_subsys + "-global"},
+        ]
+
+        self._run('connect-all', '-t', 'rdma', '-a', 'fe80::20c:caff:fe12:6747%lo',
+                  '-s', '4420')
+
+        by_nqn = {c['subsysnqn']: c['traddr'] for c in self.server.controllers.values()}
+        self.assertEqual(by_nqn.get(io_subsys), 'fe80::20c:caff:fe12:6747%lo')
+        # Only link-local addresses are scoped.
+        self.assertEqual(by_nqn.get(io_subsys + "-global"), '2001:db8::1')
+
+    def test_connect_all_link_local_unscoped_dc(self):
+        """Without a scope on the DC's traddr nothing is invented."""
+        io_subsys = "nqn.2014-08.org.nvmexpress:io-subsys-ll-noscope"
+        self.server.discovery_entries = [
+            {'transport': 'rdma', 'traddr': 'fe80::2', 'trsvcid': '4420',
+             'subsysnqn': io_subsys},
+        ]
+
+        self._run('connect-all', '-t', 'rdma', '-a', '2001:db8::10', '-s', '4420')
+
+        by_nqn = {c['subsysnqn']: c['traddr'] for c in self.server.controllers.values()}
+        self.assertEqual(by_nqn.get(io_subsys), 'fe80::2')
+
+    def test_connect_all_link_local_global_scoped_dc(self):
+        """A scope on a non-link-local DC traddr names no link; don't inherit it."""
+        io_subsys = "nqn.2014-08.org.nvmexpress:io-subsys-ll-global-dc"
+        self.server.discovery_entries = [
+            {'transport': 'rdma', 'traddr': 'fe80::2', 'trsvcid': '4420',
+             'subsysnqn': io_subsys},
+        ]
+
+        self._run('connect-all', '-t', 'rdma', '-a', '2001:db8::10%lo', '-s', '4420')
+
+        by_nqn = {c['subsysnqn']: c['traddr'] for c in self.server.controllers.values()}
+        self.assertEqual(by_nqn.get(io_subsys), 'fe80::2')
+
+    def test_connect_dry_run(self):
+        """--dry-run does not write the connect arguments to the kernel."""
+        subsysnqn = "nqn.2014-08.org.nvmexpress:my-io-subsys-1"
+        self._run('connect', '-t', 'tcp', '-a', '192.168.1.10', '-s', '4420',
+                  '-n', subsysnqn, '--dry-run')
+        self.assertEqual(self.server.controllers, {})
+        self.assertFalse(self._ctrl_path(0).exists())
+
+    def test_connect_all_dry_run(self):
+        """Discovery needs a connection to the Discovery Controller, so
+        --dry-run stops before connecting it and says so."""
+        self.server.discovery_entries = [
+            {
+                'transport': 'tcp',
+                'traddr': '192.168.1.200',
+                'trsvcid': '4420',
+                'subsysnqn': 'nqn.2014-08.org.nvmexpress:mock-target-nvm-subsystem',
+            },
+        ]
+        res = self._run('connect-all', '-t', 'tcp', '-a', '192.168.1.1',
+                        '--dry-run')
+        self.assertEqual(self.server.controllers, {})
+        self.assertIn("dry-run", res.stderr)
+
+    def test_disconnect_dry_run(self):
+        """--dry-run does not delete the controller."""
+        subsysnqn = "nqn.2014-08.org.nvmexpress:my-io-subsys-1"
+        self._run('connect', '-t', 'tcp', '-a', '192.168.1.10', '-s', '4420',
+                  '-n', subsysnqn)
+        self._run('disconnect', '-n', subsysnqn, '--dry-run')
+        self._assert_persisted(0)
+        self._run('disconnect', '-n', subsysnqn)
+        self._assert_disconnected(0)
+
+    def test_connect_already_connected(self):
+        """Test how connect handles EALREADY (already connected) error gracefully."""
+        self.server.connect_errno = 114  # EALREADY
+        subsysnqn = "nqn.2014-08.org.nvmexpress:my-io-subsys-1"
+
+        # Without --verbose, EALREADY is reported through the exit code alone --
+        # no "already connected" text on either stream, so scripts don't have to
+        # filter it out of normal output.
+        res = self._run('connect', '-t', 'tcp', '-a', '192.168.1.10', '-s', '4420', '-n', subsysnqn,
+                        expect_fail=True)
+        self.assertNotIn("already connected", res.stdout)
+        self.assertNotIn("already connected", res.stderr)
+
+        # -v surfaces the detail. nvme-cli reports it itself (rather than relying
+        # on libnvme's own internal logging), so it lands on stdout as info --
+        # nvme-cli's own --verbose output is not the same thing as libnvme's
+        # internal logging, which is what moved to stderr.
+        res = self._run('connect', '-t', 'tcp', '-a', '192.168.1.10', '-s', '4420', '-n', subsysnqn,
+                        '-v', expect_fail=True)
+        self.assertIn("already connected", res.stdout)
+
+    def test_connect_already_connected_idempotent(self):
+        """--idempotent turns EALREADY into success (exit 0) instead of a
+        failure, still silent unless --verbose is given."""
+        self.server.connect_errno = 114  # EALREADY
+        subsysnqn = "nqn.2014-08.org.nvmexpress:my-io-subsys-1"
+
+        res = self._run('connect', '-t', 'tcp', '-a', '192.168.1.10', '-s', '4420', '-n', subsysnqn,
+                        '--idempotent')
+        self.assertNotIn("already connected", res.stdout)
+        self.assertNotIn("already connected", res.stderr)
+
+        res = self._run('connect', '-t', 'tcp', '-a', '192.168.1.10', '-s', '4420', '-n', subsysnqn,
+                        '--idempotent', '-v')
+        self.assertIn("already connected", res.stdout)
+
+    def test_connect_already_connected_precheck(self):
+        """A second connect to an already-live target is caught by
+        libnvmf_connect()'s own precheck (lookup_live_ctrl()), before any
+        ioctl is attempted. The CLI relies on for --idempotent and for
+        knowing not to print its own generic "failed to connect" message
+        on top of hook_already_connected()'s on the correct error code."""
+        subsysnqn = "nqn.2014-08.org.nvmexpress:my-io-subsys-1"
+        # Each nvme invocation auto-generates its own random hostnqn/hostid
+        # unless one is pinned, landing in a different in-memory host object.
+        # lookup_live_ctrl() only searches the *current* host's own
+        # subsystems, so without a shared identity the second process could
+        # never recognize this as already connected, no matter what the
+        # fake sysfs tree says.
+        hostnqn = "nqn.2014-08.org.nvmexpress:uuid:22222222-2222-2222-2222-222222222222"
+        connect_args = ('connect', '-t', 'tcp', '-a', '192.168.1.10', '-s', '4420', '-n', subsysnqn,
+                        '--hostnqn', hostnqn)
+
+        self._run(*connect_args)
+        self.assertTrue(self._ctrl_path(0).exists(), "Mock controller directory was not created under sysfs")
+
+        # Plain connect: fails, silently unless -v, and without a second,
+        # generic "failed to connect" message alongside it.
+        res = self._run(*connect_args, expect_fail=True)
+        self.assertNotIn("already connected", res.stdout)
+        self.assertNotIn("already connected", res.stderr)
+        self.assertNotIn("failed to connect", res.stderr)
+
+        res = self._run(*connect_args, '-v', expect_fail=True)
+        self.assertIn("already connected", res.stdout)
+        self.assertNotIn("failed to connect", res.stderr)
+
+        # --idempotent: succeeds instead.
+        res = self._run(*connect_args, '--idempotent')
+        self.assertNotIn("already connected", res.stdout)
+        self.assertNotIn("already connected", res.stderr)
+
+    # ------------------------------------------------------------------ #
+    # Registry ownership across connect                                  #
+    # ------------------------------------------------------------------ #
+    #
+    # A pinned hostnqn is required throughout: every nvme invocation
+    # otherwise generates its own, landing in a different in-memory host
+    # object, and lookup_live_ctrl() only searches the current host's
+    # subsystems. Without it a second connect could never be recognized as
+    # a reuse (see test_connect_already_connected_precheck).
+    _OWNER_HOSTNQN = ("nqn.2014-08.org.nvmexpress:uuid:"
+                      "33333333-3333-3333-3333-333333333333")
+
+    def _owner_connect_args(self, subsysnqn, traddr='192.168.20.10'):
+        return ('connect', '-t', 'tcp', '-a', traddr, '-s', '4420',
+                '-n', subsysnqn, '--hostnqn', self._OWNER_HOSTNQN)
+
+    def test_connect_registry_ownership(self):
+        """A fresh connect claims the registry entry; a reuse only touches
+        it when --owner says so."""
+        subsysnqn = "nqn.2014-08.org.nvmexpress:owned-io-subsys"
+        args = self._owner_connect_args(subsysnqn)
+
+        self._run(*args, '--owner=stas')
+        self.assertEqual(self._owner(0), 'stas')
+
+        # Reuse without --owner: intent unstated, entry left alone.
+        self._run(*args, '--idempotent')
+        self.assertEqual(self._owner(0), 'stas')
+
+        # Reuse with --owner: an explicit steal.
+        self._run(*args, '--idempotent', '--owner=other')
+        self.assertEqual(self._owner(0), 'other')
+
+        # Reuse with an empty --owner: an explicit disown.
+        self._run(*args, '--idempotent', '--owner=')
+        self.assertIsNone(self._owner(0))
+
+    def test_connect_fresh_clears_stale_registry_entry(self):
+        """A controller the kernel just created cannot legitimately be
+        owned, so a recycled instance number's stale entry is dropped."""
+        subsysnqn = "nqn.2014-08.org.nvmexpress:recycled-io-subsys"
+        stale = Path(f"{self.base_dir}/registry/nvme0")
+        stale.mkdir(parents=True)
+        (stale / "owner").write_text("stas\n")
+
+        self._run(*self._owner_connect_args(subsysnqn))
+        self.assertIsNone(self._owner(0))
+
+    def test_connect_all_does_not_steal_io_ctrl_ownership(self):
+        """The Discovery Log Page walk reaches an already-connected I/O
+        controller through the kernel's EALREADY, before any registry
+        update, so connect-all never claims one it did not create."""
+        self.server.reject_duplicate_connect = True
+        io_subsys = "nqn.2014-08.org.nvmexpress:walked-io-subsys"
+        io_addr = '192.168.20.10'
+        dc_addr = '192.168.20.1'
+
+        self._run(*self._owner_connect_args(io_subsys, io_addr),
+                  '--owner=stas')
+        self.assertEqual(self._owner(0), 'stas')
+
+        self.server.discovery_entries = [
+            {'transport': 'tcp', 'traddr': io_addr, 'trsvcid': '4420',
+             'subsysnqn': io_subsys},
+        ]
+        self._run('connect-all', '-t', 'tcp', '-a', dc_addr,
+                  '--hostnqn', self._OWNER_HOSTNQN, '--owner=other')
+
+        self.assertEqual(self._owner(0), 'stas')
+
+    def test_custom_identify(self):
+        """Test getting custom Identify Controller fields steered by environment."""
+        # Create a mock controller nvme0 in sysfs first, so nvme list has something to read.
+        subsysnqn = "nqn.2014-08.org.nvmexpress:my-io-subsys-1"
+        inst_dir = self._ctrl_path(0)
+        inst_dir.mkdir(parents=True, exist_ok=True)
+        (inst_dir / "transport").write_text("tcp\n")
+        (inst_dir / "address").write_text("traddr=192.168.1.10,trsvcid=4420\n")
+        (inst_dir / "subsysnqn").write_text(f"{subsysnqn}\n")
+        (inst_dir / "state").write_text("live\n")
+
+        sub_dir = Path(f"{self.sysfs_dir}/sys/class/nvme-subsystem/nvme-subsys0")
+        sub_dir.mkdir(parents=True, exist_ok=True)
+        (sub_dir / "subsysnqn").write_text(f"{subsysnqn}\n")
+        (sub_dir / "nvme0").mkdir(exist_ok=True)
+
+        custom_sn = "SN_MOCK_XYZ_999"
+        custom_mn = "Model_Mock_SuperFast_PRO"
+        self.server.serial_number = custom_sn
+        self.server.model_number = custom_mn
+
+        # Use admin-passthru to submit an Identify Controller admin command (opcode 0x06, CNS 1)
+        # to our mock character device and assert that it receives our customized parameters.
+        res = self._run('admin-passthru', '/dev/nvme0', '-O', '0x06', '-4', '1', '-l', '4096', '-r')
+
+        # The output printed contains ASCII interpretation of the hex dump.
+        # Since it can be formatted/wrapped, we search for contiguous parts.
+        self.assertIn("SN_MOCK_XYZ_", res.stdout)
+        self.assertIn("999", res.stdout)
+        self.assertIn("Model_Mo", res.stdout)
+        self.assertIn("ck_SuperFast", res.stdout)
+
+    def test_connect_all_three_hop_referral_cascade(self):
+        """Test connect-all with three Discovery Controllers in a referral chain: DC a -> DC b -> DC c -> IO subsys C."""
+        dc_a = "nqn.2014-08.org.nvmexpress:dc-A"
+        dc_b = "nqn.2014-08.org.nvmexpress:dc-B"
+        dc_c = "nqn.2014-08.org.nvmexpress:dc-C"
+        io_c = "nqn.2014-08.org.nvmexpress:io-subsys-C"
+
+        # Configure our Python mock server to map each subsystem NQN to its specific log entries.
+        self.server.discovery_map = {
+            dc_a: [{'transport': 'tcp', 'traddr': '192.168.100.2', 'trsvcid': '4420', 'subsysnqn': dc_b}],
+            dc_b: [{'transport': 'tcp', 'traddr': '192.168.100.3', 'trsvcid': '4420', 'subsysnqn': dc_c}],
+            dc_c: [{'transport': 'tcp', 'traddr': '192.168.100.4', 'trsvcid': '4420', 'subsysnqn': io_c}],
+        }
+
+        # Connect to the first discovery controller (DC a), which should trigger the recursive cascade.
+        self._run('connect-all', '-t', 'tcp', '-a', '192.168.100.1', '-n', dc_a)
+
+        # Verify that all controllers are successfully connected under sysfs:
+        # DC a -> nvme0, DC b -> nvme1, DC c -> nvme2, IO C -> nvme3.
+        self.assertTrue(self._ctrl_path(0).exists(), "DC a (nvme0) not created")
+        self.assertTrue(self._ctrl_path(1).exists(), "DC b (nvme1) not created")
+        self.assertTrue(self._ctrl_path(2).exists(), "DC c (nvme2) not created")
+        self.assertTrue(self._ctrl_path(3).exists(), "IO c (nvme3) not created")
+
+        self.assertEqual(self._subsysnqn(0), dc_a)
+        self.assertEqual(self._subsysnqn(1), dc_b)
+        self.assertEqual(self._subsysnqn(2), dc_c)
+        self.assertEqual(self._subsysnqn(3), io_c)
+
+    # ------------------------------------------------------------------ #
+    # --persistent=[no|auto|force] and EPCSD corner cases                #
+    # ------------------------------------------------------------------ #
+    #
+    # A discovery controller's own EPCSD (Explicit Persistent Connection
+    # Support for Discovery) is only ever reported in the "current discovery
+    # subsystem" entry it returns about itself (SUBTYPE=03h, NVME_NQN_CURR).
+    # These tests supply that self-entry with traddr/trsvcid matching the
+    # connection actually opened by `discover`/`connect-all` (no transport
+    # options, default TCP discovery port 8009) so libnvme recognizes it as
+    # describing the very connection it's deciding whether to keep.
+    #
+    # Every `discover` invocation below first does a throwaway probe connect
+    # to look up any registered owner (nvme0 -- always torn down regardless
+    # of --persistent) before opening the real discovery connection whose
+    # persistence is under test (nvme1).
+    _PROBE_INSTANCE = 0
+    _DISCOVERY_INSTANCE = 1
+
+    def _self_entry(self, addr, eflags=0, trsvcid=DISCOVERY_PORT, subsysnqn=DISCOVERY_NQN):
+        return {
+            'subtype': NVME_NQN_CURR,
+            'transport': 'tcp',
+            'traddr': addr,
+            'trsvcid': trsvcid,
+            'subsysnqn': subsysnqn,
+            'eflags': eflags,
+        }
+
+    def test_discover_persistent_default_persists(self):
+        """Without --persistent, the default is "auto": persist when EPCSD is set."""
+        addr = '192.168.10.1'
+        self.server.discovery_entries = [self._self_entry(addr, eflags=NVMF_DISC_EFLAGS_EPCSD)]
+
+        self._run('discover', '-t', 'tcp', '-a', addr)
+        self._assert_persisted(self._DISCOVERY_INSTANCE)
+
+    def test_discover_persistent_self_entry_ipv6_notation(self):
+        """The self entry matches by address value, not by spelling.
+
+        libnvme canonicalizes the DC's traddr, while the DC may report
+        itself in any valid IPv6 notation.
+        """
+        for addr, reported in (('2001:db8::a', '2001:DB8:0:0::A'),
+                               ('fe80::a%lo', 'FE80:0::A')):
+            with self.subTest(addr=addr):
+                self.server.discovery_entries = [
+                    self._self_entry(reported, eflags=NVMF_DISC_EFLAGS_EPCSD)]
+                self.server.controllers.clear()
+                self.server.next_instance = 0
+                shutil.rmtree(Path(self.sysfs_dir) / "sys/class/nvme")
+                Path(self.sysfs_dir, "sys/class/nvme").mkdir()
+
+                self._run('discover', '-t', 'tcp', '-a', addr)
+                self._assert_persisted(self._DISCOVERY_INSTANCE)
+
+    def test_discover_persistent_default_disconnects_without_epcsd(self):
+        """The "auto" default still degrades to non-persistent when EPCSD isn't set."""
+        addr = '192.168.10.11'
+        self.server.discovery_entries = [self._self_entry(addr, eflags=0)]
+
+        self._run('discover', '-t', 'tcp', '-a', addr)
+        self._assert_disconnected(self._DISCOVERY_INSTANCE)
+
+    def test_discover_persistent_no_ignores_epcsd(self):
+        """--persistent=no opts out of the default: always disconnect, even with EPCSD set."""
+        addr = '192.168.10.2'
+        self.server.discovery_entries = [self._self_entry(addr, eflags=NVMF_DISC_EFLAGS_EPCSD)]
+
+        self._run('discover', '-t', 'tcp', '-a', addr, '--persistent=no')
+        self._assert_disconnected(self._DISCOVERY_INSTANCE)
+
+    def test_discover_persistent_auto_epcsd_set_persists(self):
+        """--persistent (bare => auto) keeps the connection when the entry's own EPCSD is set."""
+        addr = '192.168.10.3'
+        self.server.discovery_entries = [self._self_entry(addr, eflags=NVMF_DISC_EFLAGS_EPCSD)]
+
+        self._run('discover', '-t', 'tcp', '-a', addr, '--persistent')
+        self._assert_persisted(self._DISCOVERY_INSTANCE)
+
+    def test_discover_persistent_auto_epcsd_unset_disconnects(self):
+        """--persistent=auto degrades to non-persistent (with a warning) when EPCSD isn't set."""
+        addr = '192.168.10.4'
+        self.server.discovery_entries = [self._self_entry(addr, eflags=0)]
+
+        # -v raises the log level to WARN so the "not persisting" message shows up.
+        # It's libnvme's own internal diagnostic, so it lands on stderr, not stdout.
+        res = self._run('discover', '-t', 'tcp', '-a', addr, '--persistent=auto', '-v')
+        self._assert_disconnected(self._DISCOVERY_INSTANCE)
+        self.assertIn("EPCSD", res.stderr)
+
+    def test_discover_persistent_auto_no_self_entry_disconnects(self):
+        """No self-entry (SUBTYPE=03h) at all is defined identically to EPCSD=0."""
+        addr = '192.168.10.5'
+        self.server.discovery_entries = []
+
+        self._run('discover', '-t', 'tcp', '-a', addr, '--persistent=auto')
+        self._assert_disconnected(self._DISCOVERY_INSTANCE)
+
+    def test_discover_persistent_force_ignores_epcsd(self):
+        """--persistent=force keeps the connection regardless of what EPCSD reports."""
+        addr = '192.168.10.6'
+        self.server.discovery_entries = [self._self_entry(addr, eflags=0)]
+
+        self._run('discover', '-t', 'tcp', '-a', addr, '--persistent=force')
+        self._assert_persisted(self._DISCOVERY_INSTANCE)
+
+    def test_discover_persistent_separate_value_arg_is_rejected(self):
+        """The optional value of --persistent has to be glued with '='. A
+        separate argv token is an operand, which discover does not take, so
+        it fails instead of silently running with mode "auto"."""
+        addr = '192.168.10.7'
+        self.server.discovery_entries = [self._self_entry(addr, eflags=0)]
+
+        res = self._run('discover', '-t', 'tcp', '-a', addr,
+                        '--persistent', 'force', expect_fail=True)
+        self.assertIn("unexpected argument 'force'", res.stderr)
+        self.assertEqual(self.server.controllers, {})
+
+    def test_connect_all_persistent_auto_epcsd_referral_hop(self):
+        """Referral (non-self) Discovery Controller entries decide persistence
+        from their own EFLAGS directly, without needing a self-entry."""
+        dc_a = "nqn.2014-08.org.nvmexpress:dc-epcsd-A"
+        dc_b = "nqn.2014-08.org.nvmexpress:dc-epcsd-B"  # EPCSD set: should persist
+        dc_c = "nqn.2014-08.org.nvmexpress:dc-epcsd-C"  # EPCSD unset: should disconnect
+
+        self.server.discovery_map = {
+            dc_a: [
+                {'transport': 'tcp', 'traddr': '192.168.110.2', 'trsvcid': '4420',
+                 'subsysnqn': dc_b, 'eflags': NVMF_DISC_EFLAGS_EPCSD},
+                {'transport': 'tcp', 'traddr': '192.168.110.3', 'trsvcid': '4420',
+                 'subsysnqn': dc_c, 'eflags': 0},
+            ],
+        }
+
+        self._run('connect-all', '-t', 'tcp', '-a', '192.168.110.1', '-n', dc_a, '--persistent')
+
+        self.assertEqual(self._subsysnqn(1), dc_b)
+        self.assertEqual(self._subsysnqn(2), dc_c)
+        self._assert_persisted(1, "dc-epcsd-B (EPCSD set) should have stayed connected")
+        self._assert_disconnected(2, "dc-epcsd-C (EPCSD unset) should have been disconnected")
+
+    # ------------------------------------------------------------------ #
+    # Keep-alive timeout (KATO) of discovery connections                 #
+    # ------------------------------------------------------------------ #
+    #
+    # A non-zero KATO in the Connect command asks a DC for a persistent
+    # connection and for AENs. nvme discover and connect-all ask for 30 s
+    # unless --persistent=no; nvme connect sends only what it is given.
+
+    def _kato(self, instance):
+        return self.server.controllers[instance]['keep_alive_tmo']
+
+    def test_discover_kato(self):
+        """nvme discover: 30 s by default, the configured value, or none."""
+        cases = (
+            ((), '30'),
+            (('--persistent=force',), '30'),
+            (('--keep-alive-tmo=15',), '15'),
+            (('--persistent=no',), None),
+            (('--persistent=no', '--keep-alive-tmo=15'), None),
+        )
+        addr = '192.168.12.1'
+        self.server.discovery_entries = [
+            self._self_entry(addr, eflags=NVMF_DISC_EFLAGS_EPCSD)]
+        for args, kato in cases:
+            with self.subTest(args=args):
+                self.server.controllers.clear()
+                self.server.next_instance = 0
+                shutil.rmtree(Path(self.sysfs_dir) / "sys/class/nvme")
+                Path(self.sysfs_dir, "sys/class/nvme").mkdir()
+
+                self._run('discover', '-t', 'tcp', '-a', addr, *args)
+                self.assertEqual(self._kato(self._DISCOVERY_INSTANCE), kato)
+
+    def test_connect_discovery_nqn_kato(self):
+        """nvme connect to the well-known NQN applies no KATO default."""
+        for args, kato in (((), None), (('--keep-alive-tmo=15',), '15')):
+            with self.subTest(args=args):
+                self.server.controllers.clear()
+                self.server.next_instance = 0
+                shutil.rmtree(Path(self.sysfs_dir) / "sys/class/nvme")
+                Path(self.sysfs_dir, "sys/class/nvme").mkdir()
+
+                self._run('connect', '-t', 'tcp', '-a', '192.168.12.2',
+                          '-s', DISCOVERY_PORT, '-n', DISCOVERY_NQN, *args)
+                self.assertEqual(self._kato(0), kato)
+
+    def test_connect_discovery_flag(self):
+        """--discovery marks a unique-NQN DC as a DC for the kernel."""
+        dc = "nqn.2014-08.org.nvmexpress:dc-unique"
+        cases = (
+            (dc, (), False),
+            (dc, ('--discovery',), True),
+            # The kernel recognizes the well-known NQN by itself.
+            (DISCOVERY_NQN, ('--discovery',), False),
+        )
+        for nqn, args, discovery in cases:
+            with self.subTest(nqn=nqn, args=args):
+                self.server.controllers.clear()
+                self.server.next_instance = 0
+                shutil.rmtree(Path(self.sysfs_dir) / "sys/class/nvme")
+                Path(self.sysfs_dir, "sys/class/nvme").mkdir()
+
+                self._run('connect', '-t', 'tcp', '-a', '192.168.12.6',
+                          '-s', DISCOVERY_PORT, '-n', nqn, *args)
+                self.assertEqual(
+                    self.server.controllers[0]['discovery'], discovery)
+
+    def test_connect_all_referral_kato(self):
+        """A referred DC gets 30 s; the IOC it lists does not inherit it."""
+        dc_a = "nqn.2014-08.org.nvmexpress:dc-kato-A"
+        dc_b = "nqn.2014-08.org.nvmexpress:dc-kato-B"
+        io_b = "nqn.2014-08.org.nvmexpress:io-kato-B"
+        self.server.discovery_map = {
+            dc_a: [{'transport': 'tcp', 'traddr': '192.168.12.4',
+                    'trsvcid': '4420', 'subsysnqn': dc_b}],
+            dc_b: [{'transport': 'tcp', 'traddr': '192.168.12.5',
+                    'trsvcid': '4420', 'subsysnqn': io_b}],
+        }
+
+        self._run('connect-all', '-t', 'tcp', '-a', '192.168.12.3',
+                  '-n', dc_a)
+
+        self.assertEqual(self._subsysnqn(0), dc_a)
+        self.assertEqual(self._subsysnqn(1), dc_b)
+        self.assertEqual(self._subsysnqn(2), io_b)
+        self.assertEqual(self._kato(0), '30')
+        self.assertEqual(self._kato(1), '30')
+        self.assertIsNone(self._kato(2))
+
+    # ------------------------------------------------------------------ #
+    # Discovery-walk mechanics: depth cap, visited-set, referral-vs-self #
+    # entry precedence, and resuming an already-connected DC's own      #
+    # sub-tree. See dc_walk_referral()/dc_visited_*()/dc_decide() in     #
+    # libnvme/src/nvme/fabrics.c.                                        #
+    # ------------------------------------------------------------------ #
+
+    def test_connect_all_referral_self_entry_overrides_parent_view(self):
+        """A referred DC's own self entry (SUBTYPE=03h) decides its own
+        persistence -- not the EPCSD its parent's referral entry reported
+        for it."""
+        dc_a = "nqn.2014-08.org.nvmexpress:dc-self-override-A"
+        dc_b = "nqn.2014-08.org.nvmexpress:dc-self-override-B"
+        dc_b_addr = '192.168.130.2'
+        dc_b_trsvcid = '4420'
+
+        self.server.discovery_map = {
+            # dc_a's own view of dc_b under-reports EPCSD (0): if this were
+            # used, dc_b would disconnect.
+            dc_a: [
+                {'transport': 'tcp', 'traddr': dc_b_addr, 'trsvcid': dc_b_trsvcid,
+                 'subsysnqn': dc_b, 'eflags': 0},
+            ],
+            # dc_b's own self entry says EPCSD=1 -- its own report must win
+            # once dc_b is connected to and its own DLP is fetched.
+            dc_b: [
+                self._self_entry(dc_b_addr, eflags=NVMF_DISC_EFLAGS_EPCSD,
+                                  trsvcid=dc_b_trsvcid, subsysnqn=dc_b),
+            ],
+        }
+
+        self._run('connect-all', '-t', 'tcp', '-a', '192.168.130.1', '-n', dc_a,
+                 '--persistent')
+
+        self.assertEqual(self._subsysnqn(1), dc_b)
+        self._assert_persisted(1, "dc_b's own self entry (EPCSD=1) should have "
+                                  "overridden its parent's referral view (EPCSD=0)")
+
+    def test_connect_all_already_connected_referral_walks_subtree(self):
+        """A referral DC that's already connected before connect-all runs
+        must still have its own Discovery Log Page walked, not just
+        skipped -- the bug that motivated the discovery-walk rewrite."""
+        dc_a = "nqn.2014-08.org.nvmexpress:dc-resume-A"
+        dc_b = "nqn.2014-08.org.nvmexpress:dc-resume-B"
+        io_c = "nqn.2014-08.org.nvmexpress:io-resume-C"
+        dc_b_addr = '192.168.140.2'
+        dc_b_trsvcid = '4420'
+        # Each invocation of the nvme binary auto-generates its own random
+        # hostnqn/hostid unless one is pinned, landing in a different
+        # in-memory host object -- lookup_live_ctrl() only ever searches
+        # the *current* host's own subsystems, so without a shared identity
+        # the second process could never recognize dc_b as already
+        # connected, no matter what the fake sysfs tree says.
+        hostnqn = "nqn.2014-08.org.nvmexpress:uuid:11111111-1111-1111-1111-111111111111"
+
+        # Pre-connect dc_b directly, as if an earlier session already
+        # reached it. Becomes nvme0, tracked in the fake topology tree.
+        self._run('connect', '-t', 'tcp', '-a', dc_b_addr, '-s', dc_b_trsvcid,
+                 '-n', dc_b, '--hostnqn', hostnqn)
+        self.assertEqual(self._subsysnqn(0), dc_b)
+
+        self.server.discovery_map = {
+            dc_a: [
+                {'transport': 'tcp', 'traddr': dc_b_addr, 'trsvcid': dc_b_trsvcid,
+                 'subsysnqn': dc_b},
+            ],
+            # Only consulted if the walk resumes into the already-connected
+            # dc_b -- that resumption is the behavior under test.
+            dc_b: [
+                {'transport': 'tcp', 'traddr': '192.168.140.3', 'trsvcid': '4420',
+                 'subsysnqn': io_c},
+            ],
+        }
+
+        self._run('connect-all', '-t', 'tcp', '-a', '192.168.140.1', '-n', dc_a,
+                 '--hostnqn', hostnqn)
+
+        # instance 0 = dc_b (pre-existing), 1 = dc_a (primary, connected
+        # fresh), 2 = io_c (only reachable if dc_b's subtree was walked).
+        self.assertEqual(self._subsysnqn(1), dc_a)
+        self.assertTrue(self._ctrl_path(2).exists(),
+                        "io_c behind the already-connected dc_b was never "
+                        "discovered -- its sub-tree wasn't walked")
+        self.assertEqual(self._subsysnqn(2), io_c)
+        self._assert_persisted(0, "an already-connected (borrowed) DC must "
+                                  "never be disconnected by the walk")
+
+    def test_connect_all_referral_depth_cap(self):
+        """The walk stops after NVMF_MAX_REFERRAL_DEPTH (8) referral hops:
+        the primary is depth 0, dc_1..dc_8 (depths 1-8) connect, dc_9
+        (depth 9) does not."""
+        n = 10  # dc_0 (primary) .. dc_9
+        dcs = [f"nqn.2014-08.org.nvmexpress:dc-depth-{i}" for i in range(n)]
+        self.server.discovery_map = {
+            dcs[i]: [{'transport': 'tcp', 'traddr': f'192.168.120.{i + 2}',
+                     'trsvcid': '4420', 'subsysnqn': dcs[i + 1]}]
+            for i in range(n - 1)
+        }
+
+        self._run('connect-all', '-t', 'tcp', '-a', '192.168.120.1', '-n', dcs[0])
+
+        for i in range(9):  # dc_0..dc_8, depths 0-8, all connect
+            self.assertTrue(self._ctrl_path(i).exists(),
+                            f"dc_{i} (depth {i}) was not connected")
+            self.assertEqual(self._subsysnqn(i), dcs[i])
+
+        self.assertFalse(self._ctrl_path(9).exists(),
+                         "dc_9 (depth 9) should not have been connected: "
+                         "exceeds the referral depth cap")
+
+    def test_connect_all_referral_cycle_visited_once(self):
+        """A referral cycle (dc_a -> dc_b -> dc_a) must not be re-walked:
+        dc_a's Discovery Log Page is fetched exactly once despite the
+        cycle, and a sibling entry alongside the back-reference is still
+        discovered."""
+        dc_a = "nqn.2014-08.org.nvmexpress:dc-cycle-A"
+        dc_b = "nqn.2014-08.org.nvmexpress:dc-cycle-B"
+        io_c = "nqn.2014-08.org.nvmexpress:io-cycle-C"
+
+        self.server.discovery_map = {
+            dc_a: [
+                {'transport': 'tcp', 'traddr': '192.168.150.2', 'trsvcid': '4420',
+                 'subsysnqn': dc_b},
+            ],
+            dc_b: [
+                # Back-reference to the primary's own connection params.
+                {'transport': 'tcp', 'traddr': '192.168.150.1', 'trsvcid': DISCOVERY_PORT,
+                 'subsysnqn': dc_a},
+                {'transport': 'tcp', 'traddr': '192.168.150.3', 'trsvcid': '4420',
+                 'subsysnqn': io_c},
+            ],
+        }
+
+        self._run('connect-all', '-t', 'tcp', '-a', '192.168.150.1', '-n', dc_a)
+
+        self.assertEqual(self._subsysnqn(1), dc_b)
+        self.assertEqual(self._subsysnqn(2), io_c)
+        self.assertEqual(self.server.log_page_fetch_count.get(dc_a, 0), 1,
+                         "dc_a's Discovery Log Page was re-fetched via the "
+                         "cycle; the visited-set should have short-circuited it")
+
+    def test_connect_all_referral_ring_visited_once(self):
+        """A fully bidirectional 3-DC referral ring (dc_a <-> dc_b <-> dc_c
+        <-> dc_a, every node referring to both its ring-neighbors) must not
+        re-walk any of them: each DC's Discovery Log Page is fetched exactly
+        once despite every node having a path back to every other node."""
+        dc_a = "nqn.2014-08.org.nvmexpress:dc-ring-A"
+        dc_b = "nqn.2014-08.org.nvmexpress:dc-ring-B"
+        dc_c = "nqn.2014-08.org.nvmexpress:dc-ring-C"
+
+        self.server.discovery_map = {
+            dc_a: [
+                {'transport': 'tcp', 'traddr': '192.168.160.2', 'trsvcid': '4420',
+                 'subsysnqn': dc_b},
+                {'transport': 'tcp', 'traddr': '192.168.160.3', 'trsvcid': '4420',
+                 'subsysnqn': dc_c},
+            ],
+            dc_b: [
+                # Back-reference to the primary's own connection params.
+                {'transport': 'tcp', 'traddr': '192.168.160.1', 'trsvcid': DISCOVERY_PORT,
+                 'subsysnqn': dc_a},
+                {'transport': 'tcp', 'traddr': '192.168.160.3', 'trsvcid': '4420',
+                 'subsysnqn': dc_c},
+            ],
+            dc_c: [
+                {'transport': 'tcp', 'traddr': '192.168.160.2', 'trsvcid': '4420',
+                 'subsysnqn': dc_b},
+                # Back-reference to the primary's own connection params.
+                {'transport': 'tcp', 'traddr': '192.168.160.1', 'trsvcid': DISCOVERY_PORT,
+                 'subsysnqn': dc_a},
+            ],
+        }
+
+        self._run('connect-all', '-t', 'tcp', '-a', '192.168.160.1', '-n', dc_a)
+
+        self.assertEqual(self._subsysnqn(1), dc_b)
+        self.assertEqual(self._subsysnqn(2), dc_c)
+        for nqn in (dc_a, dc_b, dc_c):
+            self.assertEqual(self.server.log_page_fetch_count.get(nqn, 0), 1,
+                             f"{nqn}'s Discovery Log Page was re-fetched via "
+                             "the ring; the visited-set should have "
+                             "short-circuited every back-reference")
+
+    # ------------------------------------------------------------------ #
+    # Default --nr-io-queues                                             #
+    # ------------------------------------------------------------------ #
+
+    _NR_IO_QUEUES_NQN = "nqn.2014-08.org.nvmexpress:nr-io-queues-subsys"
+
+    def _connect_nr_io_queues(self, traddr='192.168.30.10', *extra,
+                              transport='tcp'):
+        """Connects to @traddr. Returns the nr_io_queues connect option,
+        or None if nvme-cli did not set one."""
+        self._run('connect', '-t', transport, '-a', traddr, '-s', '4420',
+                  '-n', self._NR_IO_QUEUES_NQN, *extra)
+        return self.server.controllers[0]['nr_io_queues']
+
+    def _setup_nic(self, traddr='192.168.30.10', ifname='eth0',
+                   queues=(8, 0, 0), nprocs=4):
+        self.server.egress_ifaces[traddr] = ifname
+        self.server.nic_queues[ifname] = queues
+        self.server.nprocs = nprocs
+
+    def test_connect_nr_io_queues_limited_by_cpus(self):
+        """More NIC h/w queues than CPUs: use one I/O queue per CPU."""
+        self._setup_nic(queues=(8, 0, 0), nprocs=4)
+        self.assertEqual(self._connect_nr_io_queues(), '4')
+        self.assertEqual(self.server.route_lookups, [('192.168.30.10', '')])
+        self.assertEqual(self.server.nic_queue_queries, ['eth0'])
+
+    def test_connect_nr_io_queues_limited_by_hw_queues(self):
+        """Fewer NIC h/w queues than CPUs: use one I/O queue per h/w
+        queue. Count combined queues plus the paired tx/rx ones."""
+        self._setup_nic(queues=(2, 3, 1), nprocs=16)
+        self.assertEqual(self._connect_nr_io_queues(), '3')
+
+    def test_connect_nr_io_queues_single_hw_queue(self):
+        """A NIC with a single h/w queue: let the kernel decide."""
+        self._setup_nic(queues=(1, 0, 0), nprocs=4)
+        self.assertIsNone(self._connect_nr_io_queues())
+
+    def test_connect_nr_io_queues_no_route(self):
+        """No route to the target: let the kernel decide."""
+        self.server.nprocs = 4
+        self.assertIsNone(self._connect_nr_io_queues())
+        self.assertEqual(self.server.route_lookups, [('192.168.30.10', '')])
+        self.assertEqual(self.server.nic_queue_queries, [])
+
+    def test_connect_nr_io_queues_no_ethtool_channels(self):
+        """The NIC does not report its h/w queues: let the kernel decide."""
+        self._setup_nic(nprocs=4)
+        del self.server.nic_queues['eth0']
+        self.assertIsNone(self._connect_nr_io_queues())
+        self.assertEqual(self.server.nic_queue_queries, ['eth0'])
+
+    def test_connect_nr_io_queues_ipv6(self):
+        """The route lookup works for an IPv6 target and source too."""
+        self._setup_nic(traddr='fd00::10', queues=(6, 0, 0), nprocs=8)
+        self.assertEqual(
+            self._connect_nr_io_queues('fd00::10', '-w', 'fd00::1'), '6')
+        self.assertEqual(self.server.route_lookups, [('fd00::10', 'fd00::1')])
+
+    def test_connect_nr_io_queues_host_traddr(self):
+        """--host-traddr is the source address of the route lookup."""
+        self._setup_nic(queues=(8, 0, 0), nprocs=4)
+        self.assertEqual(
+            self._connect_nr_io_queues('192.168.30.10', '-w', '192.168.30.1'),
+            '4')
+        self.assertEqual(self.server.route_lookups,
+                         [('192.168.30.10', '192.168.30.1')])
+
+    def test_connect_nr_io_queues_host_iface(self):
+        """--host-iface names the NIC, so no route lookup is needed."""
+        self.server.nic_queues['eth7'] = (3, 0, 0)
+        self.server.nprocs = 4
+        self.assertEqual(self._connect_nr_io_queues('192.168.30.10',
+                                                    '-f', 'eth7'), '3')
+        self.assertEqual(self.server.route_lookups, [])
+        self.assertEqual(self.server.nic_queue_queries, ['eth7'])
+
+    def test_connect_nr_io_queues_explicit(self):
+        """An explicit --nr-io-queues wins, without any NIC query."""
+        self._setup_nic(queues=(8, 0, 0), nprocs=4)
+        self.assertEqual(self._connect_nr_io_queues('192.168.30.10',
+                                                    '-i', '2'), '2')
+        self.assertEqual(self.server.route_lookups, [])
+        self.assertEqual(self.server.nic_queue_queries, [])
+
+    def test_connect_nr_io_queues_rdma(self):
+        """Only tcp gets a default nr_io_queues."""
+        self._setup_nic(queues=(8, 0, 0), nprocs=4)
+        self.assertIsNone(self._connect_nr_io_queues(transport='rdma'))
+        self.assertEqual(self.server.route_lookups, [])
+
+    def _write_config(self, subsys_extra=''):
+        config = Path(self.base_dir) / 'nvme-fabrics.conf'
+        config.write_text(
+            "[Subsystem]\n"
+            f"nqn        = {self._NR_IO_QUEUES_NQN}\n"
+            f"{subsys_extra}"
+            "controller = transport=tcp;traddr=192.168.30.10;trsvcid=4420\n")
+        return str(config)
+
+    def test_connect_config_nr_io_queues(self):
+        """A config file connection gets the same default."""
+        self._setup_nic(queues=(8, 0, 0), nprocs=4)
+        self._run('connect', '-J', self._write_config())
+        self.assertEqual(self.server.controllers[0]['nr_io_queues'], '4')
+
+    def test_connect_config_nr_io_queues_explicit(self):
+        """nr-io-queues in the config file wins, without any NIC query."""
+        self._setup_nic(queues=(8, 0, 0), nprocs=4)
+        self._run('connect', '-J', self._write_config('nr-io-queues = 2\n'))
+        self.assertEqual(self.server.controllers[0]['nr_io_queues'], '2')
+        self.assertEqual(self.server.route_lookups, [])
+
+
+    # ------------------------------------------------------------------ #
+    # DH-HMAC-CHAP secrets (#4165)                                       #
+    # ------------------------------------------------------------------ #
+
+    _HOSTNQN = "nqn.2014-08.org.nvmexpress:uuid:22222222-2222-2222-2222-222222222222"
+    _KEY_A = "DHHC-1:00:EKN5fkA4mibMctEW+jyGddCJQZ/iNI1HXvsreK3ZypSStJiw:"
+    _KEY_B = "DHHC-1:00:lDJWs+pfI8j9StQqRBr8Q1tMF0H+dzRGrGQjTukguPNHnCV/:"
+    _KEY_C = "DHHC-1:00:xXMTILl3fA020aIzIbYpXQwF4hBR38zJXhQKRXgEHs/b9kvY:"
+
+    def _ctrls_for(self, subsysnqn):
+        return [c for c in self.server.controllers.values()
+                if c['subsysnqn'] == subsysnqn]
+
+    def _only_ctrl_for(self, subsysnqn):
+        ctrls = self._ctrls_for(subsysnqn)
+        self.assertEqual(len(ctrls), 1, f"expected one connect to {subsysnqn}")
+        return ctrls[0]
+
+    def test_connect_does_not_send_secret_of_other_subsystem(self):
+        """The scan must not hand a live controller's secret to a connect
+        to another subsystem."""
+        subsys_a = "nqn.2014-08.org.nvmexpress:secret-subsys-A"
+        subsys_b = "nqn.2014-08.org.nvmexpress:secret-subsys-B"
+
+        self._run('connect', '-t', 'tcp', '-a', '192.168.170.1', '-s', '4420',
+                  '-n', subsys_b, '--hostnqn', self._HOSTNQN, '-S', self._KEY_B)
+        self._run('connect', '-t', 'tcp', '-a', '192.168.170.2', '-s', '4420',
+                  '-n', subsys_a, '--hostnqn', self._HOSTNQN)
+
+        self.assertEqual(self._only_ctrl_for(subsys_b)['dhchap_secret'], self._KEY_B)
+        self.assertIsNone(self._only_ctrl_for(subsys_a)['dhchap_secret'],
+                          "subsys A received the secret of subsys B")
+
+    def test_connect_all_discovered_ctrls_inherit_host_secret_only(self):
+        """Discovered controllers get the DC's host secret, never its
+        controller secret. The well-known DC gets no controller secret
+        either (TP8017)."""
+        io_a = "nqn.2014-08.org.nvmexpress:secret-io-A"
+        io_b = "nqn.2014-08.org.nvmexpress:secret-io-B"
+        self.server.discovery_entries = [
+            {'transport': 'tcp', 'traddr': '192.168.171.2', 'trsvcid': '4420',
+             'subsysnqn': io_a},
+            {'transport': 'tcp', 'traddr': '192.168.171.3', 'trsvcid': '4420',
+             'subsysnqn': io_b},
+        ]
+
+        self._run('connect-all', '-t', 'tcp', '-a', '192.168.171.1',
+                  '--hostnqn', self._HOSTNQN, '-S', self._KEY_A, '-C', self._KEY_B)
+
+        for ctrl in self._ctrls_for(DISCOVERY_NQN):
+            self.assertEqual(ctrl['dhchap_secret'], self._KEY_A)
+            self.assertIsNone(ctrl['dhchap_ctrl_secret'])
+        for nqn in (io_a, io_b):
+            ctrl = self._only_ctrl_for(nqn)
+            self.assertEqual(ctrl['dhchap_secret'], self._KEY_A)
+            self.assertIsNone(ctrl['dhchap_ctrl_secret'])
+
+    def test_connect_all_device_inherits_live_dc_secret(self):
+        """connect-all --device on a live DC, without -S: discovered
+        controllers get that DC's secret, not one of another live
+        controller."""
+        dc = "nqn.2014-08.org.nvmexpress:dc-secret"
+        other_1 = "nqn.2014-08.org.nvmexpress:secret-other-1"
+        other_2 = "nqn.2014-08.org.nvmexpress:secret-other-2"
+        io_c = "nqn.2014-08.org.nvmexpress:secret-io-C"
+
+        # The DC is nvme1, between two other controllers, so it is not the
+        # last one scanned in either scan order.
+        self._run('connect', '-t', 'tcp', '-a', '192.168.172.1', '-s', '4420',
+                  '-n', other_1, '--hostnqn', self._HOSTNQN, '-S', self._KEY_B)
+        self._run('connect', '-t', 'tcp', '-a', '192.168.172.2', '-s', '4420',
+                  '-n', dc, '--hostnqn', self._HOSTNQN, '-S', self._KEY_A)
+        self._run('connect', '-t', 'tcp', '-a', '192.168.172.3', '-s', '4420',
+                  '-n', other_2, '--hostnqn', self._HOSTNQN, '-S', self._KEY_C)
+        sub_path = Path(self.sysfs_dir) / "sys/class/nvme-subsystem/nvme-subsys1"
+        (sub_path / "subsystype").write_text("discovery\n")
+        self.server.discovery_map = {
+            dc: [{'transport': 'tcp', 'traddr': '192.168.172.4', 'trsvcid': '4420',
+                  'subsysnqn': io_c}],
+        }
+
+        self._run('connect-all', '--device', 'nvme1', '--hostnqn', self._HOSTNQN)
+
+        self.assertEqual(self._only_ctrl_for(io_c)['dhchap_secret'], self._KEY_A)
+
+    def test_duplicate_connect_keeps_new_secret(self):
+        """A duplicate connect on a live path sends its own secret, not the
+        one of the live controller."""
+        subsys = "nqn.2014-08.org.nvmexpress:secret-dup"
+        args = ('connect', '-t', 'tcp', '-a', '192.168.173.1', '-s', '4420',
+                '-n', subsys, '--hostnqn', self._HOSTNQN)
+
+        self._run(*args, '-S', self._KEY_A)
+        self._run(*args, '-S', self._KEY_C, '--duplicate-connect')
+
+        secrets = sorted(c['dhchap_secret'] for c in self._ctrls_for(subsys))
+        self.assertEqual(secrets, sorted([self._KEY_A, self._KEY_C]))
+
+    def test_connect_all_config_section_keys_for_discovered_ctrls(self):
+        """A discovered controller gets the secrets of the section with its
+        NQN, also behind a referral. A secret the section does not set
+        comes from the DC, but never the DC's controller secret (#4167)."""
+        io_d = "nqn.2014-08.org.nvmexpress:secret-io-D"
+        io_e = "nqn.2014-08.org.nvmexpress:secret-io-E"
+        referral = "nqn.2014-08.org.nvmexpress:dc-secret-referral"
+        config = Path(self.base_dir) / 'nvme-fabrics.conf'
+        config.write_text(
+            "[Discovery Controller]\n"
+            f"kxchap-secret = {self._KEY_A}\n"
+            "controller = transport=tcp;traddr=192.168.174.1;trsvcid=8009\n"
+            "[Subsystem]\n"
+            f"nqn = {io_d}\n"
+            f"kxchap-secret = {self._KEY_B}\n"
+            f"kxchap-ctrl-secret = {self._KEY_C}\n"
+            "[Discovery Controller]\n"
+            f"nqn = {referral}\n"
+            f"kxchap-ctrl-secret = {self._KEY_C}\n")
+        self.server.discovery_entries = [
+            {'transport': 'tcp', 'traddr': '192.168.174.2',
+             'trsvcid': '4420', 'subsysnqn': io_d},
+            {'transport': 'tcp', 'traddr': '192.168.174.3',
+             'trsvcid': '4420', 'subsysnqn': io_e},
+            {'transport': 'tcp', 'traddr': '192.168.174.4',
+             'trsvcid': '8009', 'subsysnqn': referral},
+        ]
+        self.server.discovery_map = {
+            referral: [
+                {'transport': 'tcp', 'traddr': '192.168.174.5',
+                 'trsvcid': '4420', 'subsysnqn': io_d},
+            ],
+        }
+
+        self._run('connect-all', '-J', str(config), '--hostnqn', self._HOSTNQN)
+
+        io_d_ctrls = self._ctrls_for(io_d)
+        self.assertEqual(len(io_d_ctrls), 2)
+        for ctrl in io_d_ctrls:
+            self.assertEqual(ctrl['dhchap_secret'], self._KEY_B)
+            self.assertEqual(ctrl['dhchap_ctrl_secret'], self._KEY_C)
+        ctrl = self._only_ctrl_for(io_e)
+        self.assertEqual(ctrl['dhchap_secret'], self._KEY_A)
+        self.assertIsNone(ctrl['dhchap_ctrl_secret'])
+        ctrl = self._only_ctrl_for(referral)
+        self.assertEqual(ctrl['dhchap_secret'], self._KEY_A)
+        self.assertEqual(ctrl['dhchap_ctrl_secret'], self._KEY_C)
+
+if __name__ == '__main__':
+    main()

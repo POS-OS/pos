@@ -1,0 +1,33 @@
+nvme-seagate-plugin-version(1)
+==============================
+
+NAME
+----
+nvme-seagate-plugin-version - Shows Seagate plugin's version information
+
+SYNOPSIS
+--------
+[verse]
+'nvme' [<global-options>] 'seagate plugin-version'
+
+DESCRIPTION
+-----------
+Provides the help information for the Seagate plugin.
+
+OPTIONS
+-------
+No Options
+
+include::global-options.txt[]
+
+EXAMPLES
+--------
+Get the plugin version of the specific nvme device.
+
+------------
+# nvme seagate plugin-version
+------------
+
+NVME
+----
+Part of the nvme-user suite

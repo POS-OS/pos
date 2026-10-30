@@ -1,0 +1,2585 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
+/*
+ * This file is part of libnvme.
+ * Copyright (c) 2025 Micron Technology, Inc.
+ *
+ * Authors: Broc Going <bgoing@micron.com>
+ *
+ * Windows-specific implementations of ioctl-based functions.
+ */
+
+#include <winsock2.h>
+#include <windows.h>
+#include <winioctl.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <ntddscsi.h>
+#include <setupapi.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+
+#include <ccan/minmax/minmax.h>
+
+#include <shared/compiler-attributes-util.h>
+
+#include <libnvme.h>
+
+#include "cleanup.h"
+#include "endian.h"
+#include "ioctl.h"
+#include "loopback.h"
+#include "private.h"
+#include "private-ctrl-map.h"
+#include "types.h"
+
+
+static int get_errno_from_error(DWORD error)
+{
+	/* Convert Windows error to errno */
+	switch (error) {
+	case ERROR_INVALID_PARAMETER:
+		return EINVAL;
+	case ERROR_CALL_NOT_IMPLEMENTED:
+		return ENOSYS;
+	case ERROR_INVALID_FUNCTION:
+	case ERROR_NOT_SUPPORTED:
+		return ENOTSUP;
+	case ERROR_INSUFFICIENT_BUFFER:
+	case ERROR_NO_SYSTEM_RESOURCES:
+		return ENOMEM;
+	case ERROR_IO_DEVICE:
+		return EIO;
+	default:
+		return EIO;
+	}
+}
+
+static int get_errno_from_storage_protocol_status(DWORD status)
+{
+	switch (status) {
+	case STORAGE_PROTOCOL_STATUS_SUCCESS:
+	case STORAGE_PROTOCOL_STATUS_PENDING:
+		return 0;
+	case STORAGE_PROTOCOL_STATUS_ERROR:
+		return EIO;
+	case STORAGE_PROTOCOL_STATUS_INVALID_REQUEST:
+		return EINVAL;
+	case STORAGE_PROTOCOL_STATUS_NO_DEVICE:
+		return ENODEV;
+	case STORAGE_PROTOCOL_STATUS_BUSY:
+		return EBUSY;
+	case STORAGE_PROTOCOL_STATUS_DATA_OVERRUN:
+		return E2BIG;
+	case STORAGE_PROTOCOL_STATUS_INSUFFICIENT_RESOURCES:
+		return ENOMEM;
+	case STORAGE_PROTOCOL_STATUS_THROTTLED_REQUEST:
+		return EAGAIN;
+	case STORAGE_PROTOCOL_STATUS_NOT_SUPPORTED:
+		return ENOTSUP;
+	default:
+		return EIO;
+	}
+}
+
+static int create_nvme_status_code(int status_code, int status_code_type,
+				   bool retry)
+{
+	return (status_code_type << NVME_SCT_SHIFT) | status_code |
+		(retry ? 0 : NVME_SC_DNR);
+}
+
+static bool get_is_win_pe(void)
+{
+	HKEY key;
+	LONG rc = RegOpenKeyExW(
+		HKEY_LOCAL_MACHINE,
+		L"SYSTEM\\CurrentControlSet\\Control\\MiniNT",
+		0,
+		KEY_READ,
+		&key
+	);
+
+	if (rc == ERROR_SUCCESS) {
+		RegCloseKey(key);
+		return true;
+	}
+	return false;
+}
+
+/**
+ * get_ns_handle_from_ctrl() - Open the default namespace handle for a controller
+ * @hdl: Controller transport handle
+ *
+ * Return: Namespace transport handle on success, or NULL on failure.
+ *
+ * The caller owns the returned handle and must call libnvme_close() when it
+ * is no longer needed.
+ */
+static struct libnvme_transport_handle *get_ns_handle_from_ctrl(
+		struct libnvme_transport_handle *hdl)
+{
+	struct libnvme_transport_handle *ns_hdl = NULL;
+	const char *ctrl_name;
+	__cleanup_free char *ns_name;
+
+	ctrl_name = libnvme_transport_handle_get_name(hdl);
+	if (asprintf(&ns_name, "%sn1", ctrl_name) >= 0)
+		libnvme_open(hdl->ctx, ns_name, O_RDONLY, &ns_hdl);
+
+	return ns_hdl;
+}
+
+__shr_public int libnvme_reset_subsystem(struct libnvme_transport_handle *hdl)
+{
+	(void)hdl;
+	errno = ENOTSUP;
+	return -errno;
+}
+
+static int reset_ctrl_device(HDEVINFO hdev, SP_DEVINFO_DATA *devinfo)
+{
+	/*
+	 * Windows doesn't have a direct equivalent to resetting an NVMe
+	 * controller, but we can cause a PnP-level reset by disabling, then
+	 * re-enabling the device.
+	 */
+	SP_PROPCHANGE_PARAMS params = {
+		.ClassInstallHeader = {
+			.cbSize = sizeof(SP_CLASSINSTALL_HEADER),
+			.InstallFunction = DIF_PROPERTYCHANGE
+		},
+		.StateChange = DICS_DISABLE,
+		.Scope = DICS_FLAG_CONFIGSPECIFIC,
+		.HwProfile = 0
+	};
+
+	if (!SetupDiSetClassInstallParamsW(hdev, devinfo,
+			&params.ClassInstallHeader, sizeof(params))) {
+		errno = get_errno_from_error(GetLastError());
+		return -errno;
+	}
+	if (!SetupDiCallClassInstaller(DIF_PROPERTYCHANGE, hdev, devinfo)) {
+		errno = get_errno_from_error(GetLastError());
+		return -errno;
+	}
+
+	params.StateChange = DICS_ENABLE;
+	if (!SetupDiSetClassInstallParamsW(hdev, devinfo,
+			&params.ClassInstallHeader, sizeof(params))) {
+		errno = get_errno_from_error(GetLastError());
+		return -errno;
+	}
+	if (!SetupDiCallClassInstaller(DIF_PROPERTYCHANGE, hdev, devinfo)) {
+		errno = get_errno_from_error(GetLastError());
+		return -errno;
+	}
+
+	return 0;
+}
+
+__shr_public int libnvme_reset_ctrl(struct libnvme_transport_handle *hdl)
+{
+	const struct ctrl_map_entry *entry;
+	SP_DEVINFO_DATA dev_info_data = { 0 };
+	HDEVINFO hdev;
+	int ret;
+
+	if (!libnvme_transport_handle_is_ctrl(hdl))
+		return -EINVAL;
+
+	if (__libnvme_dry_run(hdl, "controller reset"))
+		return 0;
+
+	entry = libnvme_ctrl_map_lookup(hdl->ctx,
+					libnvme_transport_handle_get_name(hdl));
+	if (!entry)
+		return -ENODEV;
+
+	hdev = libnvme_ctrl_map_entry_get_devinfo(entry, &dev_info_data);
+	if (hdev == INVALID_HANDLE_VALUE)
+		return -EIO;
+
+	ret = reset_ctrl_device(hdev, &dev_info_data);
+	libnvme_ctrl_map_entry_free_devinfo(hdev);
+
+	return ret;
+}
+
+__shr_public int libnvme_rescan_ns(struct libnvme_transport_handle *hdl)
+{
+	/*
+	 * Windows doesn't have a direct equivalent to rescan namespaces,
+	 * but we can cause the system to invalidate its cached partition table
+	 * and re-enumerate the device.
+	 */
+	if (__libnvme_dry_run(hdl, "namespace rescan"))
+		return 0;
+
+	if (!DeviceIoControl(hdl->fd, IOCTL_DISK_UPDATE_PROPERTIES,
+			NULL, 0, NULL, 0, NULL, NULL)) {
+		errno = get_errno_from_error(GetLastError());
+		return -errno;
+	}
+	return 0;
+}
+
+__shr_public int libnvme_get_nsid(struct libnvme_transport_handle *hdl, __u32 *nsid)
+{
+	/* Get the SCSI LUN, which corresponds to NSID - 1. */
+	SCSI_ADDRESS addr = {0};
+	addr.Length = sizeof(addr);
+
+	DWORD bytesReturned = 0;
+	if (!DeviceIoControl(hdl->fd, IOCTL_SCSI_GET_ADDRESS, NULL, 0,
+				&addr, sizeof(addr), &bytesReturned, NULL)) {
+		errno = EIO;
+		return -errno;
+	}
+
+	if (addr.PathId == 0xFF && addr.TargetId == 0xFF && addr.Lun == 0xFF) {
+		errno = ENOTTY;  /* wrong handle type */
+		return -errno;
+	}
+
+	*nsid = addr.Lun + 1;
+	return 0;
+}
+
+__shr_public int libnvme_update_block_size(struct libnvme_transport_handle *hdl,
+		int block_size)
+{
+	/* Invalidate cached partition table and re-enumerate the device. */
+	if (!DeviceIoControl(hdl->fd, IOCTL_DISK_UPDATE_PROPERTIES,
+			NULL, 0, NULL, 0, NULL, NULL)) {
+		errno = get_errno_from_error(GetLastError());
+		return -errno;
+	}
+	return 0;
+}
+
+__shr_public int libnvme_reread_partitions(struct libnvme_transport_handle *hdl)
+{
+	if (!DeviceIoControl(hdl->fd, IOCTL_DISK_UPDATE_PROPERTIES,
+			NULL, 0, NULL, 0, NULL, NULL)) {
+		errno = get_errno_from_error(GetLastError());
+		return -errno;
+	}
+	return 0;
+}
+
+__shr_public int libnvme_read_regs(
+		__shr_unused struct libnvme_transport_handle *hdl,
+		__shr_unused __u32 offset, __shr_unused void *buf,
+		__shr_unused __u32 len)
+{
+	return -ENOTSUP;
+}
+
+__shr_public int libnvme_write_reg32(
+		__shr_unused struct libnvme_transport_handle *hdl,
+		__shr_unused __u32 offset, __shr_unused __u32 value)
+{
+	return -ENOTSUP;
+}
+
+__shr_public int libnvme_write_reg64(
+		__shr_unused struct libnvme_transport_handle *hdl,
+		__shr_unused __u32 offset, __shr_unused __u64 value,
+		__shr_unused bool mmio32)
+{
+	return -ENOTSUP;
+}
+
+/*
+ * IOCTL_STORAGE_PROTOCOL_COMMAND supports a maximum transfer size of 512 pages.
+ * However, the driver does not correctly enforce this limit and larger
+ * requested transfers may still execute and cause problems.
+ * Enforce a maximum of 512 pages for safety.
+*/
+#define PROTOCOL_COMMAND_MAX_PAGES 512
+
+/*
+ * Smallest data-out length the driver accepts for a command that declares a
+ * host to controller transfer but carries no data.  NVMe transfers are dword
+ * granular, so one dword is the minimum.
+ */
+#define PROTOCOL_COMMAND_MIN_DATA_OUT_LEN 4
+
+/*
+ * IOCTL_STORAGE_PROTOCOL_COMMAND pass-through implementation used for
+ * VU commands and a small subset of other admin and IO commands.
+ * 
+ * If this function is called after the handle's submit_entry() callback has
+ * been called, set entry_called to true and pass the user_data returned by
+ * the previous call to submit_entry().
+ */
+static int submit_storage_protocol_command(
+		struct libnvme_transport_handle *hdl,
+		struct libnvme_passthru_cmd *cmd,
+		bool is_admin, bool entry_called, void *user_data)
+{
+	PSTORAGE_PROTOCOL_COMMAND protocol_command = NULL;
+	ULONG buffer_len = 0;
+	ULONG returned_len = 0;
+	ULONG pad_len = 0;
+	BOOL result = FALSE;
+	PUCHAR buffer = NULL;
+	int err = 0;
+	DWORD last_error = 0;
+	bool is_read = false;
+	bool is_write = false;
+
+	if (!entry_called)
+		user_data = hdl->submit_entry(hdl, cmd);
+
+	if (hdl->ctx->dry_run)
+		goto out;
+
+	if (hdl->fd == INVALID_HANDLE_VALUE || hdl->fd == NULL) {
+		err = -EBADF;
+		goto out;
+	}
+
+	if (cmd->data_len > 0 && !cmd->addr) {
+		err = -EINVAL;
+		goto out;
+	}
+
+	if (cmd->data_len > PROTOCOL_COMMAND_MAX_PAGES * shr_getpagesize()) {
+		err = -EINVAL;
+		goto out;
+	}
+
+	/*
+	 * Get the Data Transfer Direction (DTD) from the opcode:
+	 * 00b = No data transfer
+	 * 01b = Host to Controller Transfer
+	 * 10b = Controller to Host Transfer
+	 * 11b = Bi-Directional Transfer
+	 */
+	is_write = cmd->opcode & 0x1;
+	is_read = cmd->opcode & 0x2;
+
+	/* Bi-directional transfers not supported */
+	if (is_read && is_write) {
+		err = -ENOTSUP;
+		goto out;
+	}
+
+	/*
+	 * For commands that declare a host to controller transfer (DTD 01b),
+	 * the driver requires a data-out buffer even for operations that
+	 * transfer no data.  Requests without a data buffer fail with
+	 * STORAGE_PROTOCOL_STATUS_INVALID_REQUEST without being submitted to
+	 * the controller.  Pad these requests with a zeroed buffer to satisfy
+	 * the driver requirement.
+	 */
+	if (is_write && !cmd->data_len)
+		pad_len = PROTOCOL_COMMAND_MIN_DATA_OUT_LEN;
+
+	/* Allocate buffer for STORAGE_PROTOCOL_COMMAND + NVME command + data */
+	buffer_len = FIELD_OFFSET(STORAGE_PROTOCOL_COMMAND, Command) +
+		STORAGE_PROTOCOL_COMMAND_LENGTH_NVME +
+		cmd->data_len + pad_len;
+
+	buffer = (PUCHAR)malloc(buffer_len);
+	if (!buffer) {
+		err = -ENOMEM;
+		goto out;
+	}
+
+	ZeroMemory(buffer, buffer_len);
+
+	protocol_command = (PSTORAGE_PROTOCOL_COMMAND)buffer;
+
+	protocol_command->Version = STORAGE_PROTOCOL_STRUCTURE_VERSION;
+	protocol_command->Length = sizeof(STORAGE_PROTOCOL_COMMAND);
+	protocol_command->ProtocolType = ProtocolTypeNvme;
+	protocol_command->Flags = STORAGE_PROTOCOL_COMMAND_FLAG_ADAPTER_REQUEST;
+	protocol_command->CommandLength = STORAGE_PROTOCOL_COMMAND_LENGTH_NVME;
+	protocol_command->TimeOutValue = (cmd->timeout_ms > 0) ?
+		((cmd->timeout_ms + 999) / 1000) : 10; /* Round up to seconds */
+
+	protocol_command->CommandSpecific = is_admin ?
+		STORAGE_PROTOCOL_SPECIFIC_NVME_ADMIN_COMMAND :
+		STORAGE_PROTOCOL_SPECIFIC_NVME_NVM_COMMAND;
+	memcpy(protocol_command->Command, cmd,
+		STORAGE_PROTOCOL_COMMAND_LENGTH_NVME);
+
+	if (cmd->addr && cmd->data_len > 0 && is_read) {
+		protocol_command->DataFromDeviceTransferLength = cmd->data_len;
+		protocol_command->DataFromDeviceBufferOffset =
+			FIELD_OFFSET(STORAGE_PROTOCOL_COMMAND, Command) +
+			STORAGE_PROTOCOL_COMMAND_LENGTH_NVME;
+	} else if (cmd->addr && cmd->data_len > 0 && is_write) {
+		protocol_command->DataToDeviceTransferLength = cmd->data_len;
+		protocol_command->DataToDeviceBufferOffset =
+			FIELD_OFFSET(STORAGE_PROTOCOL_COMMAND, Command) +
+			STORAGE_PROTOCOL_COMMAND_LENGTH_NVME;
+		memcpy((PUCHAR)buffer + protocol_command->DataToDeviceBufferOffset,
+			(void *)(uintptr_t)cmd->addr, cmd->data_len);
+	} else if (pad_len) {
+		protocol_command->DataToDeviceTransferLength = pad_len;
+		protocol_command->DataToDeviceBufferOffset =
+			FIELD_OFFSET(STORAGE_PROTOCOL_COMMAND, Command) +
+			STORAGE_PROTOCOL_COMMAND_LENGTH_NVME;
+	}
+
+	do {
+		err = 0;
+		result = DeviceIoControl(hdl->fd,
+					IOCTL_STORAGE_PROTOCOL_COMMAND,
+					buffer,
+					buffer_len,
+					buffer,
+					buffer_len,
+					&returned_len,
+					NULL);
+		if (result && (protocol_command->ReturnStatus == STORAGE_PROTOCOL_STATUS_SUCCESS ||
+				   protocol_command->ReturnStatus == STORAGE_PROTOCOL_STATUS_PENDING))
+			break;
+
+		last_error = result ? 0 : GetLastError();
+
+		if (result) {
+			if (protocol_command->ErrorCode)
+				/* raw CQE status -> protocol error code */
+				err = (protocol_command->ErrorCode >> 1) & 0x7fff;
+			else
+				err = -get_errno_from_storage_protocol_status(
+					protocol_command->ReturnStatus);
+		} else {
+			err = -get_errno_from_error(last_error);
+		}
+	} while (hdl->decide_retry(hdl, cmd, err));
+
+	if (err) {
+		libnvme_msg(hdl->ctx, LIBNVME_LOG_DEBUG, "%s: failed, "
+			"GetLastError=%lu, status=%lu, ErrorCode=0x%04lx, err=%d (0x%x)\n",
+			__func__, last_error, protocol_command->ReturnStatus,
+			protocol_command->ErrorCode, err, err);
+
+		goto out_free_buffer;
+	}
+
+	/* Copy the returned data to the user's buffer */
+	if (cmd->addr && cmd->data_len > 0 && is_read) {
+		memcpy((void *)(uintptr_t)cmd->addr,
+			(PUCHAR)buffer + protocol_command->DataFromDeviceBufferOffset,
+			cmd->data_len);
+	}
+
+	/* Copy the completion queue entry (CQE) DW0-1 into cmd->result. */
+	memcpy(&cmd->result, &protocol_command->FixedProtocolReturnData,
+		sizeof(cmd->result));
+
+out_free_buffer:
+	free(buffer);
+out:
+	hdl->submit_exit(hdl, cmd, err, user_data);
+	return err;
+}
+
+/*
+ * SCSI helpers
+ */
+
+/*
+ * Sense buffer size for SCSI pass-through commands. Covers a fixed-format
+ * 18-byte sense buffer plus slack.
+ */
+#define SCSI_SENSE_BUFFER_LEN 32
+
+/*
+ * Parse the sense key/ASC/ASCQ from a SCSI pass-through sense buffer. Handles
+ * both fixed- and descriptor-format sense data. Returns true if the sense data
+ * was in a recognized format and key/asc/ascq were populated.
+ */
+static bool parse_scsi_sense(PSCSI_PASS_THROUGH pass_through, PUCHAR buffer,
+		__u8 *key, __u8 *asc, __u8 *ascq)
+{
+	__u8 code;
+	PUCHAR sense;
+
+	if (pass_through->SenseInfoLength < 14)
+		return false;
+
+	sense = buffer + pass_through->SenseInfoOffset;
+	code = sense[0] & 0x7f;
+
+	/* Decode based on format. */
+	if (code == 0x70 || code == 0x71) {
+		/* fixed-format */
+		*key = sense[2] & 0x0f;
+		*asc = sense[12];
+		*ascq = sense[13];
+	} else if (code == 0x72 || code == 0x73) {
+		/* descriptor-format */
+		*key = sense[1] & 0x0f;
+		*asc = sense[2];
+		*ascq = sense[3];
+	} else {
+		return false;
+	}
+
+	return true;
+}
+
+/* Convert SCSI sense key/ASC/ASCQ to an NVMe status code or negated errno. */
+static int get_status_from_scsi_sense(__u8 key, __u8 asc, __u8 ascq)
+{
+	switch (key) {
+	case 0x02:	/* NOT READY */
+		/* ASC 0x04 = LOGICAL UNIT NOT READY - refine via ASCQ. */
+		/* ASCQ 0x04 = FORMAT IN PROGRESS */
+		if (asc == 0x04 && ascq == 0x04)
+			return create_nvme_status_code(
+					NVME_SC_FORMAT_IN_PROGRESS,
+					NVME_SCT_GENERIC, true);
+		/* ASCQ 0x1b = SANITIZE IN PROGRESS */
+		if (asc == 0x04 && ascq == 0x1b)
+			return create_nvme_status_code(
+					NVME_SC_SANITIZE_IN_PROGRESS,
+					NVME_SCT_GENERIC, true);
+		/* ASCQ 0x01 = BECOMING READY - transient, worth retrying */
+		if (asc == 0x04 && ascq == 0x01)
+			return create_nvme_status_code(NVME_SC_NS_NOT_READY,
+						NVME_SCT_GENERIC, true);
+		/*
+		 * Other not-ready states (e.g. ASCQ 0x02 = INITIALIZING
+		 * COMMAND REQUIRED) will not clear on their own, so mark DNR
+		 * to avoid spinning on a retry that cannot succeed.
+		 */
+		return create_nvme_status_code(NVME_SC_NS_NOT_READY,
+					NVME_SCT_GENERIC, false);
+	case 0x03:	/* MEDIUM ERROR */
+		return create_nvme_status_code(NVME_SC_UNRECOVERED_ERROR,
+					NVME_SCT_GENERIC, false);
+	case 0x05:	/* ILLEGAL REQUEST - refine via ASC */
+		switch (asc) {
+		case 0x21:	/* LOGICAL BLOCK ADDRESS OUT OF RANGE */
+			return create_nvme_status_code(NVME_SC_LBA_RANGE,
+						NVME_SCT_GENERIC, false);
+		case 0x20:	/* INVALID COMMAND OPERATION CODE */
+			return create_nvme_status_code(NVME_SC_INVALID_OPCODE,
+						NVME_SCT_GENERIC, false);
+		default:	/* INVALID FIELD IN CDB/PARAMETER LIST, etc. */
+			return create_nvme_status_code(NVME_SC_INVALID_FIELD,
+						NVME_SCT_GENERIC, false);
+		}
+	case 0x07:	/* DATA PROTECT */
+		return create_nvme_status_code(NVME_SC_NS_WRITE_PROTECTED,
+					NVME_SCT_GENERIC, false);
+	case 0x0b:	/* ABORTED COMMAND */
+		return create_nvme_status_code(NVME_SC_ABORT_REQ,
+					NVME_SCT_GENERIC, false);
+	case 0x06:	/* UNIT ATTENTION - no clean NVMe equivalent */
+		return -EAGAIN;
+	default:
+		return -EIO;
+	}
+}
+
+/*
+ * Convert a SCSI status byte to an NVMe status code or negated errno. For
+ * CHECK CONDITION, refine using the sense key when a recognized sense buffer
+ * was returned.
+ */
+static int get_status_from_scsi_status(PSCSI_PASS_THROUGH pass_through,
+		PUCHAR buffer)
+{
+	__u8 key, asc, ascq;
+
+	switch (pass_through->ScsiStatus) {
+	case 0x00:	/* GOOD */
+	case 0x04:	/* CONDITION MET */
+		return 0;
+	case 0x08:	/* BUSY */
+	case 0x28:	/* TASK SET FULL - transport-level, keep errno */
+		return -EBUSY;
+	case 0x18:	/* RESERVATION CONFLICT */
+		return create_nvme_status_code(NVME_SC_RESERVATION_CONFLICT,
+					NVME_SCT_GENERIC, false);
+	case 0x40:	/* TASK ABORTED */
+		return create_nvme_status_code(NVME_SC_ABORT_REQ,
+					NVME_SCT_GENERIC, false);
+	case 0x02:	/* CHECK CONDITION - refine via sense key */
+		if (parse_scsi_sense(pass_through, buffer, &key, &asc, &ascq))
+			return get_status_from_scsi_sense(key, asc, ascq);
+		return -EIO;
+	default:
+		return -EIO;
+	}
+}
+
+/*
+ * Log the failure of a SCSI pass-through command. Includes ScsiStatus and,
+ * when a sense buffer was returned, the sense key/ASC/ASCQ that explains the
+ * failure.
+ */
+static void log_scsi_pass_through_error(struct libnvme_transport_handle *hdl,
+		const char *func, PSCSI_PASS_THROUGH pass_through,
+		PUCHAR buffer, DWORD last_error, int err, BOOL result)
+{
+	__u8 key, asc, ascq;
+
+	libnvme_msg(hdl->ctx, LIBNVME_LOG_DEBUG, "%s: failed, "
+		"GetLastError=%lu, ScsiStatus=0x%02x, err=%d\n",
+		func, last_error, pass_through->ScsiStatus, err);
+
+	if (!result)
+		return;
+
+	if (!parse_scsi_sense(pass_through, buffer, &key, &asc, &ascq)) {
+		libnvme_msg(hdl->ctx, LIBNVME_LOG_DEBUG,
+			"%s: unrecognized SCSI sense data\n", func);
+		return;
+	}
+
+	libnvme_msg(hdl->ctx, LIBNVME_LOG_DEBUG, "%s: SCSI sense "
+		"key=0x%01x, ASC=0x%02x, ASCQ=0x%02x\n",
+		func, key, asc, ascq);
+}
+
+/*
+ * Windows-specific IO command implementations.
+ */
+
+/* SCSI operation code definitions */
+#define SCSIOP_SYNCHRONIZE_CACHE 0x35
+#define SCSIOP_UNMAP 0x42
+#define SCSIOP_READ16 0x88
+#define SCSIOP_WRITE16 0x8A
+
+static int submit_io_flush(struct libnvme_transport_handle *hdl,
+		struct libnvme_passthru_cmd *cmd)
+{
+	PSCSI_PASS_THROUGH pass_through = NULL;
+	ULONG buffer_len = 0;
+	ULONG returned_len = 0;
+	ULONG sense_offset = 0;
+	BOOL result = FALSE;
+	PUCHAR buffer = NULL;
+	void *user_data = NULL;
+	int err = 0;
+	DWORD last_error = 0;
+
+	user_data = hdl->submit_entry(hdl, cmd);
+	if (hdl->ctx->dry_run)
+		goto out;
+
+	if (hdl->fd == INVALID_HANDLE_VALUE || hdl->fd == NULL) {
+		err = -EBADF;
+		goto out;
+	}
+
+	/* Allocate buffer for SCSI_PASS_THROUGH + sense data */
+	sense_offset = sizeof(SCSI_PASS_THROUGH);
+	buffer_len = sense_offset + SCSI_SENSE_BUFFER_LEN;
+	buffer = (PUCHAR)malloc(buffer_len);
+	if (!buffer) {
+		err = -ENOMEM;
+		goto out;
+	}
+
+	ZeroMemory(buffer, buffer_len);
+
+	pass_through = (PSCSI_PASS_THROUGH)buffer;
+	pass_through->Length = sizeof(SCSI_PASS_THROUGH);
+	pass_through->CdbLength = 10;
+	pass_through->DataIn = SCSI_IOCTL_DATA_UNSPECIFIED;
+	pass_through->SenseInfoLength = SCSI_SENSE_BUFFER_LEN;
+	pass_through->SenseInfoOffset = sense_offset;
+	pass_through->TimeOutValue = (cmd->timeout_ms > 0) ?
+		((cmd->timeout_ms + 999) / 1000) : 30;
+
+	pass_through->Cdb[0] = SCSIOP_SYNCHRONIZE_CACHE;
+
+	do {
+		err = 0;
+		result = DeviceIoControl(hdl->fd,
+				IOCTL_SCSI_PASS_THROUGH,
+				buffer,
+				buffer_len,
+				buffer,
+				buffer_len,
+				&returned_len,
+				NULL);
+		if (result && !pass_through->ScsiStatus)
+			break;
+
+		last_error = result ? 0 : GetLastError();
+		if (!result)
+			err = -get_errno_from_error(last_error);
+		else
+			err = get_status_from_scsi_status(pass_through, buffer);
+	} while (hdl->decide_retry(hdl, cmd, err));
+
+	if (err) {
+		log_scsi_pass_through_error(hdl, __func__, pass_through,
+			buffer, last_error, err, result);
+		goto out_free_buffer;
+	}
+
+	cmd->result = 0;
+
+out_free_buffer:
+	free(buffer);
+out:
+	hdl->submit_exit(hdl, cmd, err, user_data);
+	return err;
+}
+
+static __u8 nvme_prinfo_to_scsi_wrrdprotect(__u8 prinfo)
+{
+	/*
+	 * From WRPROTECT/RDPROTECT -> PRINFO (PRACT + PRCHK) mapping tables
+	 * in NVM Express: SCSI Translation Reference documentation.
+	 */
+	switch (prinfo) {
+	case 0b0111:
+		return 1;
+	case 0b0011:
+		return 2;
+	case 0b0000:
+		return 3;
+	case 0b0100:
+		return 4;
+	case 0b1000:	/* For Write */
+	case 0b1111:	/* For Read */
+	default:
+		return 0; /* Default to no check */
+	}
+}
+
+/**
+ * fill_scsi_rw16_cdb() - Fill the CDB for a SCSI READ(16) or WRITE(16) command.
+ * @cmd:    NVMe command containing the CDW fields to translate
+ * @cdb:    CDB buffer to fill
+ *
+ * Fills the CDB for a SCSI READ(16) or WRITE(16) command based on the
+ * supported NVMe command fields.
+ *
+ * See NVM Express: SCSI Translation Reference documentation.
+ */
+static void fill_scsi_rw16_cdb(struct libnvme_passthru_cmd *cmd, UCHAR cdb[16])
+{
+	__u8 opcode = (cmd->opcode == nvme_cmd_read) ?
+			SCSIOP_READ16 : SCSIOP_WRITE16;
+	__u64 lba = ((__u64)cmd->cdw11 << 32) | cmd->cdw10;
+	__u32 transfer_len = NVME_FIELD_DECODE(cmd->cdw12,
+			NVME_IOCS_COMMON_CDW12_NLB_SHIFT,
+			NVME_IOCS_COMMON_CDW12_NLB_MASK) + 1; /* NLB + 1 */
+	__u8 prinfo = NVME_FIELD_DECODE(cmd->cdw12,
+			NVME_IOCS_COMMON_CDW12_PRINFO_SHIFT,
+			NVME_IOCS_COMMON_CDW12_PRINFO_MASK);
+	__u8 fua = NVME_FIELD_DECODE(cmd->cdw12,
+			NVME_IOCS_COMMON_CDW12_FUA_SHIFT,
+			NVME_IOCS_COMMON_CDW12_FUA_MASK);
+
+	__u8 wrrdprotect = nvme_prinfo_to_scsi_wrrdprotect(prinfo);
+
+	cdb[0] = opcode;
+	cdb[1] = (wrrdprotect << 5) | ((fua & 1) << 3);
+	cdb[2] = (lba >> 56) & 0xFF;
+	cdb[3] = (lba >> 48) & 0xFF;
+	cdb[4] = (lba >> 40) & 0xFF;
+	cdb[5] = (lba >> 32) & 0xFF;
+	cdb[6] = (lba >> 24) & 0xFF;
+	cdb[7] = (lba >> 16) & 0xFF;
+	cdb[8] = (lba >> 8) & 0xFF;
+	cdb[9] = lba & 0xFF;
+	cdb[10] = (transfer_len >> 24) & 0xFF;
+	cdb[11] = (transfer_len >> 16) & 0xFF;
+	cdb[12] = (transfer_len >> 8) & 0xFF;
+	cdb[13] = transfer_len & 0xFF;
+	cdb[14] = 0;
+	cdb[15] = 0;
+}
+
+static int submit_io_write(struct libnvme_transport_handle *hdl,
+		struct libnvme_passthru_cmd *cmd)
+{
+	PSCSI_PASS_THROUGH pass_through = NULL;
+	ULONG buffer_len = 0;
+	ULONG returned_len = 0;
+	ULONG sense_offset = 0;
+	ULONG data_offset = 0;
+	BOOL result = FALSE;
+	PUCHAR buffer = NULL;
+	void *user_data = NULL;
+	int err = 0;
+	DWORD last_error = 0;
+
+	user_data = hdl->submit_entry(hdl, cmd);
+	if (hdl->ctx->dry_run)
+		goto out;
+
+	if (hdl->fd == INVALID_HANDLE_VALUE || hdl->fd == NULL) {
+		err = -EBADF;
+		goto out;
+	}
+
+	if (cmd->data_len > 0 && !cmd->addr) {
+		err = -EINVAL;
+		goto out;
+	}
+
+	/* Allocate buffer for SCSI_PASS_THROUGH + sense data + write payload */
+	sense_offset = sizeof(SCSI_PASS_THROUGH);
+	data_offset = sense_offset + SCSI_SENSE_BUFFER_LEN;
+	buffer_len = data_offset + cmd->data_len;
+	buffer = (PUCHAR)malloc(buffer_len);
+	if (!buffer) {
+		err = -ENOMEM;
+		goto out;
+	}
+
+	ZeroMemory(buffer, buffer_len);
+
+	pass_through = (PSCSI_PASS_THROUGH)buffer;
+	pass_through->Length = sizeof(SCSI_PASS_THROUGH);
+	pass_through->CdbLength = 16;
+	pass_through->DataIn = SCSI_IOCTL_DATA_OUT;
+	pass_through->DataTransferLength = cmd->data_len;
+	pass_through->SenseInfoLength = SCSI_SENSE_BUFFER_LEN;
+	pass_through->SenseInfoOffset = sense_offset;
+	pass_through->TimeOutValue = (cmd->timeout_ms > 0) ?
+		((cmd->timeout_ms + 999) / 1000) : 30;
+	pass_through->DataBufferOffset = data_offset;
+
+	fill_scsi_rw16_cdb(cmd, pass_through->Cdb);
+
+	if (cmd->addr && cmd->data_len > 0) {
+		memcpy(buffer + pass_through->DataBufferOffset,
+			(void *)(uintptr_t)cmd->addr, cmd->data_len);
+	}
+
+	do {
+		err = 0;
+		result = DeviceIoControl(hdl->fd,
+				IOCTL_SCSI_PASS_THROUGH,
+				buffer,
+				buffer_len,
+				buffer,
+				buffer_len,
+				&returned_len,
+				NULL);
+		if (result && !pass_through->ScsiStatus)
+			break;
+
+		last_error = result ? 0 : GetLastError();
+		if (!result)
+			err = -get_errno_from_error(last_error);
+		else
+			err = get_status_from_scsi_status(pass_through, buffer);
+	} while (hdl->decide_retry(hdl, cmd, err));
+
+	if (err) {
+		log_scsi_pass_through_error(hdl, __func__, pass_through,
+			buffer, last_error, err, result);
+		goto out_free_buffer;
+	}
+
+	cmd->result = 0;
+
+out_free_buffer:
+	free(buffer);
+out:
+	hdl->submit_exit(hdl, cmd, err, user_data);
+	return err;
+}
+
+static int submit_io_read(struct libnvme_transport_handle *hdl,
+		struct libnvme_passthru_cmd *cmd)
+{
+	PSCSI_PASS_THROUGH pass_through = NULL;
+	ULONG buffer_len = 0;
+	ULONG returned_len = 0;
+	ULONG sense_offset = 0;
+	ULONG data_offset = 0;
+	BOOL result = FALSE;
+	PUCHAR buffer = NULL;
+	void *user_data = NULL;
+	int err = 0;
+	DWORD last_error = 0;
+
+	user_data = hdl->submit_entry(hdl, cmd);
+	if (hdl->ctx->dry_run)
+		goto out;
+
+	if (hdl->fd == INVALID_HANDLE_VALUE || hdl->fd == NULL) {
+		err = -EBADF;
+		goto out;
+	}
+
+	if (cmd->data_len > 0 && !cmd->addr) {
+		err = -EINVAL;
+		goto out;
+	}
+
+	/* Allocate buffer for SCSI_PASS_THROUGH + sense data + read payload */
+	sense_offset = sizeof(SCSI_PASS_THROUGH);
+	data_offset = sense_offset + SCSI_SENSE_BUFFER_LEN;
+	buffer_len = data_offset + cmd->data_len;
+	buffer = (PUCHAR)malloc(buffer_len);
+	if (!buffer) {
+		err = -ENOMEM;
+		goto out;
+	}
+
+	ZeroMemory(buffer, buffer_len);
+
+	pass_through = (PSCSI_PASS_THROUGH)buffer;
+	pass_through->Length = sizeof(SCSI_PASS_THROUGH);
+	pass_through->CdbLength = 16;
+	pass_through->DataIn = SCSI_IOCTL_DATA_IN;
+	pass_through->DataTransferLength = cmd->data_len;
+	pass_through->SenseInfoLength = SCSI_SENSE_BUFFER_LEN;
+	pass_through->SenseInfoOffset = sense_offset;
+	pass_through->TimeOutValue = (cmd->timeout_ms > 0) ?
+		((cmd->timeout_ms + 999) / 1000) : 30;
+	pass_through->DataBufferOffset = data_offset;
+
+	fill_scsi_rw16_cdb(cmd, pass_through->Cdb);
+
+	do {
+		err = 0;
+		result = DeviceIoControl(hdl->fd,
+				IOCTL_SCSI_PASS_THROUGH,
+				buffer,
+				buffer_len,
+				buffer,
+				buffer_len,
+				&returned_len,
+				NULL);
+		if (result && !pass_through->ScsiStatus)
+			break;
+
+		last_error = result ? 0 : GetLastError();
+		if (!result)
+			err = -get_errno_from_error(last_error);
+		else
+			err = get_status_from_scsi_status(pass_through, buffer);
+	} while (hdl->decide_retry(hdl, cmd, err));
+
+	if (err) {
+		log_scsi_pass_through_error(hdl, __func__, pass_through,
+			buffer, last_error, err, result);
+		goto out_free_buffer;
+	}
+
+	if (cmd->addr && cmd->data_len > 0) {
+		memcpy((void *)(uintptr_t)cmd->addr,
+			buffer + pass_through->DataBufferOffset,
+			min(pass_through->DataTransferLength, (ULONG)cmd->data_len));
+	}
+
+	cmd->result = 0;
+
+out_free_buffer:
+	free(buffer);
+out:
+	hdl->submit_exit(hdl, cmd, err, user_data);
+	return err;
+}
+
+/*
+ * Geometry of the SCSI UNMAP parameter list, per SBC-3:
+ * an 8 byte header followed by one 16 byte block descriptor per range.
+ */
+#define SCSI_UNMAP_PARAM_HEADER_LEN 8
+#define SCSI_UNMAP_BLOCK_DESC_LEN 16
+
+/*
+ * fill_scsi_unmap_param_list() - Translate DSM ranges into an UNMAP parameter
+ * list
+ * @param:	Parameter list buffer of at least @param_len bytes
+ * @param_len:	Total length of the parameter list
+ * @ranges:	DSM range descriptors to translate
+ * @nr:		Number of range descriptors
+ *
+ * Builds the SBC-3 UNMAP parameter list. The range descriptor length in
+ * logical blocks maps directly onto NUMBER OF LOGICAL BLOCKS; both are counts
+ * rather than zero-based values.
+ */
+static void fill_scsi_unmap_param_list(PUCHAR param, ULONG param_len,
+		const struct nvme_dsm_range *ranges, __u32 nr)
+{
+	PUCHAR desc;
+	__u32 i;
+
+	/* UNMAP DATA LENGTH excludes its own two bytes. */
+	param[0] = ((param_len - 2) >> 8) & 0xFF;
+	param[1] = (param_len - 2) & 0xFF;
+
+	/* UNMAP BLOCK DESCRIPTOR DATA LENGTH covers the descriptors only. */
+	param[2] = ((param_len - SCSI_UNMAP_PARAM_HEADER_LEN) >> 8) & 0xFF;
+	param[3] = (param_len - SCSI_UNMAP_PARAM_HEADER_LEN) & 0xFF;
+
+	desc = param + SCSI_UNMAP_PARAM_HEADER_LEN;
+	for (i = 0; i < nr; i++, desc += SCSI_UNMAP_BLOCK_DESC_LEN) {
+		__u64 slba = le64toh(ranges[i].slba);
+		__u32 nlb = le32toh(ranges[i].nlb);
+
+		desc[0] = (slba >> 56) & 0xFF;
+		desc[1] = (slba >> 48) & 0xFF;
+		desc[2] = (slba >> 40) & 0xFF;
+		desc[3] = (slba >> 32) & 0xFF;
+		desc[4] = (slba >> 24) & 0xFF;
+		desc[5] = (slba >> 16) & 0xFF;
+		desc[6] = (slba >> 8) & 0xFF;
+		desc[7] = slba & 0xFF;
+		desc[8] = (nlb >> 24) & 0xFF;
+		desc[9] = (nlb >> 16) & 0xFF;
+		desc[10] = (nlb >> 8) & 0xFF;
+		desc[11] = nlb & 0xFF;
+	}
+}
+
+/*
+ * Windows maps SCSI_PASS_THROUGH with SCSIOP_UNMAP to the NVMe Dataset
+ * Management command with the Deallocate attribute set.
+ */
+static int submit_io_dsm_deallocate(struct libnvme_transport_handle *hdl,
+		struct libnvme_passthru_cmd *cmd)
+{
+	PSCSI_PASS_THROUGH pass_through = NULL;
+	const struct nvme_dsm_range *ranges = NULL;
+	ULONG buffer_len = 0;
+	ULONG returned_len = 0;
+	ULONG sense_offset = 0;
+	ULONG data_offset = 0;
+	ULONG param_len = 0;
+	BOOL result = FALSE;
+	PUCHAR buffer = NULL;
+	void *user_data = NULL;
+	int err = 0;
+	DWORD last_error = 0;
+	__u32 nr;
+	__u32 i;
+
+	user_data = hdl->submit_entry(hdl, cmd);
+	if (hdl->ctx->dry_run)
+		goto out;
+
+	if (hdl->fd == INVALID_HANDLE_VALUE || hdl->fd == NULL) {
+		err = -EBADF;
+		goto out;
+	}
+
+	nr = NVME_FIELD_DECODE(cmd->cdw10,
+			NVME_DSM_CDW10_NR_SHIFT,
+			NVME_DSM_CDW10_NR_MASK) + 1; /* NR + 1 */
+
+	if (!cmd->addr || cmd->data_len < nr * sizeof(*ranges)) {
+		err = -EINVAL;
+		goto out;
+	}
+
+	ranges = (const struct nvme_dsm_range *)(uintptr_t)cmd->addr;
+
+	/*
+	 * Context attributes carry access frequency, latency and access size
+	 * hints that UNMAP cannot express. Reject rather than silently drop
+	 * them.
+	 */
+	for (i = 0; i < nr; i++) {
+		if (le32toh(ranges[i].cattr)) {
+			libnvme_msg(hdl->ctx, LIBNVME_LOG_ERR, "Context "
+				"attributes (range %u) are not supported on "
+				"Windows\n", i);
+			err = -ENOTSUP;
+			goto out;
+		}
+	}
+
+	/* Allocate buffer for SCSI_PASS_THROUGH + sense data + param list */
+	param_len = SCSI_UNMAP_PARAM_HEADER_LEN +
+		nr * SCSI_UNMAP_BLOCK_DESC_LEN;
+	sense_offset = sizeof(SCSI_PASS_THROUGH);
+	data_offset = sense_offset + SCSI_SENSE_BUFFER_LEN;
+	buffer_len = data_offset + param_len;
+	buffer = (PUCHAR)malloc(buffer_len);
+	if (!buffer) {
+		err = -ENOMEM;
+		goto out;
+	}
+
+	ZeroMemory(buffer, buffer_len);
+
+	pass_through = (PSCSI_PASS_THROUGH)buffer;
+	pass_through->Length = sizeof(SCSI_PASS_THROUGH);
+	pass_through->CdbLength = 10;
+	pass_through->DataIn = SCSI_IOCTL_DATA_OUT;
+	pass_through->DataTransferLength = param_len;
+	pass_through->SenseInfoLength = SCSI_SENSE_BUFFER_LEN;
+	pass_through->SenseInfoOffset = sense_offset;
+	pass_through->TimeOutValue = (cmd->timeout_ms > 0) ?
+		((cmd->timeout_ms + 999) / 1000) : 30;
+	pass_through->DataBufferOffset = data_offset;
+
+	/*
+	 * Build the Unmap CDB (10 bytes, per SBC-3)
+	 * Byte 0: Operation code (0x42)
+	 * Byte 1: Bit 0: ANCHOR, bits 7-1 reserved
+	 * Bytes 2-5: Reserved
+	 * Byte 6: Bits 4-0: Group number
+	 * Bytes 7-8: Parameter list length (big-endian)
+	 * Byte 9: Control
+	 *
+	 * NVMe Dataset Management has no ANCHOR or group number equivalent, so
+	 * both are left zero.
+	 */
+	pass_through->Cdb[0] = SCSIOP_UNMAP;
+	pass_through->Cdb[7] = (param_len >> 8) & 0xFF;
+	pass_through->Cdb[8] = param_len & 0xFF;
+
+	fill_scsi_unmap_param_list(buffer + data_offset, param_len, ranges, nr);
+
+	do {
+		err = 0;
+		result = DeviceIoControl(hdl->fd,
+				IOCTL_SCSI_PASS_THROUGH,
+				buffer,
+				buffer_len,
+				buffer,
+				buffer_len,
+				&returned_len,
+				NULL);
+		if (result && !pass_through->ScsiStatus)
+			break;
+
+		last_error = result ? 0 : GetLastError();
+		if (!result)
+			err = -get_errno_from_error(last_error);
+		else
+			err = get_status_from_scsi_status(pass_through, buffer);
+	} while (hdl->decide_retry(hdl, cmd, err));
+
+	if (err) {
+		log_scsi_pass_through_error(hdl, __func__, pass_through,
+			buffer, last_error, err, result);
+		goto out_free_buffer;
+	}
+
+	cmd->result = 0;
+
+out_free_buffer:
+	free(buffer);
+out:
+	hdl->submit_exit(hdl, cmd, err, user_data);
+	return err;
+}
+
+static int submit_io_dsm(struct libnvme_transport_handle *hdl,
+		struct libnvme_passthru_cmd *cmd)
+{
+	__u8 ad;
+	__u8 idr;
+	__u8 idw;
+
+	/*
+	 * IOCTL_SCSI_PASS_THROUGH requires a handle to a disk. A controller
+	 * handle on Windows names the PCI device and cannot service it.
+	 */
+	if (!libnvme_transport_handle_is_ns(hdl)) {
+		libnvme_msg(hdl->ctx, LIBNVME_LOG_ERR, "Windows only supports "
+			"dsm on namespace devices (e.g. nvme0n1)\n");
+		return -ENOTSUP;
+	}
+
+	ad = NVME_FIELD_DECODE(cmd->cdw11,
+			NVME_DSM_CDW11_AD_SHIFT,
+			NVME_DSM_CDW11_AD_MASK);
+	idr = NVME_FIELD_DECODE(cmd->cdw11,
+			NVME_DSM_CDW11_IDR_SHIFT,
+			NVME_DSM_CDW11_IDR_MASK);
+	idw = NVME_FIELD_DECODE(cmd->cdw11,
+			NVME_DSM_CDW11_IDW_SHIFT,
+			NVME_DSM_CDW11_IDW_MASK);
+
+	/*
+	 * Per Microsoft StorNVMe documentation, only the Deallocate attribute
+	 * is supported, translated to SCSI UNMAP. The integral dataset
+	 * attributes have no UNMAP equivalent and cannot be conveyed to the
+	 * controller.
+	 */
+	if (!ad) {
+		libnvme_msg(hdl->ctx, LIBNVME_LOG_ERR, "Windows only supports "
+			"dsm with the Deallocate attribute (AD) set\n");
+		return -ENOTSUP;
+	}
+	if (idr || idw) {
+		libnvme_msg(hdl->ctx, LIBNVME_LOG_ERR, "The integral dataset "
+			"attributes (IDR, IDW) are not supported on Windows\n");
+		return -ENOTSUP;
+	}
+
+	return submit_io_dsm_deallocate(hdl, cmd);
+}
+
+/*
+ * Windows-specific admin command implementations.
+ */
+
+static int submit_admin_get_log_page(struct libnvme_transport_handle *hdl,
+		struct libnvme_passthru_cmd *cmd)
+{
+	PSTORAGE_PROPERTY_QUERY query = NULL;
+	PSTORAGE_PROTOCOL_SPECIFIC_DATA protocol_data = NULL;
+	STORAGE_PROTOCOL_DATA_SUBVALUE_GET_LOG_PAGE protocol_data_subval = { 0 };
+	ULONG buffer_len = 0;
+	ULONG returned_len = 0;
+	BOOL result = FALSE;
+	PUCHAR buffer = NULL;
+	void *user_data = NULL;
+	int err = 0;
+	DWORD last_error = 0;
+	__u32 csi;
+
+	user_data = hdl->submit_entry(hdl, cmd);
+	if (hdl->ctx->dry_run)
+		goto out;
+
+	if (hdl->fd == INVALID_HANDLE_VALUE || hdl->fd == NULL) {
+		err = -EBADF;
+		goto out;
+	}
+
+	/* Command Set Indicator values other than NVME_CSI_NVM not supported */
+	csi = NVME_FIELD_DECODE(cmd->cdw14,
+				NVME_LOG_CDW14_CSI_SHIFT,
+				NVME_LOG_CDW14_CSI_MASK);
+	if (csi != NVME_CSI_NVM) {
+		/*
+		 * IOCTL_STORAGE_QUERY_PROPERTY doesn't take a CSI-equivalent
+		 * parameter and only supports NVME_CSI_NVM. For other CSI
+		 * values, fall back to IOCTL_STORAGE_PROTOCOL_COMMAND.
+		 */
+		return submit_storage_protocol_command(hdl, cmd, true, true, user_data);
+	}
+
+	buffer_len = FIELD_OFFSET(STORAGE_PROPERTY_QUERY, AdditionalParameters) +
+		sizeof(STORAGE_PROTOCOL_SPECIFIC_DATA) + cmd->data_len;
+
+	buffer = (PUCHAR)malloc(buffer_len);
+	if (!buffer) {
+		err = -ENOMEM;
+		goto out;
+	}
+
+	ZeroMemory(buffer, buffer_len);
+
+	query = (PSTORAGE_PROPERTY_QUERY)buffer;
+	protocol_data = (PSTORAGE_PROTOCOL_SPECIFIC_DATA)query->AdditionalParameters;
+
+	/*
+	 * StorageDeviceProtocolSpecificProperty works for only a small set of
+	 * log pages. StorageAdapterProtocolSpecificProperty is more general and
+	 * works for all supported log pages.
+	 */
+	query->PropertyId = StorageAdapterProtocolSpecificProperty;
+	query->QueryType = PropertyStandardQuery;
+
+	protocol_data->ProtocolType = ProtocolTypeNvme;
+	protocol_data->DataType = NVMeDataTypeLogPage;
+
+	protocol_data->ProtocolDataRequestValue = NVME_FIELD_DECODE(cmd->cdw10,
+					NVME_LOG_CDW10_LID_SHIFT,
+					NVME_LOG_CDW10_LID_MASK);
+
+	protocol_data->ProtocolDataRequestSubValue = cmd->cdw12;  /* LPO[31:0]  */
+	protocol_data->ProtocolDataRequestSubValue2 = cmd->cdw13; /* LPO[63:32] */
+
+	protocol_data->ProtocolDataRequestSubValue3 = NVME_FIELD_DECODE(cmd->cdw11,
+					NVME_LOG_CDW11_LSI_SHIFT,
+					NVME_LOG_CDW11_LSI_MASK);
+
+	protocol_data_subval.RetainAsynEvent = NVME_FIELD_DECODE(cmd->cdw10,
+					NVME_LOG_CDW10_RAE_SHIFT,
+					NVME_LOG_CDW10_RAE_MASK);
+	protocol_data_subval.LogSpecificField = NVME_FIELD_DECODE(cmd->cdw10,
+					NVME_LOG_CDW10_LSP_SHIFT,
+					NVME_LOG_CDW10_LSP_MASK);
+	protocol_data->ProtocolDataRequestSubValue4 = protocol_data_subval.AsUlong;
+
+	protocol_data->ProtocolDataLength = cmd->data_len;
+	protocol_data->ProtocolDataOffset = cmd->data_len == 0 ?
+			0 : sizeof(STORAGE_PROTOCOL_SPECIFIC_DATA);
+
+	do {
+		err = 0;
+		result = DeviceIoControl(hdl->fd,
+					IOCTL_STORAGE_QUERY_PROPERTY,
+					buffer,
+					buffer_len,
+					buffer,
+					buffer_len,
+					&returned_len,
+					NULL);
+		if (result)
+			break;
+
+		last_error = GetLastError();
+		if (last_error == ERROR_INVALID_FUNCTION) {
+			/*
+			 * IOCTL_STORAGE_QUERY_PROPERTY is the preferred path
+			 * for getting log pages, but it blocks logs not listed
+			 * in supported logs, returning ERROR_INVALID_FUNCTION
+			 * without submitting the command to the controller.
+			 * Try IOCTL_STORAGE_PROTOCOL_COMMAND for better parity
+			 * with Linux behavior, which submits the command and
+			 * allows the controller to respond if not supported.
+			 */
+			free(buffer);
+			return submit_storage_protocol_command(hdl, cmd, true, true, user_data);
+		}
+		err = -get_errno_from_error(last_error);
+	} while (hdl->decide_retry(hdl, cmd, err));
+
+	if (err) {
+		libnvme_msg(hdl->ctx, LIBNVME_LOG_DEBUG, "%s: failed, "
+			"GetLastError=%lu, err=%d\n",
+			__func__, last_error, err);
+		goto out_free_buffer;
+	}
+
+	/* Copy the returned log page data to the user's buffer */
+	if (cmd->addr && cmd->data_len > 0) {
+		memcpy((void *)(uintptr_t)cmd->addr,
+			(PUCHAR)protocol_data + protocol_data->ProtocolDataOffset,
+			min(protocol_data->ProtocolDataLength, (DWORD)cmd->data_len));
+	}
+
+	/* Only 32-bits of return data. Assuming CQE DW0. */
+	cmd->result = protocol_data->FixedProtocolReturnData;
+
+out_free_buffer:
+	free(buffer);
+out:
+	hdl->submit_exit(hdl, cmd, err, user_data);
+	return err;
+}
+
+static int submit_admin_identify(struct libnvme_transport_handle *hdl,
+		struct libnvme_passthru_cmd *cmd)
+{
+	PSTORAGE_PROPERTY_QUERY query = NULL;
+	PSTORAGE_PROTOCOL_SPECIFIC_DATA protocol_data = NULL;
+	ULONG buffer_len = 0;
+	ULONG returned_len = 0;
+	BOOL result = FALSE;
+	PUCHAR buffer = NULL;
+	void *user_data = NULL;
+	int err = 0;
+	DWORD last_error = 0;
+	__u32 cns;
+	__u32 csi;
+
+	user_data = hdl->submit_entry(hdl, cmd);
+	if (hdl->ctx->dry_run)
+		goto out;
+
+	if (hdl->fd == INVALID_HANDLE_VALUE || hdl->fd == NULL) {
+		err = -EBADF;
+		goto out;
+	}
+
+	/*
+	 * Not all Controller or Namespace Structure values are supported
+	 * on Windows, but allow the requested command to be issued and fail
+	 * if not supported.
+	 */
+	cns = NVME_FIELD_DECODE(cmd->cdw10,
+				NVME_IDENTIFY_CDW10_CNS_SHIFT,
+				NVME_IDENTIFY_CDW10_CNS_MASK);
+
+	/* Command Set Indicator values other than NVME_CSI_NVM not supported */
+	csi = NVME_FIELD_DECODE(cmd->cdw11,
+				NVME_IDENTIFY_CDW11_CSI_SHIFT,
+				NVME_IDENTIFY_CDW11_CSI_MASK);
+	if (csi != NVME_CSI_NVM) {
+		err = -ENOTSUP;
+		goto out;
+	}
+
+	buffer_len = FIELD_OFFSET(STORAGE_PROPERTY_QUERY, AdditionalParameters) +
+		sizeof(STORAGE_PROTOCOL_SPECIFIC_DATA) + cmd->data_len;
+
+	buffer = (PUCHAR)malloc(buffer_len);
+	if (!buffer) {
+		err = -ENOMEM;
+		goto out;
+	}
+
+	ZeroMemory(buffer, buffer_len);
+
+	query = (PSTORAGE_PROPERTY_QUERY)buffer;
+	protocol_data = (PSTORAGE_PROTOCOL_SPECIFIC_DATA)query->AdditionalParameters;
+
+	query->PropertyId = StorageAdapterProtocolSpecificProperty;
+	protocol_data->ProtocolType = ProtocolTypeNvme;
+	protocol_data->DataType = NVMeDataTypeIdentify;
+	protocol_data->ProtocolDataRequestValue = cns;
+	protocol_data->ProtocolDataRequestSubValue = cmd->nsid;
+
+	protocol_data->ProtocolDataLength = cmd->data_len;
+	protocol_data->ProtocolDataOffset = cmd->data_len == 0 ?
+			0 : sizeof(STORAGE_PROTOCOL_SPECIFIC_DATA);
+
+	do {
+		err = 0;
+		result = DeviceIoControl(hdl->fd,
+					IOCTL_STORAGE_QUERY_PROPERTY,
+					buffer,
+					buffer_len,
+					buffer,
+					buffer_len,
+					&returned_len,
+					NULL);
+		if (result)
+			break;
+
+		last_error = GetLastError();
+		err = -get_errno_from_error(last_error);
+	} while (hdl->decide_retry(hdl, cmd, err));
+
+	if (err) {
+		libnvme_msg(hdl->ctx, LIBNVME_LOG_DEBUG, "%s: failed, "
+			"GetLastError=%lu, err=%d\n",
+			__func__, last_error, err);
+		goto out_free_buffer;
+	}
+
+	/* Copy the returned data to the user's buffer */
+	if (cmd->addr && cmd->data_len > 0) {
+		memcpy((void *)(uintptr_t)cmd->addr,
+			(char *)protocol_data + protocol_data->ProtocolDataOffset,
+			min(protocol_data->ProtocolDataLength, (DWORD)cmd->data_len));
+	}
+
+	/* Only 32-bits of return data. Assuming CQE DW0. */
+	cmd->result = protocol_data->FixedProtocolReturnData;
+
+out_free_buffer:
+	free(buffer);
+out:
+	hdl->submit_exit(hdl, cmd, err, user_data);
+	return err;
+}
+
+static int submit_admin_set_features(struct libnvme_transport_handle *hdl,
+		struct libnvme_passthru_cmd *cmd)
+{
+	PSTORAGE_PROPERTY_SET set_property = NULL;
+	PSTORAGE_PROTOCOL_SPECIFIC_DATA_EXT protocol_data = NULL;
+	ULONG buffer_len = 0;
+	ULONG returned_len = 0;
+	BOOL result = FALSE;
+	PUCHAR buffer = NULL;
+	void *user_data = NULL;
+	int err = 0;
+	DWORD last_error = 0;
+
+	user_data = hdl->submit_entry(hdl, cmd);
+	if (hdl->ctx->dry_run)
+		goto out;
+
+	if (hdl->fd == INVALID_HANDLE_VALUE || hdl->fd == NULL) {
+		err = -EBADF;
+		goto out;
+	}
+
+	buffer_len = FIELD_OFFSET(STORAGE_PROPERTY_SET, AdditionalParameters) +
+		sizeof(STORAGE_PROTOCOL_SPECIFIC_DATA_EXT) + cmd->data_len;
+
+	buffer = (PUCHAR)malloc(buffer_len);
+	if (!buffer) {
+		err = -ENOMEM;
+		goto out;
+	}
+
+	ZeroMemory(buffer, buffer_len);
+
+	set_property = (PSTORAGE_PROPERTY_SET)buffer;
+	protocol_data = (PSTORAGE_PROTOCOL_SPECIFIC_DATA_EXT)set_property->AdditionalParameters;
+
+	set_property->PropertyId = StorageAdapterProtocolSpecificProperty;
+	set_property->SetType = PropertyStandardSet;
+
+	protocol_data->ProtocolType = ProtocolTypeNvme;
+	protocol_data->DataType = NVMeDataTypeFeature;
+
+	/*
+	 * Map NVMe Set Features command DWORDs to protocol data fields.
+	 * STORAGE_PROTOCOL_SPECIFIC_DATA_EXT values for NVMeDataTypeFeature
+	 * are documented in the STORAGE_PROTOCOL_NVME_DATA_TYPE enumeration.
+	 */
+	protocol_data->ProtocolDataValue = cmd->cdw10;
+	protocol_data->ProtocolDataSubValue = cmd->cdw11;
+	protocol_data->ProtocolDataSubValue2 = cmd->cdw12;
+	protocol_data->ProtocolDataSubValue3 = cmd->cdw13;
+	protocol_data->ProtocolDataSubValue4 = cmd->cdw14;
+	protocol_data->ProtocolDataSubValue5 = cmd->cdw15;
+
+	protocol_data->ProtocolDataLength = cmd->data_len;
+	protocol_data->ProtocolDataOffset = cmd->data_len == 0 ?
+			0 : sizeof(STORAGE_PROTOCOL_SPECIFIC_DATA_EXT);
+
+	/* Copy input data if present */
+	if (cmd->addr && cmd->data_len > 0) {
+		memcpy((PUCHAR)protocol_data + protocol_data->ProtocolDataOffset,
+			(void *)(uintptr_t)cmd->addr,
+			cmd->data_len);
+	}
+
+	do {
+		err = 0;
+		result = DeviceIoControl(hdl->fd,
+					IOCTL_STORAGE_SET_PROPERTY,
+					buffer,
+					buffer_len,
+					buffer,
+					buffer_len,
+					&returned_len,
+					NULL);
+		if (result)
+			break;
+
+		last_error = GetLastError();
+		err = -get_errno_from_error(last_error);
+	} while (hdl->decide_retry(hdl, cmd, err));
+
+	if (err) {
+		libnvme_msg(hdl->ctx, LIBNVME_LOG_DEBUG, "%s: failed, "
+			"GetLastError=%lu, err=%d\n",
+			__func__, last_error, err);
+		goto out_free_buffer;
+	}
+
+	/* Only 32-bits of return data. Assuming CQE DW0. */
+	cmd->result = protocol_data->FixedProtocolReturnData;
+
+out_free_buffer:
+	free(buffer);
+out:
+	hdl->submit_exit(hdl, cmd, err, user_data);
+	return err;
+}
+
+/*
+ * Default data length for Get Features requests. The Windows StorNVMe driver
+ * rejects Get Features requests with ProtocolDataLength=0 for some vendor-
+ * specific feature IDs (returning ERROR_INVALID_FUNCTION). Providing a
+ * non-zero data length satisfies the driver even for features that don't
+ * return data in the buffer.
+ */
+#define GET_FEATURES_DEF_DATA_LEN 4096
+
+static int get_features_status(DWORD error)
+{
+	if (!error)
+		return 0;
+
+	/* Translate error codes to NVMe status codes where possible. */
+	if (error == ERROR_IO_DEVICE)
+		return create_nvme_status_code(NVME_SC_INVALID_FIELD,
+					NVME_SCT_GENERIC, false);
+
+	return -get_errno_from_error(error);
+}
+
+static int submit_admin_get_features(struct libnvme_transport_handle *hdl,
+		struct libnvme_passthru_cmd *cmd)
+{
+	PSTORAGE_PROPERTY_QUERY query = NULL;
+	PSTORAGE_PROTOCOL_SPECIFIC_DATA protocol_data = NULL;
+	ULONG buffer_len = 0;
+	ULONG returned_len = 0;
+	BOOL result = FALSE;
+	PUCHAR buffer = NULL;
+	void *user_data = NULL;
+	int err = 0;
+	DWORD last_error = 0;
+	ULONG query_data_len;
+
+	user_data = hdl->submit_entry(hdl, cmd);
+	if (hdl->ctx->dry_run)
+		goto out;
+
+	if (hdl->fd == INVALID_HANDLE_VALUE || hdl->fd == NULL) {
+		err = -EBADF;
+		goto out;
+	}
+
+	/*
+	 * Use a default data length to work around StorNVMe rejecting
+	 * requests with ProtocolDataLength=0 for some feature IDs.
+	 */
+	query_data_len = cmd->data_len > 0 ?
+			cmd->data_len : GET_FEATURES_DEF_DATA_LEN;
+
+	buffer_len = FIELD_OFFSET(STORAGE_PROPERTY_QUERY, AdditionalParameters) +
+		sizeof(STORAGE_PROTOCOL_SPECIFIC_DATA) + query_data_len;
+
+	buffer = (PUCHAR)malloc(buffer_len);
+	if (!buffer) {
+		err = -ENOMEM;
+		goto out;
+	}
+
+	ZeroMemory(buffer, buffer_len);
+
+	query = (PSTORAGE_PROPERTY_QUERY)buffer;
+	protocol_data = (PSTORAGE_PROTOCOL_SPECIFIC_DATA)query->AdditionalParameters;
+
+	query->PropertyId = StorageAdapterProtocolSpecificProperty;
+	query->QueryType = PropertyStandardQuery;
+
+	protocol_data->ProtocolType = ProtocolTypeNvme;
+	protocol_data->DataType = NVMeDataTypeFeature;
+
+	/*
+	 * Map NVMe Get Features command DWORDs to protocol data fields.
+	 * STORAGE_PROTOCOL_SPECIFIC_DATA values for Get Features are documented
+	 * in the STORAGE_PROTOCOL_NVME_DATA_TYPE enumeration documentation.
+	 */
+	protocol_data->ProtocolDataRequestValue = cmd->cdw10;
+	protocol_data->ProtocolDataRequestSubValue = cmd->cdw11;
+	protocol_data->ProtocolDataRequestSubValue2 = cmd->cdw12;
+	protocol_data->ProtocolDataRequestSubValue3 = cmd->cdw13;
+	protocol_data->ProtocolDataRequestSubValue4 = cmd->cdw14;
+
+	protocol_data->ProtocolDataLength = query_data_len;
+	protocol_data->ProtocolDataOffset = sizeof(STORAGE_PROTOCOL_SPECIFIC_DATA);
+
+	do {
+		err = 0;
+		result = DeviceIoControl(hdl->fd,
+					IOCTL_STORAGE_QUERY_PROPERTY,
+					buffer,
+					buffer_len,
+					buffer,
+					buffer_len,
+					&returned_len,
+					NULL);
+		if (result)
+			break;
+
+		last_error = GetLastError();
+		err = get_features_status(last_error);
+	} while (hdl->decide_retry(hdl, cmd, err));
+
+	if (err) {
+		libnvme_msg(hdl->ctx, LIBNVME_LOG_DEBUG, "%s: failed, "
+			"GetLastError=%lu, err=%d\n",
+			__func__, last_error, err);
+		goto out_free_buffer;
+	}
+
+	/* Copy the returned data to the user's buffer if present */
+	if (cmd->addr && cmd->data_len > 0) {
+		memcpy((void *)(uintptr_t)cmd->addr,
+			(PUCHAR)protocol_data + protocol_data->ProtocolDataOffset,
+			min(protocol_data->ProtocolDataLength, (DWORD)cmd->data_len));
+	}
+
+	/* Only 32-bits of return data. Assuming CQE DW0. */
+	cmd->result = protocol_data->FixedProtocolReturnData;
+
+out_free_buffer:
+	free(buffer);
+out:
+	hdl->submit_exit(hdl, cmd, err, user_data);
+	return err;
+}
+
+#ifndef STORAGE_HW_FIRMWARE_REQUEST_FLAG_CONTROLLER
+
+/*
+ * Definitions for values and types not yet included in mingw's winioctl.h.
+ * Values found in the 10.0.26100.0 Windows SDK winioctl.h.
+ */
+
+#define STORAGE_HW_FIRMWARE_REQUEST_FLAG_CONTROLLER    0x00000001
+
+/* Activate the existing firmware immediately without controller reset. */
+#define STORAGE_HW_FIRMWARE_REQUEST_FLAG_SWITCH_TO_FIRMWARE_WITHOUT_RESET 0x10000000
+/* Replace existing firmware and activate with controller reset. */
+#define STORAGE_HW_FIRMWARE_REQUEST_FLAG_REPLACE_AND_SWITCH_UPON_RESET 0x20000000
+/* Replace the existing firmware. Not activated. */
+#define STORAGE_HW_FIRMWARE_REQUEST_FLAG_REPLACE_EXISTING_IMAGE      0x40000000
+/* Activate the existing firmware with a controller reset. */
+#define STORAGE_HW_FIRMWARE_REQUEST_FLAG_SWITCH_TO_EXISTING_FIRMWARE 0x80000000
+
+typedef struct _STORAGE_HW_FIRMWARE_ACTIVATE {
+	DWORD   Version;
+	DWORD   Size;
+
+	DWORD   Flags;
+	BYTE    Slot;
+	BYTE    Reserved0[3];
+} STORAGE_HW_FIRMWARE_ACTIVATE, *PSTORAGE_HW_FIRMWARE_ACTIVATE;
+
+typedef struct _STORAGE_HW_FIRMWARE_DOWNLOAD {
+	DWORD       Version;
+	DWORD       Size;
+
+	DWORD       Flags;
+	BYTE        Slot;
+	BYTE        Reserved[3];
+
+	DWORDLONG   Offset;
+	DWORDLONG   BufferSize;
+
+	BYTE        ImageBuffer[ANYSIZE_ARRAY];
+} STORAGE_HW_FIRMWARE_DOWNLOAD, *PSTORAGE_HW_FIRMWARE_DOWNLOAD;
+
+#endif
+
+/* Definitions for values not yet included in mingw's winerror.h */
+#ifndef STG_E_FIRMWARE_SLOT_INVALID
+#define STG_E_FIRMWARE_SLOT_INVALID      _HRESULT_TYPEDEF_(0x80030208L)
+#endif
+#ifndef STG_E_FIRMWARE_IMAGE_INVALID
+#define STG_E_FIRMWARE_IMAGE_INVALID     _HRESULT_TYPEDEF_(0x80030209L)
+#endif
+
+static int get_firmware_command_status(DWORD error)
+{
+	if (!error)
+		return 0;
+
+	/* Translate error codes to NVMe status codes where possible. */
+	switch (error) {
+	case STG_E_FIRMWARE_IMAGE_INVALID:
+		return create_nvme_status_code(NVME_SC_FIRMWARE_IMAGE,
+					NVME_SCT_CMD_SPECIFIC, false);
+	case STG_E_FIRMWARE_SLOT_INVALID:
+		return create_nvme_status_code(NVME_SC_FIRMWARE_SLOT,
+					NVME_SCT_CMD_SPECIFIC, false);
+	default:
+		return -get_errno_from_error(error);
+	}
+}
+
+static int submit_admin_fw_commit(struct libnvme_transport_handle *hdl,
+		struct libnvme_passthru_cmd *cmd)
+{
+	PSTORAGE_HW_FIRMWARE_ACTIVATE firmware_activate = NULL;
+	ULONG buffer_len = 0;
+	ULONG returned_len = 0;
+	BOOL result = FALSE;
+	void *user_data = NULL;
+	int err = 0;
+	DWORD last_error = 0;
+	__u8 commit_action;
+
+	user_data = hdl->submit_entry(hdl, cmd);
+	if (hdl->ctx->dry_run)
+		goto out;
+
+	if (hdl->fd == INVALID_HANDLE_VALUE || hdl->fd == NULL) {
+		err = -EBADF;
+		goto out;
+	}
+
+	buffer_len = sizeof(STORAGE_HW_FIRMWARE_ACTIVATE);
+
+	firmware_activate = (PSTORAGE_HW_FIRMWARE_ACTIVATE)malloc(buffer_len);
+	if (!firmware_activate) {
+		err = -ENOMEM;
+		goto out;
+	}
+
+	ZeroMemory(firmware_activate, buffer_len);
+
+	firmware_activate->Version = sizeof(STORAGE_HW_FIRMWARE_ACTIVATE);
+	firmware_activate->Size = sizeof(STORAGE_HW_FIRMWARE_ACTIVATE);
+	firmware_activate->Slot = NVME_FIELD_DECODE(cmd->cdw10,
+			NVME_FW_COMMIT_CDW10_FS_SHIFT,
+			NVME_FW_COMMIT_CDW10_FS_MASK);
+
+	/* For NVMe devices, the target is the controller */
+	firmware_activate->Flags = STORAGE_HW_FIRMWARE_REQUEST_FLAG_CONTROLLER;
+
+	/* Set additional flags based on the commit action */
+	commit_action = NVME_FIELD_DECODE(cmd->cdw10,
+		NVME_FW_COMMIT_CDW10_CA_SHIFT,
+		NVME_FW_COMMIT_CDW10_CA_MASK);
+
+	/*
+	 * Testing shows Windows only supports two commit behaviors:
+	 * Activate, and Replace and Activate.
+	 * Map all replace actions to Replace and Activate.
+	 */
+	switch (commit_action) {
+	case 0: /* Replace, no activate. */
+	case 1: /* Replace and activate at next reset. */
+	case 3: /* Replace and activate immediately. */
+		firmware_activate->Flags |=
+			STORAGE_HW_FIRMWARE_REQUEST_FLAG_REPLACE_AND_SWITCH_UPON_RESET;
+		break;
+	case 2: /* Activate the current firmware at next reset */
+		/*
+		 * STORAGE_HW_FIRMWARE_REQUEST_FLAG_SWITCH_TO_EXISTING_FIRMWARE
+		 * results in no discernable action. The default behavior with
+		 * no flag set activates the current firmware in the specified
+		 * slot, so use that instead.
+		 */
+		break;
+	default:
+		err = -ENOTSUP;
+		libnvme_msg(hdl->ctx, LIBNVME_LOG_DEBUG,
+			"%s: unsupported commit action %u\n",
+			__func__, commit_action);
+		goto out_free_buffer;
+	}
+
+	do {
+		err = 0;
+		result = DeviceIoControl(hdl->fd,
+					IOCTL_STORAGE_FIRMWARE_ACTIVATE,
+					firmware_activate,
+					buffer_len,
+					NULL,
+					0,
+					&returned_len,
+					NULL);
+		if (result)
+			break;
+
+		last_error = GetLastError();
+		err = get_firmware_command_status(last_error);
+	} while (hdl->decide_retry(hdl, cmd, err));
+
+	if (err) {
+		libnvme_msg(hdl->ctx, LIBNVME_LOG_DEBUG,
+			"%s: failed, GetLastError=0x%lx, err=%d\n",
+			__func__, last_error, err);
+		goto out_free_buffer;
+	}
+
+	/* FW Commit doesn't return result data */
+	cmd->result = 0;
+
+out_free_buffer:
+	free(firmware_activate);
+out:
+	hdl->submit_exit(hdl, cmd, err, user_data);
+	return err;
+}
+
+static int submit_admin_fw_download(struct libnvme_transport_handle *hdl,
+		struct libnvme_passthru_cmd *cmd)
+{
+	PSTORAGE_HW_FIRMWARE_DOWNLOAD firmware_download = NULL;
+	ULONG buffer_len = 0;
+	ULONG returned_len = 0;
+	BOOL result = FALSE;
+	PUCHAR buffer = NULL;
+	void *user_data = NULL;
+	int err = 0;
+
+	user_data = hdl->submit_entry(hdl, cmd);
+	if (hdl->ctx->dry_run)
+		goto out;
+
+	if (hdl->fd == INVALID_HANDLE_VALUE || hdl->fd == NULL) {
+		err = -EBADF;
+		goto out;
+	}
+
+	/*
+	 * Allocate buffer for STORAGE_HW_FIRMWARE_DOWNLOAD structure.
+	 * The structure contains the firmware image data inline at the end.
+	 */
+	buffer_len = FIELD_OFFSET(STORAGE_HW_FIRMWARE_DOWNLOAD, ImageBuffer)
+			+ cmd->data_len;
+
+	buffer = (PUCHAR)malloc(buffer_len);
+	if (!buffer) {
+		err = -ENOMEM;
+		goto out;
+	}
+
+	ZeroMemory(buffer, buffer_len);
+
+	firmware_download = (PSTORAGE_HW_FIRMWARE_DOWNLOAD)buffer;
+	firmware_download->Version = sizeof(STORAGE_HW_FIRMWARE_DOWNLOAD);
+	firmware_download->Size = buffer_len;
+
+	/*
+	 * The NVMe command uses DWORD counts for size and offset.
+	 * The Windows API uses byte counts, so convert accordingly.
+	 * See ioctl.h/nvme_init_fw_download for encoding details.
+	 */
+	firmware_download->BufferSize = (DWORDLONG)(cmd->cdw10 + 1) << 2;
+	firmware_download->Offset = (DWORDLONG)cmd->cdw11 << 2;
+
+	firmware_download->Flags = STORAGE_HW_FIRMWARE_REQUEST_FLAG_CONTROLLER;
+
+	if (cmd->addr && cmd->data_len > 0) {
+		memcpy(firmware_download->ImageBuffer,
+			(void *)(uintptr_t)cmd->addr,
+			cmd->data_len);
+	}
+
+	do {
+		err = 0;
+		result = DeviceIoControl(hdl->fd,
+					IOCTL_STORAGE_FIRMWARE_DOWNLOAD,
+					buffer,
+					buffer_len,
+					NULL,
+					0,
+					&returned_len,
+					NULL);
+		if (result)
+			break;
+		err = get_firmware_command_status(GetLastError());
+	} while (hdl->decide_retry(hdl, cmd, err));
+
+	if (err)
+		goto out_free_buffer;
+
+	/* Firmware download doesn't return result data */
+	cmd->result = 0;
+
+out_free_buffer:
+	free(buffer);
+out:
+	hdl->submit_exit(hdl, cmd, err, user_data);
+	return err;
+}
+
+#if !HAVE_STORAGE_REINITIALIZE_MEDIA
+/*
+ * Definitions for values and types not yet included in mingw's winioctl.h.
+ * Values found in the 10.0.26100.0 Windows SDK winioctl.h.
+ */
+
+typedef enum _STORAGE_SANITIZE_METHOD {
+	StorageSanitizeMethodDefault = 0,
+	StorageSanitizeMethodBlockErase,
+	StorageSanitizeMethodCryptoErase
+} STORAGE_SANITIZE_METHOD, *PSTORAGE_SANITIZE_METHOD;
+
+typedef struct _STORAGE_REINITIALIZE_MEDIA {
+	DWORD Version;
+	DWORD Size;
+	DWORD TimeoutInSeconds;
+	struct {
+		DWORD SanitizeMethod : 4;
+		DWORD DisallowUnrestrictedSanitizeExit : 1;
+		DWORD Reserved : 27;
+	} SanitizeOption;
+} STORAGE_REINITIALIZE_MEDIA, *PSTORAGE_REINITIALIZE_MEDIA;
+#endif
+
+static int submit_admin_sanitize_reinit_media(
+		struct libnvme_transport_handle *hdl,
+		struct libnvme_passthru_cmd *cmd)
+{
+	struct libnvme_transport_handle *ns_hdl = NULL;
+	STORAGE_REINITIALIZE_MEDIA reinit_media = {0};
+	STORAGE_SANITIZE_METHOD sanitize_method = StorageSanitizeMethodDefault;
+	ULONG returned_len = 0;
+	void *user_data = NULL;
+	BOOL lock_succeeded = FALSE;
+	BOOL result = FALSE;
+	int err = 0;
+	DWORD last_error = 0;
+	__u8 sanact;
+	__u8 ause;
+
+	/*
+	 * IOCTL_STORAGE_REINITIALIZE_MEDIA requires a handle to a disk (ns).
+	 * If the provided handle is a controller, get a handle to the default
+	 * namespace and issue the command on that handle instead.
+	 */
+	if (libnvme_transport_handle_is_ns(hdl)) {
+		ns_hdl = hdl;
+	} else {
+		ns_hdl = get_ns_handle_from_ctrl(hdl);
+		if (!ns_hdl) {
+			err = -ENODEV;
+			goto out;
+		}
+	}
+
+	user_data = hdl->submit_entry(hdl, cmd);
+	if (hdl->ctx->dry_run)
+		goto out;
+
+	if (ns_hdl->fd == INVALID_HANDLE_VALUE || ns_hdl->fd == NULL) {
+		err = -EBADF;
+		goto out;
+	}
+
+	sanact = NVME_FIELD_DECODE(cmd->cdw10,
+			NVME_SANITIZE_CDW10_SANACT_SHIFT,
+			NVME_SANITIZE_CDW10_SANACT_MASK);
+	ause = NVME_FIELD_DECODE(cmd->cdw10,
+			NVME_SANITIZE_CDW10_AUSE_SHIFT,
+			NVME_SANITIZE_CDW10_AUSE_MASK);
+
+	switch (sanact) {
+	case NVME_SANITIZE_SANACT_START_BLOCK_ERASE:
+		sanitize_method = StorageSanitizeMethodBlockErase;
+		break;
+	case NVME_SANITIZE_SANACT_START_CRYPTO_ERASE:
+		sanitize_method = StorageSanitizeMethodCryptoErase;
+		break;
+	case NVME_SANITIZE_SANACT_START_OVERWRITE:
+	case NVME_SANITIZE_SANACT_EXIT_FAILURE:
+	case NVME_SANITIZE_SANACT_EXIT_MEDIA_VERIF:
+		libnvme_msg(hdl->ctx, LIBNVME_LOG_ERR,
+			"SANACT=%u is not supported on Windows.\n", sanact);
+		err = -ENOTSUP;
+		goto out;
+	default:
+		err = create_nvme_status_code(NVME_SC_INVALID_FIELD,
+					NVME_SCT_GENERIC, false);
+		goto out;
+	}
+
+	/*
+	 * Attempt to lock the volume before reinitializing media as documented
+	 * in the Windows Storage documentationto flush cached data.
+	 * If locking fails, the sanitize can still proceed.
+	 */
+	lock_succeeded = DeviceIoControl(ns_hdl->fd, FSCTL_LOCK_VOLUME,
+				NULL, 0, NULL, 0, &returned_len, NULL);
+
+	reinit_media.Version = sizeof(STORAGE_REINITIALIZE_MEDIA);
+	reinit_media.Size = sizeof(STORAGE_REINITIALIZE_MEDIA);
+	reinit_media.TimeoutInSeconds = (cmd->timeout_ms > 0) ?
+		((cmd->timeout_ms + 999) / 1000) : 0;
+	reinit_media.SanitizeOption.SanitizeMethod = sanitize_method;
+	reinit_media.SanitizeOption.DisallowUnrestrictedSanitizeExit = !ause;
+
+	do {
+		err = 0;
+		result = DeviceIoControl(ns_hdl->fd,
+				IOCTL_STORAGE_REINITIALIZE_MEDIA,
+				&reinit_media,
+				sizeof(reinit_media),
+				NULL,
+				0,
+				&returned_len,
+				NULL);
+		if (result)
+			break;
+
+		last_error = GetLastError();
+		err = -get_errno_from_error(last_error);
+	} while (hdl->decide_retry(hdl, cmd, err));
+
+	if (err) {
+		libnvme_msg(hdl->ctx, LIBNVME_LOG_DEBUG, "%s: failed, "
+			"GetLastError=%lu, err=%d\n",
+			__func__, last_error, err);
+		goto out;
+	}
+
+	cmd->result = 0;
+
+out:
+	if (lock_succeeded)
+		DeviceIoControl(ns_hdl->fd, FSCTL_UNLOCK_VOLUME,
+				NULL, 0, NULL, 0, &returned_len, NULL);
+
+	if (ns_hdl && !libnvme_transport_handle_is_ns(hdl))
+		libnvme_close(ns_hdl);
+
+	hdl->submit_exit(hdl, cmd, err, user_data);
+	return err;
+}
+
+static int submit_admin_sanitize(
+		struct libnvme_transport_handle *hdl,
+		struct libnvme_passthru_cmd *cmd)
+{
+	int err;
+
+	/*
+	 * Windows documentation says IOCTL_STORAGE_PROTOCOL_COMMAND
+	 * should work for sanitize commands, but in practice the command
+	 * returns a failing result and a pending status, and the command
+	 * never gets passed to the controller.
+	 *
+	 * Run sanitize using IOCTL_STORAGE_REINITIALIZE_MEDIA instead.
+	 * For controller handles, this will be run on the default namespace
+	 * handle if available. If not available, -ENODEV will be returned.
+	 */
+
+	err = submit_admin_sanitize_reinit_media(hdl, cmd);
+	if (err == -ENODEV) {
+		/*
+		 * Default namespace handle not available,
+		 * fall back to IOCTL_STORAGE_PROTOCOL_COMMAND.
+		 */
+		err = submit_storage_protocol_command(hdl, cmd, true, false, NULL);
+	}
+
+	return err;
+}
+
+/* SCSI operation code for sanitize command - from ddk/scsi.h */
+#define SCSIOP_SANITIZE 0x48
+
+/*
+ * Windows maps SCSI_PASS_THROUGH with SCSIOP_SANITIZE to the NVMe Format NVM
+ * command with SES=1 (User Data Erase).
+ */
+static int submit_admin_format_nvm_user_data_erase(
+		struct libnvme_transport_handle *hdl,
+		struct libnvme_passthru_cmd *cmd)
+{
+	PSCSI_PASS_THROUGH pass_through = NULL;
+	ULONG buffer_len = 0;
+	ULONG returned_len = 0;
+	ULONG sense_offset = 0;
+	BOOL result = FALSE;
+	PUCHAR buffer = NULL;
+	void *user_data = NULL;
+	int err = 0;
+	DWORD last_error = 0;
+
+	user_data = hdl->submit_entry(hdl, cmd);
+	if (hdl->ctx->dry_run)
+		goto out;
+
+	if (hdl->fd == INVALID_HANDLE_VALUE || hdl->fd == NULL) {
+		err = -EBADF;
+		goto out;
+	}
+
+	/* Allocate buffer for SCSI_PASS_THROUGH + sense data */
+	sense_offset = sizeof(SCSI_PASS_THROUGH);
+	buffer_len = sense_offset + SCSI_SENSE_BUFFER_LEN;
+	buffer = (PUCHAR)malloc(buffer_len);
+	if (!buffer) {
+		err = -ENOMEM;
+		goto out;
+	}
+
+	ZeroMemory(buffer, buffer_len);
+
+	pass_through = (PSCSI_PASS_THROUGH)buffer;
+	pass_through->Length = sizeof(SCSI_PASS_THROUGH);
+	pass_through->CdbLength = 10;
+	pass_through->DataIn = SCSI_IOCTL_DATA_UNSPECIFIED;
+	pass_through->DataTransferLength = 0;
+	pass_through->SenseInfoLength = SCSI_SENSE_BUFFER_LEN;
+	pass_through->SenseInfoOffset = sense_offset;
+	pass_through->TimeOutValue = (cmd->timeout_ms > 0) ?
+		((cmd->timeout_ms + 999) / 1000) : 300;
+	pass_through->DataBufferOffset = 0;
+
+	/*
+	 * Build the Sanitize CDB (10 bytes, per SBC-3)
+	 * Byte 0: Operation code (0x48)
+	 * Byte 1:
+	 *   Bit 7: IMMED (Immediate)
+	 *   Bit 6: ZNR (Zone No Reset)
+	 *   Bit 5: AUSE (Allow Unrestricted Sanitize Exit)
+	 *   Bits 4-0: Service action
+	 *     0x01 = Overwrite
+	 *     0x02 = Block Erase
+	 *     0x03 = Crypto Erase
+	 *     0x1F = Exit Failure Mode
+	 * Bytes 2-5: Reserved
+	 * Bytes 6-8: Parameter list length (only used by Overwrite)
+	 * Byte 9: Control
+	 *
+	 * For NVMe User Data Erase, use Block Erase (service action 0x02).
+	 */
+	pass_through->Cdb[0] = SCSIOP_SANITIZE;
+	pass_through->Cdb[1] = 0x02; /* Block Erase, non-immediate */
+
+	do {
+		err = 0;
+		result = DeviceIoControl(hdl->fd,
+				IOCTL_SCSI_PASS_THROUGH,
+				buffer,
+				buffer_len,
+				buffer,
+				buffer_len,
+				&returned_len,
+				NULL);
+		if (result && !pass_through->ScsiStatus)
+			break;
+
+		last_error = result ? 0 : GetLastError();
+		if (!result)
+			err = -get_errno_from_error(last_error);
+		else
+			err = get_status_from_scsi_status(pass_through, buffer);
+	} while (hdl->decide_retry(hdl, cmd, err));
+
+	if (err) {
+		log_scsi_pass_through_error(hdl, __func__, pass_through,
+			buffer, last_error, err, result);
+		goto out_free_buffer;
+	}
+
+	cmd->result = 0;
+
+out_free_buffer:
+	free(buffer);
+out:
+	hdl->submit_exit(hdl, cmd, err, user_data);
+	return err;
+}
+
+/*
+ * Windows maps IOCTL_STORAGE_REINITIALIZE_MEDIA to the NVMe Format NVM command
+ * with SES=2 (Cryptographic Erase).
+ */
+static int submit_admin_format_nvm_crypto_erase(
+		struct libnvme_transport_handle *hdl,
+		struct libnvme_passthru_cmd *cmd)
+{
+	BOOL result = FALSE;
+	ULONG returned_len = 0;
+	void *user_data = NULL;
+	int err = 0;
+
+	user_data = hdl->submit_entry(hdl, cmd);
+	if (hdl->ctx->dry_run)
+		goto out;
+
+	if (hdl->fd == INVALID_HANDLE_VALUE || hdl->fd == NULL) {
+		err = -EBADF;
+		goto out;
+	}
+
+	do {
+		err = 0;
+		result = DeviceIoControl(hdl->fd,
+				IOCTL_STORAGE_REINITIALIZE_MEDIA,
+				NULL,
+				0,
+				NULL,
+				0,
+				&returned_len,
+				NULL);
+		if (result)
+			break;
+		err = -get_errno_from_error(GetLastError());
+	} while (hdl->decide_retry(hdl, cmd, err));
+
+	cmd->result = 0;
+
+out:
+	hdl->submit_exit(hdl, cmd, err, user_data);
+	return err;
+}
+
+static int submit_admin_format_nvm(struct libnvme_transport_handle *hdl,
+		struct libnvme_passthru_cmd *cmd)
+{
+	__u8 ses;
+
+	/* For WinPE, use storage protocol command. */
+	if (get_is_win_pe())
+		return submit_storage_protocol_command(hdl, cmd, true, false, NULL);
+
+	if (!libnvme_transport_handle_is_ns(hdl)) {
+		libnvme_msg(hdl->ctx, LIBNVME_LOG_ERR, "Windows only supports "
+			"format on namespace devices (e.g. nvme0n1)\n");
+		return -ENOTSUP;
+	}
+
+	/*
+	 * Extract the Secure Erase Settings (SES) from CDW10 and call the
+	 * appropriate implementation based on the requested erase type.
+	 */
+	ses = NVME_FIELD_DECODE(cmd->cdw10,
+			NVME_FORMAT_CDW10_SES_SHIFT,
+			NVME_FORMAT_CDW10_SES_MASK);
+
+	/*
+	 * Per Microsoft StorNVMe documentation:
+	 * - SES=0 (No Erase): Not supported on Windows
+	 * - SES=1 (User Data Erase): Use IOCTL_SCSI_PASS_THROUGH with SANITIZE
+	 * - SES=2 (Cryptographic Erase): Use IOCTL_STORAGE_REINITIALIZE_MEDIA
+	 */
+	switch (ses) {
+	case NVME_FORMAT_SES_NONE:
+		libnvme_msg(hdl->ctx, LIBNVME_LOG_ERR, "SES=0 (No Erase) "
+			"is not supported on Windows\n");
+		return -ENOTSUP;	/* Not supported on Windows */
+	case NVME_FORMAT_SES_USER_DATA_ERASE:
+		return submit_admin_format_nvm_user_data_erase(hdl, cmd);
+	case NVME_FORMAT_SES_CRYPTO_ERASE:
+		return submit_admin_format_nvm_crypto_erase(hdl, cmd);
+	default:
+		return create_nvme_status_code(NVME_SC_INVALID_FIELD,
+					NVME_SCT_GENERIC, false);
+	}
+}
+
+/* SCSI operation codes for security commands - from ddk/scsi.h */
+#define SCSIOP_SECURITY_PROTOCOL_IN      0xA2
+#define SCSIOP_SECURITY_PROTOCOL_OUT     0xB5
+
+static int submit_admin_security_send_receive(
+		struct libnvme_transport_handle *hdl,
+		struct libnvme_passthru_cmd *cmd)
+{
+	PSCSI_PASS_THROUGH pass_through = NULL;
+	ULONG buffer_len = 0;
+	ULONG returned_len = 0;
+	ULONG sense_offset = 0;
+	ULONG data_offset = 0;
+	BOOL result = FALSE;
+	PUCHAR buffer = NULL;
+	void *user_data = NULL;
+	int err = 0;
+	DWORD last_error = 0;
+	bool is_send = (cmd->opcode == nvme_admin_security_send);
+
+	user_data = hdl->submit_entry(hdl, cmd);
+	if (hdl->ctx->dry_run)
+		goto out;
+
+	if (hdl->fd == INVALID_HANDLE_VALUE || hdl->fd == NULL) {
+		err = -EBADF;
+		goto out;
+	}
+
+	if (cmd->data_len > 0 && !cmd->addr) {
+		err = -EINVAL;
+		goto out;
+	}
+
+	/* Allocate buffer for SCSI_PASS_THROUGH + sense data + data */
+	sense_offset = sizeof(SCSI_PASS_THROUGH);
+	data_offset = sense_offset + SCSI_SENSE_BUFFER_LEN;
+	buffer_len = data_offset + cmd->data_len;
+	buffer = (PUCHAR)malloc(buffer_len);
+	if (!buffer) {
+		err = -ENOMEM;
+		goto out;
+	}
+
+	ZeroMemory(buffer, buffer_len);
+
+	pass_through = (PSCSI_PASS_THROUGH)buffer;
+	pass_through->Length = sizeof(SCSI_PASS_THROUGH);
+	pass_through->CdbLength = 12;
+	pass_through->DataIn = is_send ? SCSI_IOCTL_DATA_OUT : SCSI_IOCTL_DATA_IN;
+	pass_through->DataTransferLength = cmd->data_len;
+	pass_through->SenseInfoLength = SCSI_SENSE_BUFFER_LEN;
+	pass_through->SenseInfoOffset = sense_offset;
+	pass_through->TimeOutValue = (cmd->timeout_ms > 0) ?
+		((cmd->timeout_ms + 999) / 1000) : 30;
+	pass_through->DataBufferOffset = data_offset;
+
+	if (is_send && cmd->addr && cmd->data_len > 0) {
+		memcpy(buffer + pass_through->DataBufferOffset,
+			(void *)(uintptr_t)cmd->addr, cmd->data_len);
+	}
+
+	/*
+	 * Build the Security Protocol CDB (12 bytes, per SPC-4)
+	 * Byte 0: Operation code (0xA2/0xB5)
+	 * Byte 1: Security Protocol (SECP)
+	 * Byte 2-3: Security Protocol Specific (SPSP)
+	 * Byte 4: Reserved
+	 * Byte 5: NSSF (NVMe Security Specific Field)
+	 * Byte 6-9: Allocation Length (big-endian)
+	 * Byte 10-11: Reserved
+	 */
+	pass_through->Cdb[0] = is_send ?
+		SCSIOP_SECURITY_PROTOCOL_OUT : SCSIOP_SECURITY_PROTOCOL_IN;
+	pass_through->Cdb[1] = NVME_FIELD_DECODE(cmd->cdw10,
+			NVME_SECURITY_SECP_SHIFT,
+			NVME_SECURITY_SECP_MASK);
+	pass_through->Cdb[2] = NVME_FIELD_DECODE(cmd->cdw10,
+			NVME_SECURITY_SPSP1_SHIFT,
+			NVME_SECURITY_SPSP1_MASK);
+	pass_through->Cdb[3] = NVME_FIELD_DECODE(cmd->cdw10,
+			NVME_SECURITY_SPSP0_SHIFT,
+			NVME_SECURITY_SPSP0_MASK);
+	pass_through->Cdb[4] = 0;  /* Reserved */
+	pass_through->Cdb[5] = NVME_FIELD_DECODE(cmd->cdw10,
+			NVME_SECURITY_NSSF_SHIFT,
+			NVME_SECURITY_NSSF_MASK);
+	/* Transfer/Allocation length (CDW11) in big-endian */
+	pass_through->Cdb[6] = (cmd->cdw11 >> 24) & 0xFF;
+	pass_through->Cdb[7] = (cmd->cdw11 >> 16) & 0xFF;
+	pass_through->Cdb[8] = (cmd->cdw11 >> 8) & 0xFF;
+	pass_through->Cdb[9] = cmd->cdw11 & 0xFF;
+	pass_through->Cdb[10] = 0; /* Reserved */
+	pass_through->Cdb[11] = 0; /* Reserved */
+
+	do {
+		err = 0;
+		result = DeviceIoControl(hdl->fd,
+				IOCTL_SCSI_PASS_THROUGH,
+				buffer,
+				buffer_len,
+				buffer,
+				buffer_len,
+				&returned_len,
+				NULL);
+		if (result && !pass_through->ScsiStatus)
+			break;
+
+		last_error = result ? 0 : GetLastError();
+		if (!result)
+			err = -get_errno_from_error(last_error);
+		else
+			err = get_status_from_scsi_status(pass_through, buffer);
+	} while (hdl->decide_retry(hdl, cmd, err));
+
+	if (err) {
+		log_scsi_pass_through_error(hdl, __func__, pass_through,
+			buffer, last_error, err, result);
+		goto out_free_buffer;
+	}
+
+	/* Copy returned data to user buffer if this was a receive */
+	if (!is_send && cmd->addr && cmd->data_len > 0) {
+		ULONG copy_len = min(pass_through->DataTransferLength,
+				(ULONG)cmd->data_len);
+
+		memcpy((void *)(uintptr_t)cmd->addr,
+			buffer + pass_through->DataBufferOffset,
+			copy_len);
+		cmd->data_len = copy_len;
+	}
+
+	/* No result data returned by command. */
+	cmd->result = 0;
+
+out_free_buffer:
+	free(buffer);
+out:
+	hdl->submit_exit(hdl, cmd, err, user_data);
+	return err;
+}
+
+/*
+ * Windows only supports a subset of NVMe IO command calls from user space
+ * and uses different IOCTLs for different commands instead of a single
+ * passthru interface.
+ * Passthru is supported using IOCTL_STORAGE_PROTOCOL_COMMAND,
+ * but only for vendor-specific commands and a small subset of IO commands.
+ * For supported commands and a mapping to the required IOCTLs, see:
+ * https://learn.microsoft.com/en-us/windows-hardware/drivers/storage/stornvme-command-set-support
+ */
+__shr_public int libnvme_exec_io_passthru(
+		struct libnvme_transport_handle *hdl,
+		struct libnvme_passthru_cmd *cmd)
+{
+	if (!hdl || !cmd)
+		return -EINVAL;
+
+	cmd->result = 0;
+
+	if (hdl->type == LIBNVME_TRANSPORT_HANDLE_TYPE_LOOPBACK) {
+		if (hdl->ctx->dry_run)
+			return __libnvme_exec_dry_run(hdl, cmd);
+		return __libnvme_loopback_io_passthru(hdl, cmd);
+	}
+
+	switch (cmd->opcode) {
+	case nvme_cmd_flush:
+		return submit_io_flush(hdl, cmd);
+	case nvme_cmd_write:
+		return submit_io_write(hdl, cmd);
+	case nvme_cmd_read:
+		return submit_io_read(hdl, cmd);
+	case nvme_cmd_compare:
+		/* Only supported on WinPE */
+		if (get_is_win_pe())
+			return submit_storage_protocol_command(hdl, cmd, false, false, NULL);
+		else
+			return -ENOTSUP;
+	case nvme_cmd_dsm:
+		return submit_io_dsm(hdl, cmd);
+	case 0x80 ... 0xFF: /* vendor-specific commands */
+		return submit_storage_protocol_command(hdl, cmd, false, false, NULL);
+	default:
+		libnvme_msg(hdl->ctx, LIBNVME_LOG_DEBUG, "%s: opcode=0x%02x\n",
+			__func__, cmd->opcode);
+		return -ENOTSUP;
+	}
+	return -ENOTSUP;
+}
+
+/*
+ * Windows only supports a subset of NVMe admin command calls from user space
+ * and uses different IOCTLs for different commands instead of a single
+ * passthru interface.
+ * Passthru is supported using IOCTL_STORAGE_PROTOCOL_COMMAND,
+ * but only for vendor-specific commands and a small subset of admin commands.
+ * For supported commands and a mapping to the required IOCTLs, see:
+ * https://learn.microsoft.com/en-us/windows-hardware/drivers/storage/stornvme-command-set-support
+ */
+__shr_public int libnvme_exec_admin_passthru(
+		struct libnvme_transport_handle *hdl,
+		struct libnvme_passthru_cmd *cmd)
+{
+	if (!hdl || !cmd)
+		return -EINVAL;
+
+	if (hdl->type == LIBNVME_TRANSPORT_HANDLE_TYPE_LOOPBACK) {
+		if (hdl->ctx->dry_run)
+			return __libnvme_exec_dry_run(hdl, cmd);
+		return __libnvme_loopback_admin_passthru(hdl, cmd);
+	}
+
+	if (hdl->type != LIBNVME_TRANSPORT_HANDLE_TYPE_DIRECT)
+		return -ENOTSUP;
+
+	cmd->result = 0;
+
+	switch (cmd->opcode) {
+	case nvme_admin_get_log_page:
+		return submit_admin_get_log_page(hdl, cmd);
+	case nvme_admin_identify:
+		return submit_admin_identify(hdl, cmd);
+	case nvme_admin_set_features:
+		return submit_admin_set_features(hdl, cmd);
+	case nvme_admin_get_features:
+		return submit_admin_get_features(hdl, cmd);
+	case nvme_admin_ns_mgmt:
+	case nvme_admin_ns_attach:
+	case nvme_admin_nvme_mi_send:
+	case nvme_admin_nvme_mi_recv:
+		/* Only supported on WinPE */
+		if (get_is_win_pe())
+			return submit_storage_protocol_command(hdl, cmd, true, false, NULL);
+		else
+			return -ENOTSUP;
+	case nvme_admin_fw_commit:
+		return submit_admin_fw_commit(hdl, cmd);
+	case nvme_admin_fw_download:
+		return submit_admin_fw_download(hdl, cmd);
+	case nvme_admin_dev_self_test:
+		return submit_storage_protocol_command(hdl, cmd, true, false, NULL);
+	case nvme_admin_format_nvm:
+		return submit_admin_format_nvm(hdl, cmd);
+	case nvme_admin_security_send:
+	case nvme_admin_security_recv:
+		return submit_admin_security_send_receive(hdl, cmd);
+	case nvme_admin_sanitize_nvm:
+		return submit_admin_sanitize(hdl, cmd);
+	case 0xC0 ... 0xFF: /* vendor-specific commands */
+		return submit_storage_protocol_command(hdl, cmd, true, false, NULL);
+	default:
+		libnvme_msg(hdl->ctx, LIBNVME_LOG_DEBUG, "%s: opcode=0x%02x\n",
+			__func__, cmd->opcode);
+		return -ENOTSUP;
+	}
+}

@@ -1,0 +1,175 @@
+nvme-get-log(1)
+===============
+
+NAME
+----
+nvme-get-log - Retrieves a log page from an NVMe device
+
+SYNOPSIS
+--------
+[verse]
+'nvme' [<global-options>] 'get-log' <device> [--log-id=<log-id> | -i <log-id>]
+			[--log-len=<log-len> | -l <log-len>]
+			[--aen=<aen> | -a <aen>]
+			[--namespace-id=<nsid> | -n <nsid>]
+			[--raw-binary | -b]
+			[--lpo=<offset> | -L <offset>]
+			[--lsp=<field> | -s <field>]
+			[--lsi=<field> | -S <field>]
+			[--rae | -r]
+			[--csi=<command_set_identifier> | -y <command_set_identifier>]
+			[--ot=<offset_type> | -O <offset_type>]
+			[--xfer-len=<length> | -x <length>]
+
+DESCRIPTION
+-----------
+Retrieves an arbitrary NVMe log page from an NVMe device and provides
+the returned structure.
+
+The <device> parameter is mandatory and may be either the NVMe character
+device (ex: /dev/nvme0), or a namespace block device (ex: /dev/nvme0n1).
+
+On success, the returned log structure may be returned in one of several
+ways depending on the option flags; the structure may be displayed in
+hex by the program or the raw buffer may be printed to stdout for another
+program to parse.
+
+OPTIONS
+-------
+-l <log-len>::
+--log-len=<log-len>::
+	Allocates a buffer of <log-len> bytes size and requests this
+	many bytes be returned in the constructed NVMe command. This
+	param is mandatory.
+
+-i <log-id>::
+--log-id=<log-id>::
+	Sets the commands requested log-id to <log-id>. Defaults to 0.
++
+[]
+|=================
+|Value|Definition
+|0x00 \| 'supported-log-pages'| Supported Log Pages
+|0x01 \| 'error'| Error Information
+|0x02 \| 'smart'| SMART / Health Information
+|0x03 \| 'fw-slot'| Firmware Slot Information
+|0x04 \| 'changed-ns'| Changed Namespace List
+|0x05 \| 'cmd-effects'| Commands Supported and Effects
+|0x06 \| 'device-self-test'| Device Self-test
+|0x07 \| 'telemetry-host'| Telemetry Host-Initiated
+|0x08 \| 'telemetry-ctrl'| Telemetry Controller-Initiated
+|0x09 \| 'endurance-group'| Endurance Group Information
+|0x0a \| 'predictable-lat-nvmset'| Predictable Latency Per NVM Set
+|0x0b \| 'predictable-lat-agg'| Predictable Latency Event Aggregate
+|0x0c \| 'ana'| Asymmetric Namespace Access
+|0x0d \| 'persistent-event'| Persistent Event Log
+|0x0e \| 'lba-status'| LBA Status Information
+|0x0f \| 'endurance-grp-evt'| Endurance Group Event Aggregate
+|0x10 \| 'media-unit-status'| Media Unit Status
+|0x11 \| 'supported-cap-config-list'| Supported Capacity Configuration Lis
+|0x12 \| 'fid-supported-effects'| Feature Identifiers Supported and Effects
+|0x13 \| 'mi-cmd-supported-effects'| NVMe-MI Commands Supported and Effects
+|0x14 \| 'cmd-and-feat-lockdown'| Command and Feature Lockdown
+|0x15 \| 'boot-partition'| Boot Partition
+|0x16 \| 'rotational-media-info'| Rotational Media Information
+|0x17 \| 'dispersed-ns-participating-ns'| Dispersed Namespace Participating NVM Subsystems
+|0x18 \| 'mgmt-addr-list'| Management Address List
+|0x19 \| 'phy-rx-eom'| Physical Interface Receiver Eye Opening Measurement
+|0x1a \| 'reachability-groups'| Reachability Groups
+|0x1b \| 'reachability-associations'| Reachability Associations
+|0x1c \| 'changed-alloc-ns-list'| Changed Allocated Namespace List
+|0x20 \| 'fdp-configs'| FDP Configurations
+|0x21 \| 'fdp-ruh-usage'| Reclaim Unit Handle Usage
+|0x22 \| 'fdp-stats'| FDP Statistics
+|0x23 \| 'fdp-events'| FDP Events
+|0x70 \| 'discover'| Discovery
+|0x71 \| 'host-discover'| Host Discovery
+|0x72 \| 'ave-discover'| AVE Discovery
+|0x73 \| 'pull-model-ddc-req'| Pull Model DDC Request
+|0x80 \| 'reservation'| Reservation Notification
+|0x81 \| 'sanitize'| Sanitize Status
+|0xbf \| 'zns-changed-zones'| Changed Zone List
+|=================
+
+-a <aen>::
+--aen=<aen>::
+	Convenience field for extracting log information based on an
+	asynchronous event notification result. This will override log-id and
+	log-len, if set.
+
+-n <nsid>::
+--namespace-id=<nsid>::
+	Sets the command's nsid value to the given nsid. Defaults to
+	0xffffffff if not given. This option may not affect anything
+	depending on the log page, which may or may not be specific to
+	a namespace.
+	The broadcast value 0xffffffff can also be given as 'all' or '-1'.
+
+-b::
+--raw-binary::
+	Print the raw log buffer to stdout.
+
+-L <offset>::
+--lpo=<offset>::
+	The log page offset specifies the location within a log page to start
+	returning data from. It's Dword-aligned and 64-bits.
+
+-s <field>::
+--lsp=<field>::
+	The log specified field of LID.
+
+-S <field>::
+--lsi=<field>::
+	The log specified field of Log Specific Identifier.
+
+-r::
+--rae::
+	Retain an Asynchronous Event.
+
+-y <command_set_identifier>::
+--csi=<command_set_identifier>::
+	This field specifies the identifier of command set.
+	if not issued, NVM Command Set will be selected.
+
+-O::
+--ot::
+	This field specifies the offset type. If set to false, the
+	Log Page Offset Lower field and the Log Page Offset Upper
+	field specify the byte offset into the log page to be returned.
+	If set to true, the Log Page Offset Lower field and the Log
+	Page Offset Upper field specify the index into the list of
+	data structures in the log page to be returned.
+	The default is byte offset. If the option is specified
+	the index mode is used.
+
+-x <length>::
+--xfer-len <length>:
+	Specify the read chunk size. The length argument is expected to be
+	a multiple of 4096. The default size is 4096.
+
+include::global-options.txt[]
+
+EXAMPLES
+--------
+* Get 512 bytes from log page 2
++
+------------
+# nvme get-log /dev/nvme0 --log-id=2 --log-len=512
+------------
++
+The above example will get log page 2 (SMART), and request 512
+bytes. On success, the returned log will be dumped in hex and not
+interpreted by the program.
+
+* Have the program return the raw log page in binary:
++
+------------
+# nvme get-log /dev/nvme0 -log-id=2 --log-len=512 --raw-binary > log_page_2.raw
+# nvme get-log /dev/nvme0 -i 2 -l 512 -b > log_page_2.raw
+------------
++
+It is not a good idea to not redirect stdout when using this mode.
+
+NVME
+----
+Part of the nvme-user suite

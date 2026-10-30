@@ -1,0 +1,35 @@
+nvme-netapp-smdevices(1)
+========================
+
+NAME
+----
+nvme-netapp-smdevices - Display information for each NVMe path to an E-Series volume
+
+SYNOPSIS
+--------
+[verse]
+'nvme' [<global-options>] 'netapp smdevices'
+
+DESCRIPTION
+-----------
+Display vendor-specific information for each NVMe path to an E-Series namespace
+currently connected to the host.  The E-Series paths are identified from the
+NVMe nodes in /dev by sending an Identify Controller.
+
+OPTIONS
+-------
+
+include::global-options.txt[]
+
+EXAMPLES
+--------
+* Display information, in a column-based format, for each path to an E-Series
+namespace.
++
+------------
+# nvme netapp smdevices -o column
+------------
+
+NVME
+----
+Part of the nvme-user suite

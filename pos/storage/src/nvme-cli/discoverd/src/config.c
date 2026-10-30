@@ -1,0 +1,182 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+/*
+ * This file is part of nvme-cli.
+ * Copyright (c) 2026 Dell Technologies Inc. or its subsidiaries.
+ *
+ * Authors: Martin Belanger <martin.belanger@dell.com>
+ */
+
+#include <errno.h>
+#include <limits.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include <ccan/str/str.h>
+#include <daemon-util/log.h>
+#include <shared/ini-util.h>
+#include <shared/parse-util.h>
+#include <shared/time-util.h>
+
+#include "config.h"
+
+static void config_set_defaults(struct discoverd_config *cfg)
+{
+	cfg->nbft = true;
+	cfg->debug_level = DMN_LOG_INFO;
+	cfg->fc_kickstart_interval_minutes = 0;
+	cfg->epcsd_poll_interval_minutes = 15;
+	cfg->dc_giveup_timeout_usec = 72 * SHR_USEC_PER_HOUR;
+	cfg->zeroconf = false;
+}
+
+static int parse_uint(const char *val, unsigned int *out)
+{
+	char *end;
+	unsigned long v;
+
+	if (val[0] == '-')
+		return -EINVAL;
+
+	v = strtoul(val, &end, 10);
+	if (end == val || *end != '\0' || v > UINT_MAX)
+		return -EINVAL;
+	*out = (unsigned int)v;
+	return 0;
+}
+
+static int parse_epcsd_poll_interval(const char *val, unsigned int *out)
+{
+	unsigned int v;
+	int r = parse_uint(val, &v);
+
+	if (r < 0)
+		return r;
+	if (!v)
+		return -EINVAL; // 0 would mean "never wait"
+	*out = v;
+
+	return 0;
+}
+
+/* Apply one [Global] key. Returns false if @key is not a [Global] key. */
+static bool apply_global_key(struct discoverd_config *cfg, const char *key,
+			     const char *val, int *r)
+{
+	if (streq(key, "nbft"))
+		*r = shr_parse_bool(val, &cfg->nbft);
+	else if (streq(key, "debug-level"))
+		*r = dmn_parse_log_level(val, &cfg->debug_level);
+	else
+		return false;
+
+	return true;
+}
+
+/* Apply one [Discovery] key. Returns false if @key is not a [Discovery] key. */
+static bool apply_discovery_key(struct discoverd_config *cfg, const char *key,
+				const char *val, int *r)
+{
+	if (streq(key, "epcsd-poll-interval-minutes"))
+		*r = parse_epcsd_poll_interval(
+			val, &cfg->epcsd_poll_interval_minutes);
+	else if (streq(key, "fc-kickstart-interval-minutes"))
+		*r = parse_uint(val, &cfg->fc_kickstart_interval_minutes);
+	else if (streq(key, "dc-giveup-timeout"))
+		*r = shr_parse_time(val, &cfg->dc_giveup_timeout_usec,
+				    SHR_USEC_PER_SEC);
+	else if (streq(key, "zeroconf"))
+		*r = shr_parse_bool(val, &cfg->zeroconf);
+	else
+		return false;
+
+	return true;
+}
+
+/*
+ * Apply one "key = value" line from [Global] or [Discovery]; @lineno is for
+ * diagnostics.
+ */
+static void apply_key(struct discoverd_config *cfg, bool global,
+		      const char *key, const char *val, const char *conf_path,
+		      unsigned int lineno)
+{
+	bool known;
+	int r = 0;
+
+	if (global)
+		known = apply_global_key(cfg, key, val, &r);
+	else
+		known = apply_discovery_key(cfg, key, val, &r);
+
+	if (!known) {
+		log_warn("%s:%u: unknown key '%s', ignored", conf_path, lineno,
+			 key);
+		return;
+	}
+
+	if (r < 0)
+		log_warn("%s:%u: invalid value for '%s', ignored", conf_path,
+			 lineno, key);
+}
+
+struct config_parse_ctx {
+	struct discoverd_config *cfg;
+	const char *conf_path;
+};
+
+static int config_event(enum shr_ini_event event, const char *section,
+			const char *key, const char *value,
+			unsigned int line, void *user_data)
+{
+	struct config_parse_ctx *pc = user_data;
+
+	switch (event) {
+	case SHR_INI_SECTION:
+		break;
+	case SHR_INI_KV:
+		if (section && (streq(section, "Global") ||
+				streq(section, "Discovery")))
+			apply_key(pc->cfg, streq(section, "Global"), key,
+				  value, pc->conf_path, line);
+		else
+			log_warn("%s:%u: key outside a known section, ignored",
+				 pc->conf_path, line);
+		break;
+	case SHR_INI_JUNK:
+		log_warn("%s:%u: malformed line, ignored", pc->conf_path,
+			 line);
+		break;
+	}
+	return 0;
+}
+
+struct discoverd_config *config_load(const char *conf_path)
+{
+	struct discoverd_config *cfg;
+	struct config_parse_ctx pc;
+	int ret;
+
+	cfg = calloc(1, sizeof(*cfg));
+	if (!cfg)
+		return NULL;
+	config_set_defaults(cfg);
+
+	if (!conf_path)
+		conf_path = DISCOVERD_CONF_PATH;
+
+	pc.cfg = cfg;
+	pc.conf_path = conf_path;
+
+	/* A missing config file is not an error — defaults apply. */
+	ret = shr_ini_parse_file(conf_path, config_event, &pc);
+	if (ret && ret != -ENOENT)
+		log_warn("%s: %s, using defaults", conf_path,
+			 strerror(-ret));
+
+	return cfg;
+}
+
+void config_free(struct discoverd_config *cfg)
+{
+	free(cfg);
+}

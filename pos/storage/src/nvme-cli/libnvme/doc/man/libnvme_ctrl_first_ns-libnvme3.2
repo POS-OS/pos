@@ -1,0 +1,11 @@
+.TH "libnvme_ctrl_first_ns" 9 "libnvme_ctrl_first_ns" "September 2026" "libnvme API manual" LINUX
+.SH NAME
+libnvme_ctrl_first_ns \- Start namespace iterator
+.SH SYNOPSIS
+.B "struct libnvme_ns *" libnvme_ctrl_first_ns
+.BI "(struct libnvme_ctrl *c "  ");"
+.SH ARGUMENTS
+.IP "c" 12
+Controller instance
+.SH "RETURN"
+First \fIstruct libnvme_ns\fP object of an \fIc\fP iterator

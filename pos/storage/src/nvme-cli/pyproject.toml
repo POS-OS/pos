@@ -1,0 +1,46 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+[build-system]
+build-backend = 'mesonpy'
+requires = ['meson-python', 'meson', 'ninja', 'swig']
+
+[project]
+name = "libnvme3"
+dynamic = ["version"]
+description = "Python bindings for libnvme3"
+readme = "README.md"
+requires-python = ">=3.6"
+license = { text = "LGPL-2.1-or-later" }
+
+authors = [
+    { name = "Hannes Reinecke", email = "hare@suse.de" },
+    { name = "Daniel Wagner", email = "dwagner@suse.de" },
+    { name = "Martin Belanger", email = "martin.belanger@dell.com" },
+]
+
+keywords = ["nvme", "storage", "bindings"]
+
+classifiers = [
+    "Intended Audience :: Developers",
+    "Development Status :: 5 - Production/Stable",
+    "License :: OSI Approved :: GNU Lesser General Public License v2 or later (LGPLv2+)",
+    "Programming Language :: Python :: 3",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+dependencies = []
+
+[project.urls]
+"Homepage" = "https://github.com/linux-nvme/nvme-cli"
+"Source" = "https://github.com/linux-nvme/nvme-cli"
+"Bug Tracker" = "https://github.com/linux-nvme/nvme-cli/issues"
+
+[tool.meson-python.args]
+setup = [
+    "-Dnvme=disabled",
+    "-Dlibnvme=enabled",
+    "-Dpython=enabled",
+    "-Dpypi=true",
+    "-Dtests=false",
+    "-De2e-tests=false",
+    "-Dexamples=false",
+]

@@ -1,0 +1,389 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
+test_array_util = executable(
+    'test-array-util',
+    ['test-array-util.c'],
+    dependencies: [
+        config_dep,
+        ccan_dep,
+        shared_dep,
+    ],
+)
+
+test('shared - array-util', test_array_util, suite: 'unit')
+
+test_base64_util = executable(
+    'test-base64-util',
+    ['test-base64-util.c'],
+    dependencies: [
+        config_dep,
+        ccan_dep,
+        shared_dep,
+    ],
+)
+
+test('shared - base64-util', test_base64_util, suite: 'unit')
+
+test_crc32_util = executable(
+    'test-crc32-util',
+    ['test-crc32-util.c'],
+    dependencies: [
+        config_dep,
+        shared_dep,
+    ],
+)
+
+test('shared - crc32-util', test_crc32_util, suite: 'unit')
+
+test_nqn_util = executable(
+    'test-nqn-util',
+    ['test-nqn-util.c'],
+    dependencies: [
+        config_dep,
+        shared_dep,
+    ],
+)
+
+test('shared - nqn-util', test_nqn_util, suite: 'unit')
+
+test_ini_util = executable(
+    'test-ini-util',
+    ['test-ini-util.c'],
+    dependencies: [
+        config_dep,
+        shared_dep,
+    ],
+)
+
+test('shared - ini-util', test_ini_util, suite: 'unit')
+
+test_parse_util = executable(
+    'test-parse-util',
+    ['test-parse-util.c'],
+    dependencies: [
+        config_dep,
+        ccan_dep,
+        shared_dep,
+    ],
+)
+
+test('shared - parse-util', test_parse_util, suite: 'unit')
+
+test_hex_util = executable(
+    'test-hex-util',
+    ['test-hex-util.c'],
+    dependencies: [
+        config_dep,
+        shared_dep,
+    ],
+)
+
+test('shared - hex-util', test_hex_util, suite: 'unit')
+
+test_cleanup_util = executable(
+    'test-cleanup-util',
+    ['test-cleanup-util.c'],
+    dependencies: [
+        config_dep,
+        shared_dep,
+    ],
+)
+
+test('shared - cleanup-util', test_cleanup_util, suite: 'unit')
+
+test_wrap_util = executable(
+    'test-wrap-util',
+    ['test-wrap-util.c'],
+    dependencies: [
+        config_dep,
+        shared_dep,
+    ],
+)
+
+test('shared - wrap-util', test_wrap_util, suite: 'unit')
+
+test_temp_util = executable(
+    'test-temp-util',
+    ['test-temp-util.c'],
+    dependencies: [
+        config_dep,
+        shared_dep,
+    ],
+)
+
+test('shared - temp-util', test_temp_util, suite: 'unit')
+
+test_time_util = executable(
+    'test-time-util',
+    ['test-time-util.c'],
+    dependencies: [
+        config_dep,
+        shared_dep,
+    ],
+)
+
+test('shared - time-util', test_time_util, suite: 'unit')
+
+test_progress_util = executable(
+    'test-progress-util',
+    ['test-progress-util.c'],
+    dependencies: [
+        config_dep,
+        shared_dep,
+    ],
+)
+
+test('shared - progress-util', test_progress_util, suite: 'unit')
+
+test_table_util = executable(
+    'test-table-util',
+    ['test-table-util.c'],
+    dependencies: [
+        config_dep,
+        ccan_dep,
+        shared_dep,
+    ],
+)
+
+test('shared - table-util', test_table_util, suite: 'unit')
+
+test_suffix_util = executable(
+    'test-suffix-util',
+    ['test-suffix-util.c'],
+    dependencies: [
+        config_dep,
+        ccan_dep,
+        shared_dep,
+    ],
+)
+
+test('shared - suffix-util', test_suffix_util, suite: 'unit')
+
+test_uint128_util = executable(
+    'test-uint128-util',
+    ['test-uint128-util.c'],
+    dependencies: [
+        config_dep,
+        ccan_dep,
+        shared_dep,
+    ],
+)
+
+test('shared - uint128-util', test_uint128_util, suite: 'unit')
+
+test_int_util = executable(
+    'test-int-util',
+    ['test-int-util.c'],
+    dependencies: [
+        config_dep,
+        shared_dep,
+    ],
+)
+
+test('shared - int-util', test_int_util, suite: 'unit')
+
+test_uuid_util = executable(
+    'test-uuid-util',
+    ['test-uuid-util.c'],
+    dependencies: [
+        config_dep,
+        shared_dep,
+    ],
+)
+
+test('shared - uuid-util', test_uuid_util, suite: 'unit')
+
+test_hash_util = executable(
+    'test-hash-util',
+    ['test-hash-util.c'],
+    dependencies: [
+        config_dep,
+        shared_dep,
+    ],
+)
+
+test('shared - hash-util', test_hash_util, suite: 'unit')
+
+test_string_util = executable(
+    'test-string-util',
+    ['test-string-util.c'],
+    dependencies: [
+        config_dep,
+        shared_dep,
+    ],
+)
+
+test('shared - string-util', test_string_util, suite: 'unit')
+
+test_io_util = executable(
+    'test-io-util',
+    ['test-io-util.c'],
+    dependencies: [
+        config_dep,
+        shared_dep,
+    ],
+)
+
+test('shared - io-util', test_io_util, suite: 'unit')
+
+test_fs_util = executable(
+    'test-fs-util',
+    ['test-fs-util.c'],
+    dependencies: [
+        config_dep,
+        shared_dep,
+    ],
+)
+
+test('shared - fs-util', test_fs_util, suite: 'unit')
+
+test_mmio_util = executable(
+    'test-mmio-util',
+    ['test-mmio-util.c'],
+    dependencies: [
+        config_dep,
+        ccan_dep,
+        shared_dep,
+    ],
+)
+
+test('shared - mmio-util', test_mmio_util, suite: 'unit')
+
+test_unaligned_util = executable(
+    'test-unaligned-util',
+    ['test-unaligned-util.c'],
+    dependencies: [
+        config_dep,
+        ccan_dep,
+        shared_dep,
+    ],
+)
+
+test('shared - unaligned-util', test_unaligned_util, suite: 'unit')
+
+if host_system != 'windows'
+    test_net_util = executable(
+        'test-net-util',
+        ['test-net-util.c'],
+        dependencies: [
+            config_dep,
+            shared_dep,
+        ],
+    )
+
+    test('shared - net-util', test_net_util, suite: 'unit')
+
+    test_pci_util = executable(
+        'test-pci-util',
+        ['test-pci-util.c'],
+        dependencies: [
+            config_dep,
+            shared_dep,
+        ],
+    )
+
+    test('shared - pci-util', test_pci_util, suite: 'unit')
+endif
+
+test_crypto_util_deps = [
+    config_dep,
+    shared_dep,
+]
+if host_system == 'windows'
+    test_crypto_util_deps += [bcrypt_dep]
+endif
+
+test_crypto_util = executable(
+    'test-crypto-util',
+    ['test-crypto-util.c'],
+    dependencies: test_crypto_util_deps,
+)
+
+test('shared - crypto-util', test_crypto_util, suite: 'unit')
+
+test_sig_util = executable(
+    'test-sig-util',
+    ['test-sig-util.c'],
+    dependencies: [
+        config_dep,
+        shared_dep,
+    ],
+)
+
+test('shared - sig-util', test_sig_util, suite: 'unit')
+
+if host_system != 'windows'
+    test_sandbox_util = executable(
+        'test-sandbox-util',
+        ['test-sandbox-util.c'],
+        dependencies: [
+            ccan_dep,
+            config_dep,
+            shared_dep,
+        ],
+    )
+
+    test('shared - sandbox-util', test_sandbox_util, suite: 'unit')
+
+    # The same without close_range(), which closes the descriptors otherwise
+    test_sandbox_util_fallback = executable(
+        'test-sandbox-util-fallback',
+        ['test-sandbox-util.c', '../sandbox-util.c'],
+        c_args: ['-DSANDBOX_NO_CLOSE_RANGE'],
+        include_directories: ['..'],
+        dependencies: [
+            ccan_dep,
+            config_dep,
+            shared_dep,
+        ],
+    )
+
+    test('shared - sandbox-util-fallback', test_sandbox_util_fallback,
+         suite: 'unit')
+endif
+
+test_assert_util = executable(
+    'test-assert-util',
+    ['test-assert-util.c'],
+    dependencies: [
+        config_dep,
+        shared_dep,
+    ],
+)
+
+test('shared - assert-util', test_assert_util, suite: 'unit')
+
+if host_system != 'windows'
+    test_machine_id_util = executable(
+        'test-machine-id-util',
+        ['test-machine-id-util.c'],
+        dependencies: [
+            config_dep,
+            shared_dep,
+        ],
+    )
+
+    test('shared - machine-id-util', test_machine_id_util, suite: 'unit')
+endif
+
+test_sha256_util = executable(
+    'test-sha256-util',
+    ['test-sha256-util.c'],
+    dependencies: [
+        config_dep,
+        shared_dep,
+    ],
+)
+
+test('shared - sha256-util', test_sha256_util, suite: 'unit')
+
+test_mem_util = executable(
+    'test-mem-util',
+    ['test-mem-util.c'],
+    dependencies: [
+        config_dep,
+        shared_dep,
+    ],
+)
+
+test('shared - mem-util', test_mem_util, suite: 'unit')

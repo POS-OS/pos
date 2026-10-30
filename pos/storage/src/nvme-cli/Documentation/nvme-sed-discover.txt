@@ -1,0 +1,39 @@
+nvme-sed-discover(1)
+====================
+
+NAME
+----
+nvme-sed-discover - Discover SED Opal Locking Features
+
+SYNOPSIS
+--------
+[verse]
+'nvme' [<global-options>] 'sed discover' [--udev | -u] <device>
+
+DESCRIPTION
+-----------
+Query the NVMe device given to determine its SED Opal capabilities.
+
+OPTIONS
+-------
+-u::
+--udev::
+	Print locking information in form suitable for udev rules.
+
+include::global-options.txt[]
+
+EXAMPLES
+--------
+nvme sed discover /dev/nvme5n1
+Locking Features:
+        Locking Supported               : yes
+        Locking Feature Enabled         : yes
+        Locked                          : no
+        Media Encryption                : yes
+        MBR Enabled                     : no
+        MBR Done                        : no
+
+
+NVME
+----
+Part of nvme-cli

@@ -1,0 +1,165 @@
+nvme-connect-all(1)
+===================
+
+NAME
+----
+nvme-connect-all - Discover and Connect to Fabrics controllers.
+
+SYNOPSIS
+--------
+[verse]
+'nvme' [<global-options>] 'connect-all'
+			[--raw=<filename> | -r <filename>]
+			[--device=<device> | -d <device>]
+			[--config=<filename> | -J <cfg>]
+			[--persistent[=<no|auto|force>] | -p]
+			[--quiet]
+			[--no-reuse]
+			[--nbft]
+			[--no-nbft]
+			[--nbft-path=<STR>]
+			[--owner=<NAME>]
+			[<fabrics-options>]
+			[<global-options>]
+
+DESCRIPTION
+-----------
+Send one or more Discovery requests to a NVMe over Fabrics Discovery
+Controller, and create controllers for the returned discovery records.
+
+If no parameters are given, then 'nvme connect-all' will attempt to
+find a @SYSCONFDIR@/nvme/discovery.conf file to use to supply a list of
+connect-all commands to run. If no @SYSCONFDIR@/nvme/discovery.conf file
+exists, the command will quit with an error.
+
+Otherwise a specific Discovery Controller should be specified using the
+--transport, --traddr and if necessary the --trsvcid and a Discovery
+request will be sent to the specified Discovery Controller.
+
+See the documentation for the nvme-discover(1) command for further
+background.
+
+OPTIONS
+-------
+-r <filename>::
+--raw=<filename>::
+	This field will take the output of the 'nvme connect-all' command
+	and dump it to a raw binary file. By default 'nvme connect-all' will
+	dump the output to stdout.
+
+-d <device>::
+--device=<device>::
+	This field takes a device as input. It must be a persistent device
+	associated with a Discovery Controller previously created by the
+	command "connect-all" or "discover". <device> follows the format
+	nvme*, eg. nvme0, nvme1.
+
+-J <filename>::
+--config=<filename>::
+	Use the specified JSON configuration file instead of the
+	default @SYSCONFDIR@/nvme/config.json file or 'none' to not read in
+	an existing configuration file. The JSON configuration file
+	format is documented in
+	https://github.com/linux-nvme/nvme-cli/blob/master/libnvme/doc/config-schema.json
+
+-p::
+--persistent[=<no|auto|force>]::
+	Keep the discovery controller connected after retrieving the
+	discovery log page, instead of disconnecting once it's done.
+	Because the value is optional, it must be attached directly to
+	the option: --persistent=force for the long form, -pforce for
+	the short form. A value given as a separate argument (--persistent
+	force, -p force) is no value of the option but an extra argument,
+	and the command fails.
++
+--
+* 'no': never persist. Use this to opt out of the default.
+* 'auto' (the default, both when the option is omitted entirely and
+  when --persistent is given with no value): persist
+  a Discovery Log Page entry's connection only where that entry's own
+  EPCSD (Explicit Persistent Connection Support for Discovery) flag
+  reports support for it; degrade to non-persistent, with a log message,
+  for entries that don't.
+* 'force': persist regardless of what EPCSD reports, for a target whose
+  self-reported EPCSD cannot be trusted.
+--
++
+'auto' and 'force' ask each discovery controller for a keep-alive
+timeout of 30 seconds, or the --keep-alive-tmo value when it is given.
+'no' asks for none, even when --keep-alive-tmo is given.
+
+--quiet::
+	Suppress error messages.
+
+--no-reuse::
+	Always create a new connection, never reuse an existing one.
+
+--nbft::
+	Only look at NBFT tables
+
+--no-nbft::
+	Do not look at NBFT tables
+
+--nbft-path=<STR>::
+	Use a user-defined path to the NBFT tables
+
+--owner=<NAME>::
+	Record NAME as the owner of connected controllers in the NVMe
+	ownership registry, so other orchestrators (and nvme-disconnect-all)
+	leave them alone.  See nvme-disconnect-all(1).  When --nbft is also
+	given, --owner takes precedence over its default owner of 'nbft'.
+	An empty NAME (--owner=) removes the registry entries instead,
+	leaving the controllers unowned.
+	Without --owner, a controller that was already connected keeps
+	the entry it has.
+
+include::fabrics-options.txt[]
+
+include::global-options.txt[]
+
+EXAMPLES
+--------
+* Connect to all records returned by the Discover Controller with IP4 address
+192.168.1.3 for all resources allocated for NVMe Host name host1-rogue-nqn on
+the RDMA network. Port 4420 is used by default:
++
+------------
+# nvme connect-all --transport=rdma --traddr=192.168.1.3 \
+--hostnqn=host1-rogue-nqn
+------------
++
+* Issue a 'nvme connect-all' command using the default system defined NBFT tables:
++
+-----------
+# nvme connect-all --nbft
+------------
++
+* Issue a 'nvme connect-all' command with a user-defined path for the NBFT table:
++
+-----------
+# nvme connet-all --nbft-path=/sys/firmware/acpi/tables/NBFT1
+------------
++
+* Issue a 'nvme connect-all' command using a @SYSCONFDIR@/nvme/discovery.conf file:
++
+-----------
+# Machine default 'nvme discover' commands. Query the
+# Discovery Controller's two ports (some resources may only
+# be accessible on a single port). Note an official
+# nqn (Host) name defined in the NVMe specification is being used
+# in this example.
+-t rdma -a 192.168.69.33 -s 4420 -q nqn.2014-08.com.example:nvme:nvm-subsystem-sn-d78432
+-t rdma -a 192.168.1.4   -s 4420 -q nqn.2014-08.com.example:nvme:nvm-subsystem-sn-d78432
+
+At the prompt type "nvme connect-all".
+
+------------
+
+SEE ALSO
+--------
+nvme-discover(1)
+nvme-connect(1)
+
+NVME
+----
+Part of the nvme-user suite

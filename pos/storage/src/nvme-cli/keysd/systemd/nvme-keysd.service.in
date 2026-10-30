@@ -1,0 +1,53 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+[Unit]
+Description=NVMe TLS Key Provisioning Daemon
+Documentation=man:nvme-keysd(8)
+Before=remote-fs.target
+Wants=systemd-creds.socket
+After=systemd-creds.socket
+@KEYSD_WANTS_KMIP@
+@KEYSD_AFTER_KMIP@
+
+[Service]
+# READY=1 comes after the local keys are imported. With KMIP keys,
+# nvme-keysd keeps running and gets them in the background.
+Type=notify
+# Skip the unit, and the module load, when there is nothing to do.
+ExecCondition=@SBINDIR@/nvme-keysd --should-start
+# nvme_keyring creates the .nvme keyring. nvme_core loads it only with
+# CONFIG_NVME_HOST_AUTH, and nvme_tcp only at the first connection.
+# "+" runs modprobe outside the sandbox below.
+ExecStartPre=-+/sbin/modprobe -q nvme_keyring
+ExecStart=@SBINDIR@/nvme-keysd
+Restart=on-failure
+
+# Recreate the credential directory if it was removed. systemd puts it
+# under /etc, which is SYSCONFDIR in a distribution build.
+ConfigurationDirectory=nvme/creds
+ConfigurationDirectoryMode=0700
+
+# Hardening. The daemon needs uid 0 to write the .nvme keyring, but no
+# capabilities, no network, and no writable files.
+# No PrivateNetwork=: a PSK belongs to the network namespace of the process
+# that adds it, and the kernel deletes it when that namespace goes away. In
+# a private namespace, every key would be deleted when the daemon stops.
+CapabilityBoundingSet=
+NoNewPrivileges=yes
+RestrictAddressFamilies=AF_UNIX
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallFilter=@system-service @keyring
+SystemCallArchitectures=native
+LimitCORE=0
+
+[Install]
+WantedBy=multi-user.target

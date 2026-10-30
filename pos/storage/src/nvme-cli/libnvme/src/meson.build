@@ -1,0 +1,349 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+#
+# This file is part of libnvme.
+# Copyright (c) 2021 Dell Inc.
+#
+# Authors: Martin Belanger <Martin.Belanger@dell.com>
+#
+sources = [
+    'nvme/generated/accessors.c',
+    'nvme/ioctl.c',
+    'nvme/lib.c',
+    'nvme/log.c',
+    'nvme/nvme-cmds.c',
+    'nvme/tree.c',
+    'nvme/util.c',
+]
+if host_system == 'linux'
+    sources += [
+        'nvme/attr-accessors-custom-linux.c',
+        'nvme/ioctl-linux.c',
+        'nvme/lib-linux.c',
+        'nvme/mem-linux.c',
+        'nvme/scan-linux.c',
+        'nvme/tree-linux.c',
+    ]
+elif host_system == 'windows'
+    sources += [
+        'nvme/ctrl-map.c',
+        'nvme/attr-accessors-custom-win.c',
+        'nvme/ioctl-win.c',
+        'nvme/lib-win.c',
+        'nvme/mem-win.c',
+        'nvme/scan-win.c',
+        'nvme/tree-win.c',
+    ]
+elif host_system == 'freebsd'
+    sources += [
+        'nvme/attr-accessors-custom-freebsd.c',
+        'nvme/ioctl-freebsd.c',
+        'nvme/lib-freebsd.c',
+        'nvme/mem-freebsd.c',
+        'nvme/scan-freebsd.c',
+        'nvme/tree-freebsd.c',
+    ]
+endif
+headers = [
+    'nvme/endian.h',
+    'nvme/ioctl.h',
+    'nvme/lib-types.h',
+    'nvme/lib.h',
+    'nvme/mem.h',
+    'nvme/nvme-cmds-base.h',
+    'nvme/nvme-cmds-fabrics.h',
+    'nvme/nvme-cmds-mi.h',
+    'nvme/nvme-cmds-nvm.h',
+    'nvme/nvme-cmds-zns.h',
+    'nvme/nvme-cmds.h',
+    'nvme/nvme-types-base.h',
+    'nvme/nvme-types-fabrics.h',
+    'nvme/nvme-types-mi.h',
+    'nvme/nvme-types-nvm.h',
+    'nvme/nvme-types-slm.h',
+    'nvme/nvme-types-zns.h',
+    'nvme/nvme-types.h',
+    'nvme/scan.h',
+    'nvme/tree.h',
+    'nvme/types.h',
+    'nvme/util.h',
+]
+
+# Generator-owned headers (never hand-touched, unlike everything else in
+# headers above) -- kept in their own subdirectory and installed under
+# nvme/generated/ so libnvme.h.in can #include them by that same path.
+generated_headers = [
+    'nvme/generated/accessors.h',
+    'nvme/generated/attr-accessors.h',
+]
+
+if want_fabrics
+    sources += [
+        'nvme/generated/accessors-fabrics.c',
+        'nvme/crypto.c',
+        'nvme/config.c',
+        'nvme/config-emit.c',
+        'nvme/config-ini.c',
+        'nvme/config-resolve.c',
+        'nvme/exclusion.c',
+        'nvme/fabrics.c',
+        'nvme/nbft.c',
+        'nvme/registry.c',
+        'nvme/tid.c',
+        'nvme/tree-fabrics.c',
+        'nvme/util-fabrics.c',
+    ]
+    generated_headers += [
+        'nvme/generated/accessors-fabrics.h',
+    ]
+    headers += [
+        'nvme/config.h',
+        'nvme/crypto.h',
+        'nvme/exclusion.h',
+        'nvme/fabrics.h',
+        'nvme/nvme-types-nbft.h',
+        'nvme/nbft.h',
+        'nvme/registry.h',
+        'nvme/tid.h',
+    ]
+else
+    sources += [
+        'nvme/no-crypto.c',
+        'nvme/no-fabrics.c',
+    ]
+endif
+
+if want_mi
+    sources += [
+        'nvme/mi-mctp.c',
+        'nvme/mi.c',
+    ]
+    headers += [
+        'nvme/mi-types.h',
+        'nvme/mi.h',
+    ]
+else
+    sources += [
+        'nvme/no-mi.c'
+    ]
+endif
+
+sed_headers = []
+if want_sed
+    sources += [
+        'sed/sed.c',
+    ]
+    sed_headers += [
+        'sed/sed.h',
+        'sed/tcg-types.h',
+    ]
+else
+    sources += [
+        'sed/no-sed.c',
+    ]
+endif
+
+if want_sed and conf.get('NVME_HAVE_SED_OPAL') != 0
+    sources += 'sed/sed-linux.c'
+else
+    sources += 'sed/no-sed-opal.c'
+endif
+
+privsep_headers = []
+if want_privsep
+    sources += 'privsep/privsep.c'
+    privsep_headers += 'privsep/privsep.h'
+else
+    sources += 'privsep/no-privsep.c'
+endif
+
+if liburing_dep.found()
+    sources += 'nvme/uring.c'
+else
+    sources += 'nvme/no-uring.c'
+endif
+
+if want_ioctl_tests
+    sources += 'nvme/ioctl-loopback.c'
+else
+    sources += 'nvme/no-loopback.c'
+endif
+
+deps = [
+    ccan_dep,
+    config_dep,
+    keyutils_dep,
+    libdbus_dep,
+    liburing_dep,
+    openssl_dep,
+    shared_dep,
+]
+if host_system == 'windows'
+    deps += [
+        kernel32_dep,
+        bcrypt_dep,
+        setupapi_dep,
+        cfgmgr32_dep,
+        winpthread_dep,
+    ]
+endif
+
+nvme_ld = meson.current_source_dir() / 'libnvme.ld'
+nvmf_ld = meson.current_source_dir() / 'libnvmf.ld'
+mi_ld = meson.current_source_dir() / 'libnvme-mi.ld'
+sed_ld = meson.current_source_dir() / 'libnvme-sed.ld'
+privsep_ld = meson.current_source_dir() / 'libnvme-privsep.ld'
+accessors_ld = meson.current_source_dir() / 'accessors.ld'
+nvmf_accessors_ld = meson.current_source_dir() / 'accessors-fabrics.ld'
+attr_accessors_ld = meson.current_source_dir() / 'attr-accessors.ld'
+
+# Version scripts filter the exported symbols. GNU ld honours --version-script
+# for PE/COFF too, but LLVM's lld does not accept the option at all, so the
+# MSYS2 CLANG64/CLANGARM64 environments cannot use them.
+#
+# Dropping them does not lose the public API. It is annotated with __shr_public
+# (visibility("default")), which clang honours on PE. So -fvisibility=hidden
+# below still keeps libnvme's own internals unexported. What is lost is the
+# filtering of symbols pulled in from static libraries, which PE auto-export
+# then adds to the export table.
+want_version_scripts = cc.has_link_argument(
+    '-Wl,--version-script=@0@'.format(nvme_ld)
+)
+
+link_args = []
+if want_version_scripts
+    link_args += [
+        '-Wl,--version-script=@0@'.format(nvme_ld),
+        '-Wl,--version-script=@0@'.format(accessors_ld),
+        '-Wl,--version-script=@0@'.format(attr_accessors_ld),
+    ]
+endif
+
+libconf = configuration_data()
+if want_fabrics
+    if want_version_scripts
+        link_args += [
+            '-Wl,--version-script=@0@'.format(nvmf_ld),
+            '-Wl,--version-script=@0@'.format(nvmf_accessors_ld),
+        ]
+    endif
+    libconf.set('FABRICS_INCLUDE',
+                fs.read('fabrics-includes.h.in').strip())
+else
+    libconf.set('FABRICS_INCLUDE', '')
+endif
+
+if want_mi and want_version_scripts
+    link_args += [
+        '-Wl,--version-script=@0@'.format(mi_ld),
+    ]
+endif
+
+if want_sed and want_version_scripts
+    link_args += [
+        '-Wl,--version-script=@0@'.format(sed_ld),
+    ]
+endif
+
+if want_privsep and want_version_scripts
+    link_args += [
+        '-Wl,--version-script=@0@'.format(privsep_ld),
+    ]
+endif
+
+libnvme_header = configure_file(
+    input: 'libnvme.h.in',
+    output: 'libnvme.h',
+    configuration: libconf,
+    install: true,
+    install_dir: prefixdir / get_option('includedir') / libnvme_api_name
+)
+
+libnvme = library(
+    libnvme_link_name, # produces libnvme<major>.so
+    sources,
+    version: libnvme_so_version,
+    c_args: ['-fvisibility=hidden'],
+    link_args: link_args,
+    dependencies: deps,
+    install: true,
+)
+
+pkg = import('pkgconfig')
+pkg.generate(libnvme,
+    filebase: libnvme_api_name,
+    name: libnvme_api_name,
+    version: meson.project_version(),
+    description: 'Manage "libnvme" subsystem devices (Non-volatile Memory Express)',
+    url: 'https://github.com/linux-nvme/nvme-cli/',
+    subdirs: libnvme_api_name,
+)
+
+libnvme_dep = declare_dependency(
+    link_with: libnvme,
+    include_directories: '.',
+    dependencies: [shared_dep],
+)
+
+# test library with all symbols visible, to use for MI unit tests. Should
+# match libnvme above, but with no version script, and install: false.
+libnvme_test = library(
+    libnvme_link_name + '-test',
+    sources,
+    dependencies: deps,
+    install: false,
+)
+
+libnvme_test_dep = declare_dependency(
+    link_with: libnvme_test,
+    include_directories: '.',
+    dependencies: [shared_dep],
+)
+
+mode = 'rw-r--r--'
+install_headers(
+    headers,
+    subdir: libnvme_api_name / 'nvme',
+    install_mode: mode,
+)
+install_headers(
+    generated_headers,
+    subdir: libnvme_api_name / 'nvme' / 'generated',
+    install_mode: mode,
+)
+if want_mi
+    install_headers(
+        [
+           'libnvme-mi.h',
+        ],
+        subdir: libnvme_api_name,
+        install_mode: mode,
+    )
+endif
+if want_sed
+    install_headers(
+        sed_headers,
+        subdir: libnvme_api_name / 'sed',
+        install_mode: mode,
+    )
+    install_headers(
+        [
+           'libnvme-sed.h',
+        ],
+        subdir: libnvme_api_name,
+        install_mode: mode,
+    )
+endif
+if want_privsep
+    install_headers(
+        privsep_headers,
+        subdir: libnvme_api_name / 'privsep',
+        install_mode: mode,
+    )
+    install_headers(
+        [
+           'libnvme-privsep.h',
+        ],
+        subdir: libnvme_api_name,
+        install_mode: mode,
+    )
+endif

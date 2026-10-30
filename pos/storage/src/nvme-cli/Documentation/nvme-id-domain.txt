@@ -1,0 +1,41 @@
+nvme-id-domain(1)
+=================
+
+NAME
+----
+nvme-id-domain - Send NVMe Identify Domain List, return result and structure
+
+SYNOPSIS
+--------
+[verse]
+'nvme' [<global-options>] 'id domain' <device>
+			[--dom-id=<domain_id> | -d <domain_id>]
+
+DESCRIPTION
+-----------
+For the NVMe device given, send an identify command and return the domain list
+data structure.
+
+The <device> parameter is mandatory and may be either the NVMe character
+device (ex: /dev/nvme0), or a namespace block device (ex: /dev/nvme0n1).
+
+The bare 'nvme id-domain' form (without a space) still works as a
+deprecated alias and will be removed in a future major version. New
+scripts should use 'nvme id domain' instead.
+
+OPTIONS
+-------
+-d <domain_id>::
+--dom-id=<domain_id>::
+	Retrieve the identify domain list data structure for the given
+	domain id. If this value is not given, domain id will be 0xffff.
+
+include::global-options.txt[]
+
+EXAMPLES
+--------
+No examples yet.
+
+NVME
+----
+Part of the nvme-user suite

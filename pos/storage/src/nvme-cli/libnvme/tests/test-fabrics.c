@@ -1,0 +1,1409 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
+/**
+ * This file is part of libnvme.
+ * Copyright (c) 2024 Dell Inc.
+ *
+ * Authors: Martin Belanger <Martin.Belanger@dell.com>
+ *
+ * Unit tests for static helper functions in src/nvme/fabrics.c.
+ *
+ * Accessing static functions requires including the source file directly
+ * because static functions are not exported from the shared library.
+ * Defining 'static' to nothing makes them visible in this translation
+ * unit.  The duplicate non-static symbols that fabrics.c also defines
+ * (e.g. trtypes[], arg_str()) are harmless: GNU ld does not report
+ * multiple-definition errors between a .o file and a shared library,
+ * and at run time the main-executable definition takes precedence.
+ */
+#define static	/* expose static functions for unit testing */
+#include "../src/nvme/fabrics.c"
+
+#include <stdlib.h>
+
+/* -------------------------------------------------------------------------
+ * Test infrastructure
+ * -------------------------------------------------------------------------
+ */
+static int test_rc;
+
+#define PASS "[PASS]\n"
+#define FAIL "[FAIL]\n"
+
+#define CHECK(cond, fmt, ...)						\
+	do {								\
+		if (cond) {						\
+			printf("  " fmt " " PASS, ##__VA_ARGS__);	\
+		} else {						\
+			printf("  " fmt " " FAIL, ##__VA_ARGS__);	\
+			test_rc = EXIT_FAILURE;				\
+		}							\
+	} while (0)
+
+/* -------------------------------------------------------------------------
+ * sanitize_discovery_log_entry — guarantee NUL-terminated string fields
+ * -------------------------------------------------------------------------
+ */
+static bool test_sanitize_discovery_log_entry(struct libnvme_global_ctx *ctx)
+{
+	bool pass = true;
+	struct nvmf_disc_log_entry e;
+
+	printf("\ntest_sanitize_discovery_log_entry:\n");
+
+	/* Normal, space-padded wire data still ends up trimmed + terminated. */
+	memset(&e, 0, sizeof(e));
+	e.trtype = NVMF_TRTYPE_TCP;
+	memset(e.trsvcid, ' ', sizeof(e.trsvcid));
+	memcpy(e.trsvcid, "4420", 4);
+	memset(e.traddr, ' ', sizeof(e.traddr));
+	memcpy(e.traddr, "10.0.0.1", 8);
+	sanitize_discovery_log_entry(ctx, &e);
+	pass = !strcmp(e.trsvcid, "4420") && !strcmp(e.traddr, "10.0.0.1");
+	CHECK(pass, "space-padded fields trimmed and terminated: \"%s\" \"%s\"",
+	      e.trsvcid, e.traddr);
+
+	/* Fully packed, no space or NUL anywhere: the pathological case. */
+	memset(&e, 'a', sizeof(e));
+	e.trtype = NVMF_TRTYPE_TCP;
+	sanitize_discovery_log_entry(ctx, &e);
+	pass = (e.trsvcid[sizeof(e.trsvcid) - 1] == '\0') &&
+	       (e.subnqn[sizeof(e.subnqn) - 1] == '\0') &&
+	       (e.traddr[sizeof(e.traddr) - 1] == '\0');
+	CHECK(pass, "fully packed fields: last byte forced to NUL");
+
+	return pass;
+}
+
+/* -------------------------------------------------------------------------
+ * hostid_from_hostnqn — extract UUID from a hostnqn string
+ * -------------------------------------------------------------------------
+ */
+static bool test_hostid_from_hostnqn(void)
+{
+	const char *id;
+	bool pass = true;
+
+	printf("\ntest_hostid_from_hostnqn:\n");
+
+	id = hostid_from_hostnqn(NULL);
+	pass = (id == NULL);
+	CHECK(pass, "NULL input → NULL");
+
+	id = hostid_from_hostnqn("nqn.2014-08.org.nvmexpress:no-uuid-here");
+	pass = (id == NULL);
+	CHECK(pass, "no uuid: tag → NULL");
+
+	id = hostid_from_hostnqn(
+		"nqn.2014-08.org.nvmexpress:uuid:9ba1651a-ed36-11f0-9858-6c1ff71ba506");
+	pass = (id && !strcmp(id, "9ba1651a-ed36-11f0-9858-6c1ff71ba506"));
+	CHECK(pass, "valid NQN → UUID \"%s\"", id ? id : "(null)");
+
+	id = hostid_from_hostnqn("prefix:uuid:abc-123");
+	pass = (id && !strcmp(id, "abc-123"));
+	CHECK(pass, "arbitrary prefix → \"abc-123\"");
+
+	return pass;
+}
+
+/* -------------------------------------------------------------------------
+ * __add_bool_argument — append a boolean flag to an argument string
+ * -------------------------------------------------------------------------
+ */
+static bool test_add_bool_argument(void)
+{
+	char *argstr;
+	bool pass = true;
+	int ret;
+
+	printf("\ntest___add_bool_argument:\n");
+
+	argstr = strdup("start");
+
+	ret = __add_bool_argument(&argstr, "flag", false);
+	pass = (ret == 0 && !strcmp(argstr, "start"));
+	CHECK(pass, "arg=false → no change: \"%s\"", argstr);
+
+	ret = __add_bool_argument(&argstr, "flag", true);
+	pass = (ret == 0 && !strcmp(argstr, "start,flag"));
+	CHECK(pass, "arg=true → appended: \"%s\"", argstr);
+
+	free(argstr);
+	return pass;
+}
+
+/* -------------------------------------------------------------------------
+ * __add_hex_argument — append a hex-formatted integer argument
+ * -------------------------------------------------------------------------
+ */
+static bool test_add_hex_argument(void)
+{
+	char *argstr;
+	bool pass = true, p;
+	int ret;
+
+	printf("\ntest___add_hex_argument:\n");
+
+	argstr = strdup("s");
+
+	ret = __add_hex_argument(&argstr, "v", -1, false);
+	p = (ret == 0 && !strcmp(argstr, "s"));
+	CHECK(p, "arg<0 → no change");
+	pass &= p;
+
+	ret = __add_hex_argument(&argstr, "v", 0, false);
+	p = (ret == 0 && !strcmp(argstr, "s"));
+	CHECK(p, "arg=0 allow_zero=false → no change");
+	pass &= p;
+
+	ret = __add_hex_argument(&argstr, "v", 0, true);
+	p = (ret == 0 && !strcmp(argstr, "s,v=0x00000000"));
+	CHECK(p, "arg=0 allow_zero=true → \"%s\"", argstr);
+	pass &= p;
+
+	free(argstr);
+	argstr = strdup("s");
+	ret = __add_hex_argument(&argstr, "key", 0x1234abcd, false);
+	p = (ret == 0 && !strcmp(argstr, "s,key=0x1234abcd"));
+	CHECK(p, "arg=0x1234abcd → \"%s\"", argstr);
+	pass &= p;
+
+	free(argstr);
+	return pass;
+}
+
+/* -------------------------------------------------------------------------
+ * __add_int_argument — append a decimal integer argument
+ * -------------------------------------------------------------------------
+ */
+static bool test_add_int_argument(void)
+{
+	char *argstr;
+	bool pass = true, p;
+	int ret;
+
+	printf("\ntest___add_int_argument:\n");
+
+	argstr = strdup("s");
+
+	ret = __add_int_argument(&argstr, "n", -1, false);
+	p = (ret == 0 && !strcmp(argstr, "s"));
+	CHECK(p, "arg<0 → no change");
+	pass &= p;
+
+	ret = __add_int_argument(&argstr, "n", 0, false);
+	p = (ret == 0 && !strcmp(argstr, "s"));
+	CHECK(p, "arg=0 allow_zero=false → no change");
+	pass &= p;
+
+	ret = __add_int_argument(&argstr, "n", 0, true);
+	p = (ret == 0 && !strcmp(argstr, "s,n=0"));
+	CHECK(p, "arg=0 allow_zero=true → \"%s\"", argstr);
+	pass &= p;
+
+	free(argstr);
+	argstr = strdup("s");
+	ret = __add_int_argument(&argstr, "n", 42, false);
+	p = (ret == 0 && !strcmp(argstr, "s,n=42"));
+	CHECK(p, "arg=42 → \"%s\"", argstr);
+	pass &= p;
+
+	free(argstr);
+	return pass;
+}
+
+/* -------------------------------------------------------------------------
+ * __add_int_or_minus_one_argument — like _int but also allows -1
+ * -------------------------------------------------------------------------
+ */
+static bool test_add_int_or_minus_one_argument(void)
+{
+	char *argstr;
+	bool pass = true, p;
+	int ret;
+
+	printf("\ntest___add_int_or_minus_one_argument:\n");
+
+	argstr = strdup("s");
+
+	ret = __add_int_or_minus_one_argument(&argstr, "n", -2);
+	p = (ret == 0 && !strcmp(argstr, "s"));
+	CHECK(p, "arg=-2 → no change");
+	pass &= p;
+
+	ret = __add_int_or_minus_one_argument(&argstr, "n", -1);
+	p = (ret == 0 && !strcmp(argstr, "s,n=-1"));
+	CHECK(p, "arg=-1 → \"%s\"", argstr);
+	pass &= p;
+
+	free(argstr);
+	argstr = strdup("s");
+	ret = __add_int_or_minus_one_argument(&argstr, "n", 0);
+	p = (ret == 0 && !strcmp(argstr, "s,n=0"));
+	CHECK(p, "arg=0 → \"%s\"", argstr);
+	pass &= p;
+
+	free(argstr);
+	argstr = strdup("s");
+	ret = __add_int_or_minus_one_argument(&argstr, "n", 7);
+	p = (ret == 0 && !strcmp(argstr, "s,n=7"));
+	CHECK(p, "arg=7 → \"%s\"", argstr);
+	pass &= p;
+
+	free(argstr);
+	return pass;
+}
+
+/* -------------------------------------------------------------------------
+ * __add_argument — append a string argument; skip NULL/"none"/empty
+ * -------------------------------------------------------------------------
+ */
+static bool test_add_argument(void)
+{
+	char *argstr;
+	bool pass = true, p;
+	int ret;
+
+	printf("\ntest___add_argument:\n");
+
+	argstr = strdup("s");
+
+	ret = __add_argument(&argstr, "a", NULL);
+	p = (ret == 0 && !strcmp(argstr, "s"));
+	CHECK(p, "NULL → no change");
+	pass &= p;
+
+	ret = __add_argument(&argstr, "a", "");
+	p = (ret == 0 && !strcmp(argstr, "s"));
+	CHECK(p, "empty string → no change");
+	pass &= p;
+
+	ret = __add_argument(&argstr, "a", "none");
+	p = (ret == 0 && !strcmp(argstr, "s"));
+	CHECK(p, "\"none\" → no change");
+	pass &= p;
+
+	ret = __add_argument(&argstr, "transport", "tcp");
+	p = (ret == 0 && !strcmp(argstr, "s,transport=tcp"));
+	CHECK(p, "\"tcp\" → \"%s\"", argstr);
+	pass &= p;
+
+	free(argstr);
+	return pass;
+}
+
+/* -------------------------------------------------------------------------
+ * inet4_pton — parse an IPv4 address string into a sockaddr_storage
+ * -------------------------------------------------------------------------
+ */
+static bool test_inet4_pton(void)
+{
+	struct sockaddr_storage addr;
+	struct sockaddr_in *a4 = (struct sockaddr_in *)&addr;
+	bool pass = true, p;
+	int ret;
+
+	printf("\ntest_inet4_pton:\n");
+
+	memset(&addr, 0, sizeof(addr));
+	ret = inet4_pton("192.168.1.1", 4420, &addr);
+	p = (ret == 0 &&
+	     a4->sin_family == AF_INET &&
+	     ntohs(a4->sin_port) == 4420);
+	CHECK(p, "\"192.168.1.1\":4420 → ret=%d family=%d port=%d",
+	     ret, a4->sin_family, ntohs(a4->sin_port));
+	pass &= p;
+
+	memset(&addr, 0, sizeof(addr));
+	ret = inet4_pton("0.0.0.0", 0, &addr);
+	p = (ret == 0 && a4->sin_family == AF_INET);
+	CHECK(p, "\"0.0.0.0\":0 → ret=%d", ret);
+	pass &= p;
+
+	ret = inet4_pton("not-an-ip", 4420, &addr);
+	p = (ret == -EINVAL);
+	CHECK(p, "invalid string → -EINVAL (got %d)", ret);
+	pass &= p;
+
+	ret = inet4_pton("999.999.999.999", 4420, &addr);
+	p = (ret == -EINVAL);
+	CHECK(p, "out-of-range octets → -EINVAL (got %d)", ret);
+	pass &= p;
+
+	/* string longer than INET_ADDRSTRLEN */
+	ret = inet4_pton(
+		"1234567890.1234567890.1234567890.1234567890",
+		0, &addr);
+	p = (ret == -EINVAL);
+	CHECK(p, "too-long string → -EINVAL (got %d)", ret);
+	pass &= p;
+
+	return pass;
+}
+
+/* -------------------------------------------------------------------------
+ * inet_pton_with_scope — parse IPv4 or IPv6 (with optional %iface scope)
+ * -------------------------------------------------------------------------
+ */
+static bool test_inet_pton_with_scope(struct libnvme_global_ctx *ctx)
+{
+	struct sockaddr_storage addr;
+	bool pass = true, p;
+	int ret;
+
+	printf("\ntest_inet_pton_with_scope:\n");
+
+	/* IPv4 via AF_INET */
+	ret = inet_pton_with_scope(ctx, AF_INET, "10.0.0.1", "4420", &addr);
+	p = (ret == 0);
+	CHECK(p, "AF_INET \"10.0.0.1\":4420 → ret=%d", ret);
+	pass &= p;
+
+	/* IPv4 rejected when asking for AF_INET6 */
+	ret = inet_pton_with_scope(ctx, AF_INET6, "10.0.0.1", "4420", &addr);
+	p = (ret != 0);
+	CHECK(p, "AF_INET6 rejects IPv4 → ret=%d (non-zero expected)", ret);
+	pass &= p;
+
+	/* Plain IPv6 via AF_INET6 */
+	ret = inet_pton_with_scope(ctx, AF_INET6, "2001:db8::1", "4420", &addr);
+	p = (ret == 0);
+	CHECK(p, "AF_INET6 \"2001:db8::1\" → ret=%d", ret);
+	pass &= p;
+
+	/* Plain IPv6 via AF_UNSPEC */
+	ret = inet_pton_with_scope(ctx, AF_UNSPEC, "fe80::1", "4420", &addr);
+	p = (ret == 0);
+	CHECK(p, "AF_UNSPEC \"fe80::1\" → ret=%d", ret);
+	pass &= p;
+
+	/* Scoped link-local via lo (always present) */
+	ret = inet_pton_with_scope(ctx, AF_UNSPEC, "fe80::1%lo", "4420", &addr);
+	p = (ret == 0);
+	CHECK(p, "AF_UNSPEC \"fe80::1%%lo\" (scoped): ret=%d", ret);
+	pass &= p;
+
+	/*
+	 * A maximum-length address plus scope is longer than
+	 * INET6_ADDRSTRLEN. Only the address part is bounded by it.
+	 */
+	ret = inet_pton_with_scope(ctx, AF_INET6,
+			"0000:0000:0000:0000:0000:ffff:255.255.255.255%lo",
+			"4420", &addr);
+	p = (ret == 0);
+	CHECK(p, "AF_INET6 max-length address with scope: ret=%d", ret);
+	pass &= p;
+
+	/* Over-long address part is still rejected by inet_pton() */
+	ret = inet_pton_with_scope(ctx, AF_INET6,
+			"fe80:0000:0000:0000:0000:020c:caff:fe12:66ff", "4420",
+			&addr);
+	p = (ret != 0);
+	CHECK(p, "AF_INET6 nine groups rejected: ret=%d", ret);
+	pass &= p;
+
+	/* Scoped address for non-link-local: scope is ignored by inet6_pton */
+	ret = inet_pton_with_scope(ctx, AF_UNSPEC, "2001:db8::1", NULL, &addr);
+	p = (ret == 0);
+	CHECK(p, "AF_UNSPEC \"2001:db8::1\" trsvcid=NULL → ret=%d", ret);
+	pass &= p;
+
+	/* Port overflow */
+	ret = inet_pton_with_scope(ctx, AF_INET, "10.0.0.1", "99999", &addr);
+	p = (ret == -ERANGE);
+	CHECK(p, "port overflow (99999) → -ERANGE (got %d)", ret);
+	pass &= p;
+
+	return pass;
+}
+
+/* -------------------------------------------------------------------------
+ * traddr_is_hostname — decide whether traddr is a hostname (not an IP)
+ *
+ * This is the key regression test: scoped IPv6 addresses like
+ * "fe80::1%eth0" must NOT be classified as hostnames.  Before this was
+ * caught, a proposed change replaced inet_pton_with_scope() with plain
+ * inet_pton(), which fails on scoped addresses and mis-classifies them
+ * as hostnames.
+ * -------------------------------------------------------------------------
+ */
+static bool test_traddr_is_hostname(struct libnvme_global_ctx *ctx)
+{
+	bool pass = true, p;
+
+	printf("\ntest_traddr_is_hostname:\n");
+
+#define TRADDR_TEST(transport_, traddr_, expected, label)		\
+	do {								\
+		p = (traddr_is_hostname(ctx, transport_,		\
+					traddr_) == (expected));	\
+		CHECK(p, "%-38s → %s", label,				\
+		      expected ? "hostname" : "IP");			\
+		pass &= p;						\
+	} while (0)
+
+	/* Plain IPv4 */
+	TRADDR_TEST("tcp",  "192.168.1.10", false, "IPv4 address (tcp)");
+	TRADDR_TEST("rdma", "192.168.1.10", false, "IPv4 address (rdma)");
+
+	/* Plain IPv6 */
+	TRADDR_TEST("tcp", "fe80::1",     false, "IPv6 link-local (no scope)");
+	TRADDR_TEST("tcp", "2001:db8::1", false, "IPv6 global unicast");
+	TRADDR_TEST("tcp", "::1",         false, "IPv6 loopback");
+
+	/*
+	 * Scoped IPv6 - the regression case.
+	 * Must be classified as an IP address, not a hostname.
+	 * Plain inet_pton() would fail here and wrongly return true.
+	 */
+	TRADDR_TEST("tcp",  "fe80::1%lo", false, "scoped IPv6 (lo, exists)");
+	TRADDR_TEST("rdma", "fe80::1%lo", false, "scoped IPv6 (lo, rdma)");
+
+	/*
+	 * A zone naming a nonexistent interface is still numeric; zone
+	 * validity is the kernel's call, same as host_iface.
+	 */
+	TRADDR_TEST("tcp", "fe80::1%nonexistent0", false,
+		    "scoped IPv6 (bad zone)");
+
+	/* Hostnames */
+	TRADDR_TEST("tcp",  "storage.example.com", true, "FQDN hostname");
+	TRADDR_TEST("tcp",  "nvme-target",         true, "short hostname");
+	TRADDR_TEST("rdma", "storage.example.com",
+		    true, "FQDN hostname (rdma)");
+
+	/* "none" - reserved keyword, must not be treated as a hostname */
+	TRADDR_TEST("tcp", "none", false, "literal \"none\"");
+
+	/* Transports where the check is skipped entirely */
+	TRADDR_TEST("pcie", "192.168.1.10",        false, "IPv4 on pcie");
+	TRADDR_TEST("fc",   "fe80::1%lo",          false, "scoped IPv6 (fc)");
+	TRADDR_TEST("loop", "storage.example.com", false, "hostname on loop");
+
+	/* NULL traddr */
+	TRADDR_TEST("tcp", NULL, false, "NULL traddr");
+
+#undef TRADDR_TEST
+
+	return pass;
+}
+
+/* -------------------------------------------------------------------------
+ * nvmf_sanitize_addrs — reject hostnames, canonicalize numeric addresses
+ * -------------------------------------------------------------------------
+ */
+static bool test_nvmf_sanitize_addrs(struct libnvme_global_ctx *ctx)
+{
+	struct libnvme_ctrl_params params = { .transport = "tcp" };
+	struct libnvme_ctrl *c;
+	bool pass = true, p;
+	int ret;
+
+	printf("\ntest_nvmf_sanitize_addrs:\n");
+
+	/*
+	 * Creation never resolves and never rejects -- a hostname host_traddr
+	 * is stored verbatim; rejection happens at connect (single policy
+	 * point).
+	 */
+	params.subsysnqn = "nqn.2024-01.com.example:test";
+	params.traddr = "192.168.1.10";
+	params.host_traddr = "storage.example.com";
+	c = NULL;
+	libnvme_create_ctrl(ctx, &params, &c);
+	CHECK(c, "ctrl created with hostname host_traddr");
+	if (!c)
+		return false;
+	p = !strcmp(libnvme_ctrl_get_host_traddr(c), "storage.example.com");
+	CHECK(p, "hostname host_traddr stored verbatim at creation");
+	pass &= p;
+
+	ret = nvmf_sanitize_addrs(ctx, c);
+	p = ret == -ENVME_CONNECT_TRADDR;
+	CHECK(p, "hostname host_traddr rejected at connect: %d", ret);
+	pass &= p;
+
+	libnvme_free_ctrl(c);
+
+	/* A hostname traddr is rejected the same way. */
+	params.traddr = "storage.example.com";
+	params.host_traddr = NULL;
+	c = NULL;
+	libnvme_create_ctrl(ctx, &params, &c);
+	CHECK(c, "ctrl created with hostname traddr");
+	if (!c)
+		return false;
+
+	ret = nvmf_sanitize_addrs(ctx, c);
+	p = ret == -ENVME_CONNECT_TRADDR;
+	CHECK(p, "hostname traddr rejected at connect: %d", ret);
+	pass &= p;
+
+	libnvme_free_ctrl(c);
+
+	/* An uncompressed IPv6 traddr is canonicalized. */
+	params.traddr = "2001:0db8:0000:0000:0000:0000:0000:0001";
+	c = NULL;
+	libnvme_create_ctrl(ctx, &params, &c);
+	CHECK(c, "ctrl created with uncompressed IPv6 traddr");
+	if (!c)
+		return false;
+
+	ret = nvmf_sanitize_addrs(ctx, c);
+	p = !ret && !strcmp(libnvme_ctrl_get_traddr(c), "2001:db8::1");
+	CHECK(p, "uncompressed IPv6 traddr canonicalized: %s",
+	      libnvme_ctrl_get_traddr(c));
+	pass &= p;
+
+	libnvme_free_ctrl(c);
+
+	/*
+	 * A scoped IPv6 traddr passes through verbatim even when the zone
+	 * names a nonexistent interface -- zone validity is the kernel's
+	 * call, same as host_iface.
+	 */
+	params.traddr = "fe80::1%nonexistent0";
+	c = NULL;
+	libnvme_create_ctrl(ctx, &params, &c);
+	CHECK(c, "ctrl created with bad-zone scoped IPv6 traddr");
+	if (!c)
+		return false;
+
+	ret = nvmf_sanitize_addrs(ctx, c);
+	p = !ret && !strcmp(libnvme_ctrl_get_traddr(c), "fe80::1%nonexistent0");
+	CHECK(p, "bad-zone scoped IPv6 traddr accepted verbatim: %s",
+	      libnvme_ctrl_get_traddr(c));
+	pass &= p;
+
+	libnvme_free_ctrl(c);
+
+	/* fc: a WWN traddr is left untouched (not an IP transport). */
+	params.transport = "fc";
+	params.traddr = "nn-0x1:pn-0x2";
+	c = NULL;
+	libnvme_create_ctrl(ctx, &params, &c);
+	CHECK(c, "ctrl created with fc WWN traddr");
+	if (!c)
+		return false;
+
+	ret = nvmf_sanitize_addrs(ctx, c);
+	p = !ret && !strcmp(libnvme_ctrl_get_traddr(c), "nn-0x1:pn-0x2");
+	CHECK(p, "fc WWN traddr left untouched: %s",
+	      libnvme_ctrl_get_traddr(c));
+	pass &= p;
+
+	libnvme_free_ctrl(c);
+
+	/* loop: no traddr at all -- nothing to sanitize. */
+	params.transport = "loop";
+	params.traddr = NULL;
+	c = NULL;
+	libnvme_create_ctrl(ctx, &params, &c);
+	CHECK(c, "ctrl created for loop transport");
+	if (!c)
+		return false;
+
+	ret = nvmf_sanitize_addrs(ctx, c);
+	p = ret == 0;
+	CHECK(p, "loop transport (no traddr) sanitizes cleanly: %d", ret);
+	pass &= p;
+
+	libnvme_free_ctrl(c);
+
+	return pass;
+}
+
+/* -------------------------------------------------------------------------
+ * unescape_uri — decode percent-encoded characters in a URI fragment
+ * -------------------------------------------------------------------------
+ */
+static bool test_unescape_uri(void)
+{
+	char *out;
+	bool pass = true, p;
+
+	printf("\ntest_unescape_uri:\n");
+
+	out = unescape_uri("hello%20world", -1);
+	p = out && !strcmp(out, "hello world");
+	CHECK(p, "%%20 → space: \"%s\"", out ? out : "(null)");
+	pass &= p;
+	free(out);
+
+	out = unescape_uri("path%2Fsegment", -1);
+	p = out && !strcmp(out, "path/segment");
+	CHECK(p, "%%2F → /: \"%s\"", out ? out : "(null)");
+	pass &= p;
+	free(out);
+
+	out = unescape_uri("no-escapes", -1);
+	p = out && !strcmp(out, "no-escapes");
+	CHECK(p, "no escapes → unchanged: \"%s\"", out ? out : "(null)");
+	pass &= p;
+	free(out);
+
+	/* Truncate via explicit length */
+	out = unescape_uri("hello%20world", 5);
+	p = out && !strcmp(out, "hello");
+	CHECK(p, "len=5 → \"%s\"", out ? out : "(null)");
+	pass &= p;
+	free(out);
+
+	/* Invalid percent sequence — passed through verbatim */
+	out = unescape_uri("bad%xychars", -1);
+	p = out && !strcmp(out, "bad%xychars");
+	CHECK(p, "invalid %%xy → verbatim: \"%s\"", out ? out : "(null)");
+	pass &= p;
+	free(out);
+
+	/* Truncated percent at end of string */
+	out = unescape_uri("end%2", -1);
+	p = out && !strcmp(out, "end%2");
+	CHECK(p, "truncated %% at end -> verbatim: \"%s\"",
+	      out ? out : "(null)");
+	pass &= p;
+	free(out);
+
+	return pass;
+}
+
+/* -------------------------------------------------------------------------
+ * dc_decide — pure disconnect-decision logic for one discovery controller
+ * -------------------------------------------------------------------------
+ */
+static bool test_dc_decide(struct libnvme_global_ctx *ctx)
+{
+	struct libnvmf_context fctx = { .ctx = ctx };
+	__u16 epcsd_set = NVMF_DISC_EFLAGS_EPCSD;
+	__u16 epcsd_clear = 0;
+	__u16 both_set = NVMF_DISC_EFLAGS_EPCSD | NVMF_DISC_EFLAGS_DUPRETINFO;
+	__u16 dup_only = NVMF_DISC_EFLAGS_DUPRETINFO;
+	bool pass = true, p, d;
+
+	printf("\ntest_dc_decide:\n");
+
+	/* DC_BORROWED: never ours to disconnect, regardless of mode/EPCSD. */
+	fctx.persistent = LIBNVMF_PERSISTENT_FORCE;
+	d = dc_decide(&fctx, "nqn", DC_BORROWED, true, epcsd_set, NULL);
+	p = !d;
+	CHECK(p, "DC_BORROWED, FORCE, self EPCSD=1: disconnect=%d", d);
+	pass &= p;
+
+	fctx.persistent = LIBNVMF_PERSISTENT_NO;
+	d = dc_decide(&fctx, "nqn", DC_BORROWED, false, 0, NULL);
+	p = !d;
+	CHECK(p, "DC_BORROWED, NO, no self entry: disconnect=%d", d);
+	pass &= p;
+
+	/* DC_OWNED, AUTO: self entry's own EPCSD decides. */
+	fctx.persistent = LIBNVMF_PERSISTENT_AUTO;
+	d = dc_decide(&fctx, "nqn", DC_OWNED, true, epcsd_set, NULL);
+	p = !d;
+	CHECK(p, "DC_OWNED, AUTO, self EPCSD=1: disconnect=%d", d);
+	pass &= p;
+
+	d = dc_decide(&fctx, "nqn", DC_OWNED, true, epcsd_clear, NULL);
+	p = d;
+	CHECK(p, "DC_OWNED, AUTO, self EPCSD=0: disconnect=%d", d);
+	pass &= p;
+
+	/* DC_OWNED, AUTO, no self entry: fall back to the parent's view. */
+	d = dc_decide(&fctx, "nqn", DC_OWNED, false, 0, &epcsd_set);
+	p = !d;
+	CHECK(p, "DC_OWNED, AUTO, no self entry, parent EPCSD=1: disconnect=%d",
+	      d);
+	pass &= p;
+
+	d = dc_decide(&fctx, "nqn", DC_OWNED, false, 0, &epcsd_clear);
+	p = d;
+	CHECK(p, "DC_OWNED, AUTO, no self entry, parent EPCSD=0: disconnect=%d",
+	      d);
+	pass &= p;
+
+	/* DC_OWNED, AUTO, no self entry and no parent (primary): assume 0. */
+	d = dc_decide(&fctx, "nqn", DC_OWNED, false, 0, NULL);
+	p = d;
+	CHECK(p, "DC_OWNED, AUTO, no self entry, no parent: disconnect=%d", d);
+	pass &= p;
+
+	/* FORCE/NO override EPCSD either way. */
+	fctx.persistent = LIBNVMF_PERSISTENT_FORCE;
+	d = dc_decide(&fctx, "nqn", DC_OWNED, true, epcsd_clear, NULL);
+	p = !d;
+	CHECK(p, "DC_OWNED, FORCE, self EPCSD=0: disconnect=%d", d);
+	pass &= p;
+
+	fctx.persistent = LIBNVMF_PERSISTENT_NO;
+	d = dc_decide(&fctx, "nqn", DC_OWNED, true, epcsd_set, NULL);
+	p = d;
+	CHECK(p, "DC_OWNED, NO, self EPCSD=1: disconnect=%d", d);
+	pass &= p;
+
+	/*
+	 * DUPRETINFO plays no part in the persistence decision. It says a set
+	 * of this Discovery subsystem's ports return the same log page, so a
+	 * host need not read the log page from all of them. Only EPCSD decides
+	 * whether the connection is kept. Setting DUPRETINFO alongside EPCSD,
+	 * or on its own, must not change the outcome.
+	 */
+	fctx.persistent = LIBNVMF_PERSISTENT_AUTO;
+	d = dc_decide(&fctx, "nqn", DC_OWNED, true, both_set, NULL);
+	p = !d;
+	CHECK(p, "DC_OWNED, AUTO, self EPCSD=1|DUPRETINFO: disconnect=%d", d);
+	pass &= p;
+
+	d = dc_decide(&fctx, "nqn", DC_OWNED, true, dup_only, NULL);
+	p = d;
+	CHECK(p, "DC_OWNED, AUTO, self DUPRETINFO only: disconnect=%d", d);
+	pass &= p;
+
+	d = dc_decide(&fctx, "nqn", DC_OWNED, false, 0, &both_set);
+	p = !d;
+	CHECK(p, "DC_OWNED, AUTO, parent EPCSD=1|DUPRETINFO: disconnect=%d", d);
+	pass &= p;
+
+	d = dc_decide(&fctx, "nqn", DC_OWNED, false, 0, &dup_only);
+	p = d;
+	CHECK(p, "DC_OWNED, AUTO, parent DUPRETINFO only: disconnect=%d", d);
+	pass &= p;
+
+	return pass;
+}
+
+/* -------------------------------------------------------------------------
+ * dc_entry_is_self — is this entry, among possibly several a multi-homed
+ * DC reports (Base spec 2.4, Figure 320, subtype 03h), the self entry
+ * for this connection
+ * -------------------------------------------------------------------------
+ */
+static bool test_dc_entry_is_self(void)
+{
+	struct libnvme_ctrl c = {
+		.transport = "tcp",
+		.traddr = "192.168.1.116",
+		.trsvcid = "8009",
+	};
+	struct nvmf_disc_log_entry e = { 0 };
+	bool pass = true, p;
+
+	printf("\ntest_dc_entry_is_self:\n");
+
+	e.subtype = NVME_NQN_CURR;
+	e.trtype = NVMF_TRTYPE_TCP;
+	memcpy(e.traddr, "192.168.1.116", sizeof("192.168.1.116"));
+	memcpy(e.trsvcid, "8009", sizeof("8009"));
+
+	p = dc_entry_is_self(&c, &e);
+	CHECK(p, "self entry, matching transport/traddr/trsvcid: is self");
+	pass &= p;
+
+	memset(&e, 0, sizeof(e));
+	e.subtype = NVME_NQN_CURR;
+	e.trtype = NVMF_TRTYPE_TCP;
+	memcpy(e.traddr, "192.168.2.116", sizeof("192.168.2.116"));
+	memcpy(e.trsvcid, "8009", sizeof("8009"));
+	p = !dc_entry_is_self(&c, &e);
+	CHECK(p, "same transport, different traddr (other port): not self");
+	pass &= p;
+
+	memset(&e, 0, sizeof(e));
+	e.subtype = NVME_NQN_CURR;
+	e.trtype = NVMF_TRTYPE_RDMA;
+	memcpy(e.traddr, "192.168.1.116", sizeof("192.168.1.116"));
+	memcpy(e.trsvcid, "8009", sizeof("8009"));
+	p = !dc_entry_is_self(&c, &e);
+	CHECK(p, "same traddr/trsvcid, different transport: not self");
+	pass &= p;
+
+	memset(&e, 0, sizeof(e));
+	e.subtype = NVME_NQN_CURR;
+	e.trtype = NVMF_TRTYPE_TCP;
+	memcpy(e.traddr, "192.168.1.116", sizeof("192.168.1.116"));
+	memcpy(e.trsvcid, "8010", sizeof("8010"));
+	p = !dc_entry_is_self(&c, &e);
+	CHECK(p, "same transport/traddr, different trsvcid: not self");
+	pass &= p;
+
+	memset(&e, 0, sizeof(e));
+	e.subtype = NVME_NQN_NVME;
+	e.trtype = NVMF_TRTYPE_TCP;
+	memcpy(e.traddr, "192.168.1.116", sizeof("192.168.1.116"));
+	memcpy(e.trsvcid, "8009", sizeof("8009"));
+	p = !dc_entry_is_self(&c, &e);
+	CHECK(p, "matching addressing, wrong subtype: not self");
+	pass &= p;
+
+	c.transport = "rdma";
+	c.traddr = "fe80::20c:caff:fe12:6747%lo";
+	memset(&e, 0, sizeof(e));
+	e.subtype = NVME_NQN_CURR;
+	e.trtype = NVMF_TRTYPE_RDMA;
+	memcpy(e.traddr, "FE80::20C:CAFF:FE12:6747%lo",
+	       sizeof("FE80::20C:CAFF:FE12:6747%lo"));
+	memcpy(e.trsvcid, "8009", sizeof("8009"));
+	p = dc_entry_is_self(&c, &e);
+	CHECK(p, "same IPv6 address, different notation: is self");
+	pass &= p;
+
+	memset(e.traddr, 0, sizeof(e.traddr));
+	memcpy(e.traddr, "FE80::20C:CAFF:FE12:6748%lo",
+	       sizeof("FE80::20C:CAFF:FE12:6748%lo"));
+	p = !dc_entry_is_self(&c, &e);
+	CHECK(p, "different IPv6 address: not self");
+	pass &= p;
+
+	return pass;
+}
+
+/* -------------------------------------------------------------------------
+ * registry_action_on_connect — what a successful connect does to the
+ * registry entry
+ * -------------------------------------------------------------------------
+ */
+static bool test_registry_action_on_connect(void)
+{
+	bool pass = true, p;
+	enum registry_action a;
+
+	printf("\ntest_registry_action_on_connect:\n");
+
+	a = registry_action_on_connect("stas", true);
+	p = a == REG_CLAIM;
+	CHECK(p, "owner=\"stas\", fresh: action=%d", a);
+	pass &= p;
+
+	/* A fresh instance number may carry a stale entry; drop it. */
+	a = registry_action_on_connect(NULL, true);
+	p = a == REG_CLEAR;
+	CHECK(p, "owner=NULL, fresh: action=%d", a);
+	pass &= p;
+
+	a = registry_action_on_connect("", true);
+	p = a == REG_CLEAR;
+	CHECK(p, "owner=\"\", fresh: action=%d", a);
+	pass &= p;
+
+	a = registry_action_on_connect("stas", false);
+	p = a == REG_CLAIM;
+	CHECK(p, "owner=\"stas\", reuse: action=%d", a);
+	pass &= p;
+
+	a = registry_action_on_connect("", false);
+	p = a == REG_CLEAR;
+	CHECK(p, "owner=\"\", reuse: action=%d", a);
+	pass &= p;
+
+	/* No intent stated on a controller we did not create: don't touch. */
+	a = registry_action_on_connect(NULL, false);
+	p = a == REG_NONE;
+	CHECK(p, "owner=NULL, reuse: action=%d", a);
+	pass &= p;
+
+	return pass;
+}
+
+/* -------------------------------------------------------------------------
+ * libnvmf_create_ctrl — the credentials on the fabrics context live next to
+ * ctrl_params, not inside it.  Regression: the function forwarded only
+ * ctrl_params, so a controller built from a context carrying a keyring, TLS
+ * key or kxchap secret came out without any of them and the connect failed
+ * with ENOKEY.
+ * -------------------------------------------------------------------------
+ */
+static bool test_create_ctrl_credentials(struct libnvme_global_ctx *ctx)
+{
+	struct libnvmf_context fctx = { .ctx = ctx };
+	struct libnvme_ctrl *c = NULL;
+	const char *val;
+	bool pass = true, p;
+	int ret;
+
+	printf("\ntest_create_ctrl_credentials:\n");
+
+	fctx.ctrl_params.subsysnqn = "nqn.2014-08.org.nvmexpress:subsys";
+	fctx.ctrl_params.transport = "tcp";
+	fctx.ctrl_params.traddr = "192.168.1.100";
+	fctx.ctrl_params.cfg.tls = true;
+
+	/* Named keyring and key: they end up as strings on the ctrl. */
+	fctx.hostkey = "hostkey";
+	fctx.ctrlkey = "ctrlkey";
+	fctx.keyring = ".nvme";
+	fctx.tls_key = "tlskey";
+	fctx.tls_key_identity = "identity";
+
+	ret = libnvmf_create_ctrl(ctx, &fctx, &c);
+	p = ret == 0 && c;
+	CHECK(p, "create with named keys: ret=%d", ret);
+	pass &= p;
+	if (!p)
+		return pass;
+
+	p = libnvme_ctrl_get_kxchap_host_key(c, &val, NULL) == 0 &&
+		!strcmp(val, "hostkey");
+	CHECK(p, "kxchap host key carried over");
+	pass &= p;
+
+	p = libnvme_ctrl_get_kxchap_ctrl_key(c, &val, NULL) == 0 &&
+		!strcmp(val, "ctrlkey");
+	CHECK(p, "kxchap ctrl key carried over");
+	pass &= p;
+
+	p = libnvme_ctrl_get_keyring(c, &val, NULL) == 0 &&
+		!strcmp(val, ".nvme");
+	CHECK(p, "keyring carried over");
+	pass &= p;
+
+	val = libnvme_ctrl_get_tls_key(c);
+	p = val && !strcmp(val, "tlskey");
+	CHECK(p, "tls key carried over");
+	pass &= p;
+
+	val = libnvme_ctrl_get_tls_key_identity(c);
+	p = val && !strcmp(val, "identity");
+	CHECK(p, "tls key identity carried over");
+	pass &= p;
+
+	p = c->cfg.tls;
+	CHECK(p, "fabrics config still carried over");
+	pass &= p;
+
+	libnvme_free_ctrl(c);
+
+	/* Numeric keyring and key: they end up as serials in the config. */
+	c = NULL;
+	fctx.keyring = "0x2a";
+	fctx.tls_key = "42";
+
+	ret = libnvmf_create_ctrl(ctx, &fctx, &c);
+	p = ret == 0 && c;
+	CHECK(p, "create with numeric keys: ret=%d", ret);
+	pass &= p;
+	if (!p)
+		return pass;
+
+	p = c->cfg.keyring_id == 0x2a;
+	CHECK(p, "keyring serial carried over: %ld", c->cfg.keyring_id);
+	pass &= p;
+
+	p = c->cfg.tls_key_id == 42;
+	CHECK(p, "tls key serial carried over: %ld", c->cfg.tls_key_id);
+	pass &= p;
+
+	libnvme_free_ctrl(c);
+
+	return pass;
+}
+
+/* -------------------------------------------------------------------------
+ * __libnvmf_import_keys_from_config — without a TLS key, the kernel looks up
+ * the PSK in the keyring.  Regression: the keyring was dropped when there was
+ * no key, so the kernel searched .nvme instead of the configured keyring.
+ * -------------------------------------------------------------------------
+ */
+static bool test_import_keys_keyring_without_key(
+		struct libnvme_global_ctx *ctx)
+{
+#ifdef CONFIG_KEYUTILS
+	struct libnvmf_context fctx = { .ctx = ctx };
+	struct libnvme_ctrl *c = NULL;
+	struct libnvme_host *h = NULL;
+	long keyring_id = 0, key_id = 0;
+	bool pass = true, p;
+	int ret;
+
+	printf("\ntest_import_keys_keyring_without_key:\n");
+
+	ret = libnvme_get_host(ctx, "nqn.2014-08.org.nvmexpress:host",
+			       NULL, &h);
+	p = ret == 0 && h;
+	CHECK(p, "get host: ret=%d", ret);
+	pass &= p;
+	if (!p)
+		return pass;
+
+	fctx.ctrl_params.subsysnqn = "nqn.2014-08.org.nvmexpress:subsys";
+	fctx.ctrl_params.transport = "tcp";
+	fctx.ctrl_params.traddr = "192.168.1.100";
+	fctx.ctrl_params.cfg.tls = true;
+	fctx.keyring = "0x2a";
+
+	ret = libnvmf_create_ctrl(ctx, &fctx, &c);
+	p = ret == 0 && c;
+	CHECK(p, "create: ret=%d", ret);
+	pass &= p;
+	if (!p)
+		return pass;
+
+	ret = __libnvmf_import_keys_from_config(h, c, &keyring_id, &key_id);
+	p = ret == 0;
+	CHECK(p, "import: ret=%d", ret);
+	pass &= p;
+
+	p = keyring_id == 0x2a;
+	CHECK(p, "keyring passed on: %#lx", keyring_id);
+	pass &= p;
+
+	p = key_id == 0;
+	CHECK(p, "no key: %ld", key_id);
+	pass &= p;
+
+	libnvme_free_ctrl(c);
+
+	return pass;
+#else
+	return true;
+#endif
+}
+
+/* -------------------------------------------------------------------------
+ * libnvmf_generate_hostid — the machine identifier comes from sysfs, so a
+ * test sandbox must be able to redirect it.  Regression: the generators took
+ * no context and always read the real machine.
+ * -------------------------------------------------------------------------
+ */
+static bool test_generate_hostid(struct libnvme_global_ctx *ctx)
+{
+	static const char uuid[] = "12345678-1234-1234-1234-123456789abc";
+	static const char placeholder[] =
+		"ffffffff-ffff-ffff-ffff-ffffffffffff";
+	static const char machine_id[] = "3d1b2f4c5e6a7b8c9d0e1f2a3b4c5d6e";
+	static const char from_machine_id[] =
+		"122333a9-35f5-474d-9a82-4507e71c4fb1";
+	char dir[] = "/tmp/nvme-hostid-test-XXXXXX";
+	char *hostid = NULL, *hostnqn = NULL;
+	char path[PATH_MAX], want[256];
+	bool pass = true;
+	FILE *f;
+
+	printf("test_generate_hostid:\n");
+
+	if (!mkdtemp(dir)) {
+		CHECK(false, "mkdtemp");
+		return false;
+	}
+
+	snprintf(path, sizeof(path), "%s/sys/class/dmi/id", dir);
+	if (shr_mkdir_p(path, 0755)) {
+		CHECK(false, "create fixture");
+		rmdir(dir);
+		return false;
+	}
+
+	snprintf(path, sizeof(path), "%s/sys/class/dmi/id/product_uuid", dir);
+	f = fopen(path, "w");
+	if (!f) {
+		CHECK(false, "write fixture");
+		return false;
+	}
+	fprintf(f, "%s\n", uuid);
+	fclose(f);
+
+	libnvme_set_test_sysfs_dir(ctx, dir);
+
+	hostid = libnvmf_generate_hostid(ctx);
+	CHECK(hostid && !strcmp(hostid, uuid), "hostid read from the sandbox");
+	pass &= hostid && !strcmp(hostid, uuid);
+
+	hostnqn = libnvmf_generate_hostnqn(ctx);
+	snprintf(want, sizeof(want),
+		 "nqn.2014-08.org.nvmexpress:uuid:%s", uuid);
+	CHECK(hostnqn && !strcmp(hostnqn, want), "hostnqn from that hostid");
+	pass &= hostnqn && !strcmp(hostnqn, want);
+
+	CHECK(!libnvmf_generate_hostid(NULL), "NULL context rejected");
+	pass &= !libnvmf_generate_hostid(NULL);
+
+	free(hostid);
+	free(hostnqn);
+
+	/*
+	 * A placeholder from DMI must be skipped, and the machine ID picked up
+	 * instead. The expected value is the one systemd derives from this
+	 * machine ID; see shared/tests/test-machine-id-util.c.
+	 */
+	snprintf(path, sizeof(path), "%s/sys/class/dmi/id/product_uuid", dir);
+	f = fopen(path, "w");
+	if (f) {
+		fprintf(f, "%s\n", placeholder);
+		fclose(f);
+	}
+
+	snprintf(path, sizeof(path), "%s/etc", dir);
+	if (shr_mkdir_p(path, 0755)) {
+		CHECK(false, "create etc fixture");
+		return false;
+	}
+
+	snprintf(path, sizeof(path), "%s/etc/machine-id", dir);
+	f = fopen(path, "w");
+	if (f) {
+		fprintf(f, "%s\n", machine_id);
+		fclose(f);
+	}
+
+	hostid = libnvmf_generate_hostid(ctx);
+	CHECK(hostid && !strcmp(hostid, from_machine_id),
+	      "placeholder skipped, machine ID used");
+	pass &= hostid && !strcmp(hostid, from_machine_id);
+	free(hostid);
+
+	unlink(path);
+	snprintf(path, sizeof(path), "%s/etc", dir);
+	rmdir(path);
+
+	libnvme_set_test_sysfs_dir(ctx, NULL);
+	snprintf(path, sizeof(path), "%s/sys/class/dmi/id/product_uuid", dir);
+	unlink(path);
+	snprintf(path, sizeof(path), "%s/sys/class/dmi/id", dir);
+	rmdir(path);
+	snprintf(path, sizeof(path), "%s/sys/class/dmi", dir);
+	rmdir(path);
+	snprintf(path, sizeof(path), "%s/sys/class", dir);
+	rmdir(path);
+	snprintf(path, sizeof(path), "%s/sys", dir);
+	rmdir(path);
+	rmdir(dir);
+
+	return pass;
+}
+
+/* -------------------------------------------------------------------------
+ * main
+ * -------------------------------------------------------------------------
+ */
+/* -------------------------------------------------------------------------
+ * libnvmf_kernel_option_supported / libnvmf_kernel_options_for_each
+ * -------------------------------------------------------------------------
+ */
+static void collect_option(const char *name, void *user_data)
+{
+	char *list = user_data;
+
+	strcat(list, name);
+	strcat(list, " ");
+}
+
+static bool test_kernel_options(void)
+{
+	static const char options[] =
+		"instance=-1,cntlid=-1,transport=%s,traddr=%s,discovery,tls\n";
+	char dir[] = "/tmp/nvme-fabrics-test-XXXXXX";
+	const char *saved_dev = nvmf_dev;
+	struct libnvme_global_ctx *ctx;
+	char path[PATH_MAX], list[256] = "";
+	bool supported, pass = true;
+	FILE *f;
+	int r;
+
+	printf("test_kernel_options:\n");
+
+	if (!mkdtemp(dir)) {
+		CHECK(false, "mkdtemp");
+		return false;
+	}
+	snprintf(path, sizeof(path), "%s/nvme-fabrics", dir);
+	nvmf_dev = path;
+
+	ctx = libnvme_create_global_ctx();
+	if (!ctx) {
+		CHECK(false, "create ctx");
+		pass = false;
+		goto out;
+	}
+	libnvme_set_logging_level(ctx, LIBNVME_LOG_ERR, false, false);
+
+	r = libnvmf_kernel_option_supported(NULL, "tls", &supported);
+	CHECK(r == -EINVAL, "NULL ctx rejected");
+	r = libnvmf_kernel_option_supported(ctx, NULL, &supported);
+	CHECK(r == -EINVAL, "NULL name rejected");
+	r = libnvmf_kernel_option_supported(ctx, "tls", NULL);
+	CHECK(r == -EINVAL, "NULL supported rejected");
+	r = libnvmf_kernel_options_for_each(NULL, collect_option, list);
+	CHECK(r == -EINVAL, "for_each: NULL ctx rejected");
+	r = libnvmf_kernel_options_for_each(ctx, NULL, list);
+	CHECK(r == -EINVAL, "for_each: NULL callback rejected");
+
+	r = libnvmf_kernel_option_supported(ctx, "discovery", &supported);
+	CHECK(r == -ENVME_CONNECT_OPEN, "missing device fails (r=%d)", r);
+	CHECK(!ctx->options, "failure is not cached");
+
+	f = fopen(path, "w");
+	if (!f) {
+		CHECK(false, "create %s", path);
+		pass = false;
+		goto out;
+	}
+	fputs(options, f);
+	fclose(f);
+
+	r = libnvmf_kernel_option_supported(ctx, "discovery", &supported);
+	CHECK(r == 0 && supported, "retry after failure: discovery supported");
+	r = libnvmf_kernel_option_supported(ctx, "concat", &supported);
+	CHECK(r == 0 && !supported, "concat not supported");
+	r = libnvmf_kernel_option_supported(ctx, "instance", &supported);
+	CHECK(r == 0 && !supported, "instance placeholder not an option");
+
+	r = libnvmf_kernel_options_for_each(ctx, collect_option, list);
+	CHECK(r == 0 && !strcmp(list, "transport traddr discovery tls "),
+	      "for_each lists the options in order ('%s')", list);
+
+	unlink(path);
+	r = libnvmf_kernel_option_supported(ctx, "tls", &supported);
+	CHECK(r == 0 && supported, "success is cached");
+
+out:
+	libnvme_free_global_ctx(ctx);
+	unlink(path);
+	rmdir(dir);
+	nvmf_dev = saved_dev;
+
+	return pass;
+}
+
+/* -------------------------------------------------------------------------
+ * A NULL transport handle — the controller device could not be opened
+ * -------------------------------------------------------------------------
+ */
+static bool test_null_transport_handle(struct libnvme_global_ctx *ctx)
+{
+	struct libnvme_ctrl_params params = {
+		.transport = "tcp",
+		.subsysnqn = NVME_DISC_SUBSYS_NAME,
+		.traddr = "192.168.1.10",
+	};
+	struct nvmf_discovery_log *log = NULL;
+	struct nvme_id_uuid_list uuids;
+	struct libnvme_passthru_cmd cmd;
+	struct libnvme_transport_handle *hdl;
+	struct libnvme_ctrl *c = NULL;
+	__u8 buf[64];
+	bool pass = true, p;
+	int ret;
+
+	printf("\ntest_null_transport_handle:\n");
+
+	nvme_init_get_log_discovery(&cmd, 0, buf, sizeof(buf));
+	ret = libnvme_get_log(NULL, &cmd, false, sizeof(buf));
+	p = ret == -ENODEV;
+	CHECK(p, "libnvme_get_log() returns -ENODEV: %d", ret);
+	pass &= p;
+
+	ret = libnvme_get_log_dynamic_chunk(NULL, &cmd, false, sizeof(buf));
+	p = ret == -ENODEV;
+	CHECK(p, "libnvme_get_log_dynamic_chunk() returns -ENODEV: %d", ret);
+	pass &= p;
+
+	ret = libnvme_get_uuid_list(NULL, &uuids);
+	p = ret == -ENODEV;
+	CHECK(p, "libnvme_get_uuid_list() returns -ENODEV: %d", ret);
+	pass &= p;
+
+	/* Any non-NULL pointer: the handle is never used. */
+	hdl = (struct libnvme_transport_handle *)buf;
+
+	ret = libnvme_get_log(hdl, NULL, false, sizeof(buf));
+	p = ret == -EINVAL;
+	CHECK(p, "libnvme_get_log() rejects a NULL cmd: %d", ret);
+	pass &= p;
+
+	ret = libnvme_get_log_dynamic_chunk(hdl, NULL, false, sizeof(buf));
+	p = ret == -EINVAL;
+	CHECK(p, "libnvme_get_log_dynamic_chunk() rejects a NULL cmd: %d",
+	      ret);
+	pass &= p;
+
+	ret = libnvme_get_log(hdl, &cmd, false, 0);
+	p = ret == -EINVAL;
+	CHECK(p, "libnvme_get_log() rejects xfer_len 0: %d", ret);
+	pass &= p;
+
+	ret = libnvme_get_log(hdl, &cmd, false, 3);
+	p = ret == -EINVAL;
+	CHECK(p, "libnvme_get_log() rejects xfer_len 3: %d", ret);
+	pass &= p;
+
+	ret = libnvme_get_log_dynamic_chunk(hdl, &cmd, false, 0);
+	p = ret == -EINVAL;
+	CHECK(p, "libnvme_get_log_dynamic_chunk() rejects xfer_len 0: %d",
+	      ret);
+	pass &= p;
+
+	ret = libnvme_get_uuid_list(hdl, NULL);
+	p = ret == -EINVAL;
+	CHECK(p, "libnvme_get_uuid_list() rejects a NULL list: %d", ret);
+	pass &= p;
+
+	ret = libnvmf_get_discovery_log(NULL, NULL, &log);
+	p = ret == -EINVAL;
+	CHECK(p, "libnvmf_get_discovery_log() rejects a NULL ctrl: %d", ret);
+	pass &= p;
+
+	libnvme_create_ctrl(ctx, &params, &c);
+	CHECK(c, "ctrl created");
+	if (!c)
+		return false;
+
+	ret = libnvmf_get_discovery_log(c, NULL, NULL);
+	p = ret == -EINVAL;
+	CHECK(p, "libnvmf_get_discovery_log() rejects a NULL logp: %d", ret);
+	pass &= p;
+
+	/* Not an nvme device name, so libnvme_open() fails. */
+	c->name = strdup("nvme-null-hdl");
+	ret = libnvmf_get_discovery_log(c, NULL, &log);
+	p = ret == -ENODEV && !log;
+	CHECK(p, "libnvmf_get_discovery_log() returns -ENODEV: %d", ret);
+	pass &= p;
+
+	libnvme_free_ctrl(c);
+
+	return pass;
+}
+
+int main(int argc, char *argv[])
+{
+	struct libnvme_global_ctx *ctx;
+
+	test_rc = EXIT_SUCCESS;
+
+	/*
+	 * A real context is needed for functions that call libnvme_msg()
+	 * on error paths (inet6_pton, traddr_is_hostname).  Use LOG_ERR
+	 * so test output stays clean during normal runs.
+	 */
+	ctx = libnvme_create_global_ctx();
+	if (!ctx) {
+		fprintf(stderr, "failed to create libnvme context\n");
+		return EXIT_FAILURE;
+	}
+	libnvme_set_logging_level(ctx, LIBNVME_LOG_ERR, false, false);
+
+	test_sanitize_discovery_log_entry(ctx);
+	test_hostid_from_hostnqn();
+	test_add_bool_argument();
+	test_add_hex_argument();
+	test_add_int_argument();
+	test_add_int_or_minus_one_argument();
+	test_add_argument();
+	test_inet4_pton();
+	test_inet_pton_with_scope(ctx);
+	test_traddr_is_hostname(ctx);
+	test_nvmf_sanitize_addrs(ctx);
+	test_unescape_uri();
+	test_dc_decide(ctx);
+	test_dc_entry_is_self();
+	test_registry_action_on_connect();
+	test_create_ctrl_credentials(ctx);
+	test_import_keys_keyring_without_key(ctx);
+	test_generate_hostid(ctx);
+	test_kernel_options();
+	test_null_transport_handle(ctx);
+
+	libnvme_free_global_ctx(ctx);
+
+	if (test_rc == EXIT_SUCCESS)
+		printf("\nAll tests passed.\n");
+	else
+		printf("\nSOME TESTS FAILED.\n");
+	return test_rc;
+}

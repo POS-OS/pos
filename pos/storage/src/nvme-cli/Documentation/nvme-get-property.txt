@@ -1,0 +1,59 @@
+nvme-get-property(1)
+====================
+
+NAME
+----
+nvme-get-property - Reads and shows the defined NVMe controller property
+for NVMe over Fabric
+
+SYNOPSIS
+--------
+[verse]
+'nvme' [<global-options>] 'get-property' <device>
+			[--offset=<offset> | -O <offset>]
+
+DESCRIPTION
+-----------
+Reads and shows the defined NVMe controller property for NVMe over Fabric.
+
+OPTIONS
+-------
+-O <offset>::
+--offset=<offset>::
+	The offset of the property, or the name of a register, e.g.
+	0x14 or cc. The properties of a fabrics controller are cap (0x0),
+	vs (0x8), cc (0x14), csts (0x1c), nssr (0x20), nssd (0x64) and
+	crto (0x68), the transport may define more.
+
+include::global-options.txt[]
+
+EXAMPLES
+--------
+* The following will run the get-property command with offset 0
++
+------------
+# nvme get-property /dev/nvme0 --offset=0x0 --verbose
+------------
+
+BUGS
+----
+Currently the CAP value is truncated to 32 bits due to a limitation in
+the ioctl interface.
+
+In a recent enough kernel, the 64 bit value is shown in kernel traces.
+
+* First enable traces by this command
++
+------------
+# echo 1 > /sys/kernel/debug/tracing/events/nvme/enable
+------------
+
+* Then look for NVMe Fabrics command (0x7f) at trace
++
+------------
+/sys/kernel/debug/tracing/trace
+------------
+
+NVME
+----
+Part of the nvme-user suite

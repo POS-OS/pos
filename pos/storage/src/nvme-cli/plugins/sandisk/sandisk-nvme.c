@@ -1,0 +1,1628 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+/*
+ * Copyright (c) 2025 Sandisk Corporation or its affiliates.
+ *
+ *   Author: Jeff Lien <jeff.lien@sandisk.com>
+ *           Brandon Paupore <brandon.paupore@sandisk.com>
+ */
+#include <errno.h>
+#include <fcntl.h>
+#include <inttypes.h>
+#include <limits.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+
+#include <libnvme.h>
+
+#include <ccan/array_size/array_size.h>
+#include <ccan/endian/endian.h>
+#include <shared/archive-util.h>
+#include <shared/compiler-attributes-util.h>
+#include <shared/fs-util.h>
+#include <shared/io-util.h>
+#include <shared/parse-util.h>
+#include <shared/string-util.h>
+
+#include "global-ctx.h"
+#include "nvme-cmds.h"
+#include "nvme-pci-ids.h"
+#include "nvme-print.h"
+#include "plugin.h"
+#include "plugins/wdc/wdc-nvme-cmds.h"
+#include "sandisk-utils.h"
+#include "src/cleanup.h"
+
+#define SANDISK_PLUGIN_VERSION   "3.1.7"
+
+static __u8 ocp_C2_guid[SNDK_GUID_LENGTH] = {
+	0x6D, 0x79, 0x9A, 0x76, 0xB4, 0xDA, 0xF6, 0xA3,
+	0xE2, 0x4D, 0xB2, 0x8A, 0xAC, 0xF3, 0x1C, 0xD1
+};
+
+static int sndk_do_cap_telemetry_log(struct libnvme_global_ctx *ctx,
+				     struct libnvme_transport_handle *hdl,
+				     const char *file, __u32 bs, int type,
+				     int data_area)
+{
+	struct nvme_telemetry_log *log;
+	size_t full_size = 0;
+	int err = 0, output;
+	int ctrl_init = 0;
+	struct nvme_id_ctrl ctrl;
+	struct libnvme_passthru_cmd cmd;
+	__u64 capabilities = 0;
+	bool host_behavior_changed = false;
+
+	memset(&ctrl, 0, sizeof(struct nvme_id_ctrl));
+	nvme_init_identify_ctrl(&cmd, &ctrl);
+	err = libnvme_exec_admin_passthru(hdl, &cmd);
+	if (err) {
+		nvme_show_error("ERROR: WDC: nvme_identify_ctrl() failed 0x%x", err);
+		return err;
+	}
+
+	if (!(ctrl.lpa & 0x8)) {
+		nvme_show_error("Telemetry log pages not supported by device");
+		return -EINVAL;
+	}
+
+	err = libnvme_scan_topology(ctx, NULL, NULL);
+	if (err)
+		return err;
+	capabilities = sndk_get_drive_capabilities(ctx, hdl);
+
+	if (data_area == 4) {
+		if (!(ctrl.lpa & 0x40)) {
+			nvme_show_error("%s: Telemetry data area 4 not supported by device",
+				__func__);
+			return -EINVAL;
+		}
+
+		err = libnvme_set_etdas(hdl, &host_behavior_changed);
+		if (err) {
+			nvme_show_error("%s: Failed to set ETDAS bit", __func__);
+			return err;
+		}
+	}
+
+	if (type == SNDK_TELEMETRY_TYPE_HOST) {
+		ctrl_init = 0;
+	} else if (type == SNDK_TELEMETRY_TYPE_CONTROLLER) {
+		if (capabilities & SNDK_DRIVE_CAP_INTERNAL_LOG) {
+			err = sndk_check_ctrl_telemetry_option_disabled(hdl);
+			if (err)
+				return err;
+		}
+		ctrl_init = 1;
+	} else if (type == SNDK_TELEMETRY_TYPE_BOTH) {
+		nvme_show_error(
+			"%s: BOTH type should be handled by sndk_do_cap_both_telemetry_log\n",
+			__func__);
+		return -EINVAL;
+	} else {
+		nvme_show_error("%s: Invalid type parameter; type = %d", __func__, type);
+		return -EINVAL;
+	}
+
+	if (!file) {
+		nvme_show_error("%s: Please provide an output file!", __func__);
+		return -EINVAL;
+	}
+
+	output = shr_open_rawdata(file, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+	if (output < 0) {
+		nvme_show_error("%s: Failed to open output file %s: %s!",
+				__func__, file, libnvme_strerror(errno));
+		return output;
+	}
+
+	if (ctrl_init)
+		err = libnvme_get_ctrl_telemetry(hdl, true, &log,
+					  data_area, &full_size);
+	else
+		err = libnvme_get_new_host_telemetry(hdl, &log,
+						  data_area, &full_size);
+
+	if (err < 0) {
+		nvme_show_err(err, "get-telemetry-log");
+		goto close_output;
+	} else if (err > 0) {
+		nvme_show_status(err);
+		nvme_show_error("%s: Failed to acquire telemetry header!", __func__);
+		goto close_output;
+	}
+
+	/*
+	 * Continuously pull data until the offset hits the end of the last
+	 * block.
+	 */
+	err = shr_write_all(output, log, full_size);
+	if (err)
+		nvme_show_error("ERROR: %s: write: %s", __func__, libnvme_strerror(-err));
+	else if (shr_fsync(output) < 0) {
+		nvme_show_error("ERROR: %s: fsync: %s", __func__, libnvme_strerror(errno));
+		err = -1;
+	}
+
+	if (host_behavior_changed) {
+		int clr_err;
+
+		host_behavior_changed = false;
+		clr_err = libnvme_clear_etdas(hdl, &host_behavior_changed);
+		if (clr_err) {
+			nvme_show_error("%s: Failed to clear ETDAS bit", __func__);
+			if (!err)
+				err = clr_err;
+		}
+	}
+
+	free(log);
+close_output:
+	close(output);
+	return err;
+}
+
+static int sndk_do_cap_both_telemetry_log(struct libnvme_global_ctx *ctx,
+					  struct libnvme_transport_handle *hdl,
+					  const char *tar_file, __u32 bs,
+					  int data_area)
+{
+	char host_file[PATH_MAX] = {0};
+	char controller_file[PATH_MAX] = {0};
+	const char *const tar_files[] = { host_file, controller_file };
+	char *base_name;
+	int ret = 0;
+
+	base_name = strdup(tar_file);
+	if (!base_name) {
+		nvme_show_error("%s: Memory allocation failed", __func__);
+		return -ENOMEM;
+	}
+	
+	/* Remove .tar extension if present */
+	char *tar_ext = strstr(base_name, ".tar");
+
+	if (tar_ext)
+		*tar_ext = '\0';
+	
+	/* Create temporary files for host and controller telemetry */
+	snprintf(host_file, PATH_MAX, "%s_host_telemetry.bin", base_name);
+	snprintf(controller_file, PATH_MAX, "%s_controller_telemetry.bin",
+		 base_name);
+	
+	nvme_show_error("%s: Capturing HOST telemetry to %s", __func__,
+		host_file);
+	ret = sndk_do_cap_telemetry_log(ctx, hdl, host_file, bs,
+					SNDK_TELEMETRY_TYPE_HOST, data_area);
+	if (ret) {
+		nvme_show_error("%s: Failed to capture HOST telemetry: %d",
+			__func__, ret);
+		goto cleanup;
+	}
+	
+	nvme_show_error("%s: Capturing CONTROLLER telemetry to %s", __func__,
+		controller_file);
+	ret = sndk_do_cap_telemetry_log(ctx, hdl, controller_file, bs,
+					SNDK_TELEMETRY_TYPE_CONTROLLER,
+					data_area);
+	if (ret) {
+		nvme_show_error(
+			"%s: Failed to capture CONTROLLER telemetry: %d\n",
+			__func__, ret);
+		goto cleanup_host;
+	}
+	
+	/* Create tar file containing both telemetry files */
+	nvme_show_error("%s: Creating tar file %s", __func__, tar_file);
+	ret = shr_tar_create(tar_file, tar_files, ARRAY_SIZE(tar_files));
+	if (ret) {
+		if (ret == -ENOTSUP)
+			nvme_show_error(
+				"%s: nvme-cli was built without libarchive, archive creation is unavailable",
+				__func__);
+		else
+			nvme_show_error("%s: Failed to create tar file: %s",
+				__func__, tar_file);
+		ret = -1;
+	} else {
+		nvme_show_verbose_result("%s: Successfully created tar file: %s",
+			__func__, tar_file);
+		ret = 0;
+	}
+	
+	/* Clean up temporary files */
+	unlink(controller_file);
+cleanup_host:
+	unlink(host_file);
+cleanup:
+	free(base_name);
+	return ret;
+}
+
+static __u32 sndk_dump_udui_data(struct libnvme_transport_handle *hdl,
+				 __u32 dataLen, __u32 offset, __u8 *dump_data)
+{
+	int ret;
+	struct libnvme_passthru_cmd admin_cmd;
+
+	memset(&admin_cmd, 0, sizeof(struct libnvme_passthru_cmd));
+	admin_cmd.opcode = SNDK_NVME_CAP_UDUI_OPCODE;
+	admin_cmd.nsid = 0xFFFFFFFF;
+	admin_cmd.addr = (__u64)(uintptr_t)dump_data;
+	admin_cmd.data_len = dataLen;
+	admin_cmd.cdw10 = ((dataLen >> 2) - 1);
+	admin_cmd.cdw12 = offset;
+	ret = libnvme_exec_admin_passthru(hdl, &admin_cmd);
+	if (ret) {
+		nvme_show_error("ERROR: SNDK: reading DUI data failed");
+		nvme_show_status(ret);
+	}
+
+	return ret;
+}
+
+static int sndk_do_cap_udui(struct libnvme_transport_handle *hdl, char *file,
+			    __u32 xfer_size, int verbose)
+{
+	int ret = 0;
+	int output;
+	ssize_t written = 0;
+	struct nvme_telemetry_log *log;
+	__u32 udui_log_hdr_size = sizeof(struct nvme_telemetry_log);
+	__u32 chunk_size = xfer_size;
+	__u64 total_size;
+	__u64 offset = 0;
+
+	log = (struct nvme_telemetry_log *)malloc(udui_log_hdr_size);
+	if (!log) {
+		nvme_show_error(
+			"%s: ERROR: log header malloc failed : status %s, size 0x%x\n",
+			__func__, libnvme_strerror(errno), udui_log_hdr_size);
+		return -1;
+	}
+	memset(log, 0, udui_log_hdr_size);
+
+	/* get the udui telemetry and log headers */
+	ret = sndk_dump_udui_data(hdl, udui_log_hdr_size, 0, (__u8 *)log);
+	if (ret) {
+		nvme_show_error("%s: ERROR: SNDK: Get UDUI header failed", __func__);
+		nvme_show_status(ret);
+		goto out;
+	}
+
+	total_size = ((__u64)le32_to_cpu(log->dalb4) + 1) * 512;
+
+	if (total_size > UINT32_MAX) {
+		nvme_show_error("%s: ERROR: SNDK: UDUI log size 0x%"PRIx64" exceeds the maximum addressable size (4GiB)",
+				__func__, (uint64_t)total_size);
+		ret = -1;
+		goto out;
+	}
+
+	{
+		struct nvme_telemetry_log *new_log = realloc(log, chunk_size);
+
+		if (!new_log) {
+			nvme_show_error("%s: ERROR: log buffer realloc failed", __func__);
+			ret = -1;
+			goto out;
+		}
+		log = new_log;
+	}
+
+	output = shr_open_rawdata(file, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+	if (output < 0) {
+		nvme_show_error("%s: Failed to open output file %s: %s!", __func__, file,
+			libnvme_strerror(errno));
+		goto out;
+	}
+
+	while (offset < total_size) {
+		if (chunk_size > total_size - offset)
+			chunk_size = total_size - offset;
+		ret = sndk_dump_udui_data(hdl, chunk_size, offset,
+					  ((__u8 *)log));
+		if (ret) {
+			nvme_show_error(
+				"%s: ERROR: Get UDUI failed, offset = 0x%"PRIx64", size = %u\n",
+				__func__, (uint64_t)offset, chunk_size);
+			break;
+		}
+
+		/* write the dump data into the file */
+		written = write(output, (void *)log, chunk_size);
+		if (written != chunk_size) {
+			nvme_show_error(
+				"%s: ERROR: SNDK: Failed to flush DUI data to file!\n" \
+				"- written = %zd, offset = 0x%"PRIx64", chunk_size = %u\n",
+				__func__, written, (uint64_t)offset, chunk_size);
+			ret = errno;
+			break;
+		}
+
+		offset += chunk_size;
+	}
+
+	close(output);
+	nvme_show_status(ret);
+	if (verbose)
+		nvme_show_error(
+			"INFO: SNDK: Capture Device Unit Info log length = 0x%"PRIx64"\n",
+			(uint64_t)total_size);
+
+out:
+	free(log);
+	return ret;
+}
+
+static int sndk_get_default_telemetry_da(struct libnvme_transport_handle *hdl,
+					 int *data_area)
+{
+	struct nvme_id_ctrl ctrl;
+	struct libnvme_passthru_cmd cmd;
+	int err;
+
+	memset(&ctrl, 0, sizeof(struct nvme_id_ctrl));
+	nvme_init_identify_ctrl(&cmd, &ctrl);
+	err = libnvme_exec_admin_passthru(hdl, &cmd);
+	if (err) {
+		nvme_show_error("ERROR: SNDK: nvme_identify_ctrl() failed 0x%x", err);
+		return err;
+	}
+
+	if (ctrl.lpa & 0x40)
+		*data_area = 4;
+	else
+		*data_area = 3;
+
+	return 0;
+}
+
+static int sndk_vs_internal_fw_log(int argc, char **argv,
+		struct command *command,
+		struct plugin *plugin)
+{
+	const char *desc = "Internal Firmware Log.";
+	const char *file = "Output file pathname.";
+	const char *size = "Data retrieval transfer size.";
+	const char *data_area =
+		"Data area to retrieve up to. Supported for telemetry, see man page for other use cases.";
+	const char *type =
+		"Telemetry type - NONE, HOST, CONTROLLER, or BOTH:\n" \
+		"  NONE - Default, capture without using NVMe telemetry.\n" \
+		"  HOST - Host-initiated telemetry.\n" \
+		"  CONTROLLER - Controller-initiated telemetry.\n" \
+		"  BOTH - Both HOST and CONTROLLER telemetry packaged in tar file.";
+	const char *file_size =
+		"Output file size. Deprecated, see man page for supported devices.";
+	const char *offset =
+		"Output file data offset. Deprecated, see man page for supported devices.";
+	char f[PATH_MAX-4] = {0};
+	char fileSuffix[PATH_MAX] = {0};
+	__u32 xfer_size = 0;
+	int telemetry_type = 0, telemetry_data_area = 0;
+	struct SNDK_UtilsTimeInfo timeInfo;
+	__u8 timeStamp[SNDK_MAX_PATH_LEN];
+	__u64 capabilities = 0;
+	__u32 device_id, read_vendor_id;
+	int ret = -1;
+	__cleanup_nvme_global_ctx struct libnvme_global_ctx *ctx = NULL;
+	__cleanup_nvme_transport_handle struct libnvme_transport_handle *hdl = NULL;
+
+	struct argconfig_opt_val types[] = {
+		VAL_ENUM("NONE", SNDK_TELEMETRY_TYPE_NONE),
+		VAL_ENUM("HOST", SNDK_TELEMETRY_TYPE_HOST),
+		VAL_ENUM("CONTROLLER", SNDK_TELEMETRY_TYPE_CONTROLLER),
+		VAL_ENUM("BOTH", SNDK_TELEMETRY_TYPE_BOTH),
+		VAL_END()
+	};
+
+	struct config {
+		char *file;
+		__u32 xfer_size;
+		__u32 data_area;
+		__u64 file_size;
+		__u64 offset;
+		int type;
+	};
+
+	struct config cfg = {
+		.file = NULL,
+		.xfer_size = 0x10000,
+		.data_area = 0,
+		.file_size = 0,
+		.offset = 0,
+		.type = SNDK_TELEMETRY_TYPE_NONE,
+	};
+
+	OPT_ARGS(opts) = {
+		OPT_FILE("output-file",   'O', &cfg.file,      file),
+		OPT_UINT("transfer-size", 's', &cfg.xfer_size, size),
+		OPT_UINT("data-area",     'd', &cfg.data_area, data_area),
+		OPT_ENUM("type",          't', &cfg.type,      type, types),
+		OPT_LONG("file-size",     'f', &cfg.file_size, file_size),
+		OPT_LONG("offset",        'e', &cfg.offset,    offset),
+		OPT_END()
+	};
+
+	ret = parse_and_open(&ctx, &hdl, argc, argv, desc, opts);
+	if (ret)
+		return ret;
+
+	ret = libnvme_scan_topology(ctx, NULL, NULL);
+	if (ret || !sndk_check_device(ctx, hdl))
+		goto out;
+
+	if (cfg.xfer_size) {
+		xfer_size = cfg.xfer_size;
+	} else {
+		nvme_show_error("ERROR: SNDK: Invalid length");
+		goto out;
+	}
+
+	ret = nvme_get_pci_ids(ctx, hdl, &read_vendor_id, &device_id,
+			       NULL, NULL, NULL);
+
+	if (cfg.file) {
+		int verify_file;
+
+		/* verify file name and path is valid before getting dump data */
+		verify_file = shr_open_rawdata(cfg.file, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+		if (verify_file < 0) {
+			nvme_show_error("ERROR: SNDK: open: %s", libnvme_strerror(errno));
+			goto out;
+		}
+		close(verify_file);
+		remove(cfg.file);
+		shr_strscpy(f, cfg.file, sizeof(f));
+	} else {
+		sndk_UtilsGetTime(&timeInfo);
+		memset(timeStamp, 0, sizeof(timeStamp));
+		sndk_UtilsSnprintf((char *)timeStamp, SNDK_MAX_PATH_LEN,
+			"%02u%02u%02u_%02u%02u%02u", timeInfo.year,
+			timeInfo.month, timeInfo.dayOfMonth,
+			timeInfo.hour, timeInfo.minute,
+			timeInfo.second);
+		snprintf(fileSuffix, PATH_MAX, "_internal_fw_log_%s", (char *)timeStamp);
+
+		ret = sndk_get_serial_name(hdl, f, PATH_MAX-5, fileSuffix);
+		if (ret) {
+			nvme_show_error("ERROR: SNDK: failed to generate file name");
+			goto out;
+		}
+	}
+
+	if (!cfg.file) {
+		if (strlen(f) > PATH_MAX - 5) {
+			nvme_show_error("ERROR: SNDK: file name overflow");
+			ret = -1;
+			goto out;
+		}
+		shr_strscat(f, ".bin", sizeof(f));
+	}
+	nvme_show_error("%s: filename = %s", __func__, f);
+
+	if (cfg.data_area) {
+		if (cfg.data_area > 5 || cfg.data_area < 1) {
+			nvme_show_error("ERROR: SNDK: Data area must be 1-5");
+			ret = -1;
+			goto out;
+		}
+	}
+
+	telemetry_type = cfg.type;
+	if (telemetry_type == SNDK_TELEMETRY_TYPE_NONE)
+		telemetry_data_area = 0;
+	else
+		telemetry_data_area = cfg.data_area;
+
+	capabilities = sndk_get_drive_capabilities(ctx, hdl);
+
+	if ((capabilities & SNDK_DRIVE_CAP_INTERNAL_LOG_MASK) &&
+	    (telemetry_type != SNDK_TELEMETRY_TYPE_NONE)) {
+		/* If no data area specified, get the default value */
+		if (telemetry_data_area == 0) {
+			if (sndk_get_default_telemetry_da(hdl, &telemetry_data_area)) {
+				nvme_show_error("%s: Error determining default telemetry data area",
+						__func__);
+				return -EINVAL;
+			}
+		}
+
+		if (telemetry_type == SNDK_TELEMETRY_TYPE_BOTH) {
+			/* For BOTH type, ensure filename has .tar extension */
+			char tar_file[PATH_MAX] = {0};
+
+			if (strstr(f, ".tar") == NULL) {
+				char *bin_ext = strstr(f, ".bin");
+
+				if (bin_ext)
+					*bin_ext = '\0';
+
+				snprintf(tar_file, PATH_MAX, "%s.tar", f);
+			} else {
+				snprintf(tar_file, PATH_MAX, "%s", f);
+			}
+			ret = sndk_do_cap_both_telemetry_log(ctx, hdl,
+					tar_file, xfer_size,
+					telemetry_data_area);
+		} else {
+			ret = sndk_do_cap_telemetry_log(ctx, hdl, f, xfer_size,
+					telemetry_type, telemetry_data_area);
+		}
+		goto out;
+	}
+
+	if (capabilities & SNDK_DRIVE_CAP_UDUI) {
+		if (cfg.data_area) {
+			nvme_show_error(
+				"ERROR: SNDK: Data area parameter is not supported when type is NONE\n");
+			ret = -1;
+			goto out;
+		}
+		ret = sndk_do_cap_udui(hdl, f, xfer_size, nvme_args.verbose);
+		goto out;
+	}
+
+	/* Fallback to WDC plugin if otherwise not supported */
+	return run_wdc_vs_internal_fw_log(ctx, hdl,
+		&(struct wdc_vs_internal_fw_log_cfg) {
+			.file = cfg.file,
+			.xfer_size = cfg.xfer_size,
+			.data_area = cfg.data_area,
+			.file_size = cfg.file_size,
+			.offset = cfg.offset,
+			.type = cfg.type,
+		});
+
+out:
+	return ret;
+}
+
+static int sndk_vs_nand_stats(int argc, char **argv,
+		struct command *command,
+		struct plugin *plugin)
+{
+	return run_wdc_vs_nand_stats(argc, argv, command, plugin);
+}
+
+static int sndk_vs_smart_add_log(int argc, char **argv,
+		struct command *command,
+		struct plugin *plugin)
+{
+	const char *desc = "Retrieve additional performance statistics.";
+	const char *interval = "Interval to read the statistics from [1, 15].";
+	const char *log_page_version = "Log Page Version: 0 = vendor, 1 = SNDK";
+	const char *log_page_mask = "Log Page Mask, comma separated list: 0xC0, 0xC1, 0xCA";
+	const char *namespace_id = "desired namespace id";
+	int ret = 0;
+	int uuid_index = 0;
+	int page_mask = 0, num, i;
+	int log_page_list[16];
+	__u64 capabilities = 0;
+	__u32 device_id = -1, read_vendor_id = -1;
+	__cleanup_nvme_global_ctx struct libnvme_global_ctx *ctx = NULL;
+	__cleanup_nvme_transport_handle struct libnvme_transport_handle *hdl = NULL;
+
+	struct config {
+		uint8_t interval;
+		__u8  log_page_version;
+		char *log_page_mask;
+		__u32 namespace_id;
+	};
+
+	struct config cfg = {
+		.interval = 14,
+		.log_page_version = 0,
+		.log_page_mask = "",
+		.namespace_id = NVME_NSID_ALL,
+	};
+
+	OPT_ARGS(opts) = {
+		OPT_BYTE("interval",         'i', &cfg.interval,     interval),
+		OPT_BYTE("log-page-version", 'l', &cfg.log_page_version,
+			 log_page_version),
+		OPT_LIST("log-page-mask", 'p', &cfg.log_page_mask,
+			 log_page_mask),
+		OPT_UINT("namespace-id", 'n', &cfg.namespace_id, namespace_id,
+			 nvme_nsid_values),
+		OPT_END()
+	};
+
+	ret = parse_and_open(&ctx, &hdl, argc, argv, desc, opts);
+	if (ret)
+		return ret;
+
+	ret = libnvme_scan_topology(ctx, NULL, NULL);
+	if (ret)
+		return ret;
+
+	if (!cfg.log_page_version) {
+		uuid_index = 0;
+	} else if (cfg.log_page_version == 1) {
+		uuid_index = 1;
+	} else {
+		nvme_show_error("ERROR: SNDK: unsupported log page version for this command");
+		ret = -1;
+		goto out;
+	}
+
+	num = shr_parse_csv_int(cfg.log_page_mask, log_page_list, 16);
+	if (num == -1) {
+		nvme_show_error("ERROR: SNDK: log page list is malformed");
+		ret = -1;
+		goto out;
+	}
+
+	if (!num) {
+		page_mask |= SNDK_ALL_PAGE_MASK;
+	} else {
+		for (i = 0; i < num; i++) {
+			switch (log_page_list[i]) {
+			case 0xc0:
+				page_mask |= SNDK_C0_PAGE_MASK;
+				break;
+			case 0xc1:
+				page_mask |= SNDK_C1_PAGE_MASK;
+				break;
+			case 0xca:
+				page_mask |= SNDK_CA_PAGE_MASK;
+				break;
+			default:
+				break;
+			}
+		}
+	}
+
+	if (!page_mask)
+		nvme_show_error("ERROR: SNDK: Unknown log page mask - %s", cfg.log_page_mask);
+
+	ret = nvme_get_pci_ids(ctx, hdl, &read_vendor_id, &device_id,
+			       NULL, NULL, NULL);
+	if (ret < 0) {
+		nvme_show_error("ERROR: SNDK: failed to read PCI IDs");
+		ret = -1;
+		goto out;
+	}
+	(void)read_vendor_id;
+
+	capabilities = sndk_get_drive_capabilities(ctx, hdl);
+	if (!(capabilities & SNDK_DRIVE_CAP_SMART_LOG_MASK)) {
+		nvme_show_error("ERROR: SNDK: unsupported device for this command");
+		ret = -1;
+		goto out;
+	}
+
+	if (((capabilities & SNDK_DRIVE_CAP_C0_LOG_PAGE) == SNDK_DRIVE_CAP_C0_LOG_PAGE) &&
+	    (page_mask & SNDK_C0_PAGE_MASK)) {
+		/* Get 0xC0 log page if possible. */
+		ret = sndk_get_c0_log_page(ctx, hdl, device_id, nvme_args.output_format,
+					  uuid_index, cfg.namespace_id);
+
+		if (ret)
+			nvme_show_error("ERROR: SNDK: Failure reading the C0 Log Page, ret = %d\n",
+				ret);
+	}
+	if (((capabilities & SNDK_DRIVE_CAP_CA_LOG_PAGE) == SNDK_DRIVE_CAP_CA_LOG_PAGE) &&
+	    (page_mask & SNDK_CA_PAGE_MASK)) {
+		/* Get the CA Log Page */
+		ret = sndk_get_ca_log_page(ctx, hdl, nvme_args.output_format);
+		if (ret)
+			nvme_show_error("ERROR: SNDK: Failure reading the CA Log Page, ret = %d",
+				ret);
+	}
+
+out:
+	return ret;
+}
+
+static int sndk_clear_pcie_correctable_errors(int argc, char **argv,
+		struct command *command,
+		struct plugin *plugin)
+{
+	return run_wdc_clear_pcie_correctable_errors(argc, argv, command, plugin);
+}
+
+static int sndk_drive_status(int argc, char **argv,
+		struct command *command,
+		struct plugin *plugin)
+{
+	return run_wdc_drive_status(argc, argv, command, plugin);
+}
+
+static int sndk_clear_assert_dump(int argc, char **argv,
+		struct command *command,
+		struct plugin *plugin)
+{
+	return run_wdc_clear_assert_dump(argc, argv, command, plugin);
+}
+
+#define SNDK_NVME_SN861_DRIVE_RESIZE_OPCODE  0xD1
+#define SNDK_NVME_SN861_DRIVE_RESIZE_BUFFER_SIZE  0x1000
+
+static int sndk_do_sn861_drive_resize(struct libnvme_transport_handle *hdl,
+		uint64_t new_size,
+		__u64 *result)
+{
+	uint8_t buffer[SNDK_NVME_SN861_DRIVE_RESIZE_BUFFER_SIZE] = {0};
+	struct libnvme_passthru_cmd admin_cmd;
+	int ret;
+
+	memset(&admin_cmd, 0, sizeof(struct libnvme_passthru_cmd));
+	admin_cmd.opcode = SNDK_NVME_SN861_DRIVE_RESIZE_OPCODE;
+	admin_cmd.cdw10 = 0x00000040;
+	admin_cmd.cdw12 = 0x00000103;
+	admin_cmd.cdw13 = 0x00000001;
+
+	memcpy(buffer, &new_size, sizeof(new_size));
+	admin_cmd.addr = (__u64)(uintptr_t)buffer;
+	admin_cmd.data_len = SNDK_NVME_SN861_DRIVE_RESIZE_BUFFER_SIZE;
+
+	ret = libnvme_exec_admin_passthru(hdl, &admin_cmd);
+	if (!ret && result)
+		*result = admin_cmd.result;
+	return ret;
+}
+
+static int sndk_drive_resize(int argc, char **argv,
+		struct command *command,
+		struct plugin *plugin)
+{
+	const char *desc = "Send a Resize command.";
+	const char *size = "The new size (in GB) to resize the drive to.";
+	__cleanup_nvme_global_ctx struct libnvme_global_ctx *ctx = NULL;
+	__cleanup_nvme_transport_handle struct libnvme_transport_handle *hdl = NULL;
+	uint64_t capabilities = 0;
+	int ret;
+	__u64 result = 0;
+
+	struct config {
+		uint64_t size;
+	};
+
+	struct config cfg = {
+		.size = 0,
+	};
+
+	OPT_ARGS(opts) = {
+		OPT_LONG("size", 's', &cfg.size, size),
+		OPT_END()
+	};
+
+	ret = parse_and_open(&ctx, &hdl, argc, argv, desc, opts);
+	if (ret)
+		return ret;
+
+	ret = libnvme_scan_topology(ctx, NULL, NULL);
+	if (ret)
+		return ret;
+	sndk_check_device(ctx, hdl);
+	capabilities = sndk_get_drive_capabilities(ctx, hdl);
+
+	if ((capabilities & SNDK_DRIVE_CAP_RESIZE_SN861) == SNDK_DRIVE_CAP_RESIZE_SN861) {
+		ret = sndk_do_sn861_drive_resize(hdl, cfg.size, &result);
+
+		if (!ret) {
+			nvme_show_error("The drive-resize command was successful.  A system shutdown is required to complete the operation.");
+		} else
+			nvme_show_error("ERROR: SNDK: %s failure, ret: %d, result: 0x%"PRIx64"\n",
+					__func__, ret, (uint64_t)result);
+	} else {
+		/* Fallback to WDC plugin command if otherwise not supported */
+		return run_wdc_drive_resize(ctx, hdl, cfg.size);
+	}
+
+	nvme_show_status(ret);
+	return ret;
+}
+
+static void sndk_print_fw_act_history_log_normal(__u8 *data, int num_entries)
+{
+	int i, j;
+	char previous_fw[9];
+	char new_fw[9];
+	char commit_action_bin[8];
+	char time_str[100];
+	__u16 oldestEntryIdx = 0, entryIdx = 0;
+	uint64_t timestamp;
+	int fw_vers_len = 0;
+	const char *null_fw = "--------";
+
+	memset((void *)time_str, '\0', 100);
+
+	if (data[0] == SNDK_NVME_GET_FW_ACT_HISTORY_C2_LOG_ID) {
+		printf("  Firmware Activate History Log\n");
+		printf("                               Power Cycle     ");
+		printf("Previous    New\n");
+		printf("  Entry      Timestamp            Count        ");
+		printf("Firmware    Firmware    Slot   Action  Result\n");
+		printf("  -----  -----------------  -----------------  ");
+		printf("---------   ---------   -----  ------  -------\n");
+
+		struct sndk_fw_act_history_log_format_c2 *fw_act_hist_log =
+			(struct sndk_fw_act_history_log_format_c2 *)(data);
+
+		oldestEntryIdx = SNDK_MAX_NUM_ACT_HIST_ENTRIES;
+		if (num_entries == SNDK_MAX_NUM_ACT_HIST_ENTRIES) {
+			/* find lowest/oldest entry */
+			for (i = 0; i < num_entries; i++) {
+				j = (i+1 == SNDK_MAX_NUM_ACT_HIST_ENTRIES) ? 0 : i+1;
+				if (le16_to_cpu(
+						fw_act_hist_log->entry[i].fw_act_hist_entries) >
+					le16_to_cpu(
+						fw_act_hist_log->entry[j].fw_act_hist_entries)) {
+					oldestEntryIdx = j;
+					break;
+				}
+			}
+		}
+		if (oldestEntryIdx == SNDK_MAX_NUM_ACT_HIST_ENTRIES)
+			entryIdx = 0;
+		else
+			entryIdx = oldestEntryIdx;
+
+		for (i = 0; i < num_entries; i++) {
+			memset((void *)previous_fw, 0, 9);
+			memset((void *)new_fw, 0, 9);
+			memset((void *)commit_action_bin, 0, 8);
+
+			memcpy(previous_fw,
+				(char *)&
+					(fw_act_hist_log->entry[entryIdx].previous_fw_version),
+				8);
+			fw_vers_len = strlen((char *)
+				&(fw_act_hist_log->entry[entryIdx].current_fw_version));
+			if (fw_vers_len > 1)
+				memcpy(new_fw,
+					(char *)&
+					(fw_act_hist_log->entry[entryIdx].current_fw_version),
+					8);
+			else
+				memcpy(new_fw, null_fw, 8);
+
+			printf("%5"PRIu16"",
+				(uint16_t)le16_to_cpu(
+					fw_act_hist_log->entry[entryIdx].fw_act_hist_entries));
+
+			timestamp = (0x0000FFFFFFFFFFFF &
+				le64_to_cpu(
+					fw_act_hist_log->entry[entryIdx].timestamp));
+			printf("   ");
+			printf("%16"PRIu64"", timestamp);
+			printf("   ");
+
+			printf("%16"PRIu64"",
+				(uint64_t)le64_to_cpu(
+					fw_act_hist_log->entry[entryIdx].power_cycle_count));
+			printf("     ");
+			printf("%s", (char *)previous_fw);
+			printf("    ");
+			printf("%s", (char *)new_fw);
+			printf("     ");
+			printf("%2"PRIu8"",
+				(uint8_t)fw_act_hist_log->entry[entryIdx].slot_number);
+			printf("   ");
+			sndk_get_commit_action_bin(
+			    fw_act_hist_log->entry[entryIdx].commit_action_type,
+			    commit_action_bin, sizeof(commit_action_bin));
+			printf("  %s", (char *)commit_action_bin);
+			printf("  ");
+			if (!le16_to_cpu(fw_act_hist_log->entry[entryIdx].result))
+				printf("pass");
+			else
+				printf("fail #%d",
+					(uint16_t)le16_to_cpu(
+						fw_act_hist_log->entry[entryIdx].result));
+			printf("\n");
+
+			entryIdx++;
+			if (entryIdx >= SNDK_MAX_NUM_ACT_HIST_ENTRIES)
+				entryIdx = 0;
+		}
+	} else
+		nvme_show_error("ERROR: SNDK: %s: Unknown log page", __func__);
+}
+
+static void sndk_print_fw_act_history_log_json(__u8 *data, int num_entries)
+{
+	struct json_object *root = json_create_object();
+	int i, j;
+	char previous_fw[9];
+	char new_fw[9];
+	char commit_action_bin[8];
+	char fail_str[32];
+	char time_str[100];
+	char ext_time_str[20];
+	uint64_t timestamp;
+	int fw_vers_len = 0;
+
+	memset((void *)previous_fw, 0, 9);
+	memset((void *)new_fw, 0, 9);
+	memset((void *)commit_action_bin, 0, 8);
+	memset((void *)time_str, '\0', 100);
+	memset((void *)ext_time_str, 0, 20);
+	memset((void *)fail_str, 0, 11);
+	char *null_fw = "--------";
+	__u16 oldestEntryIdx = 0, entryIdx = 0;
+
+	if (data[0] == SNDK_NVME_GET_FW_ACT_HISTORY_C2_LOG_ID) {
+		struct sndk_fw_act_history_log_format_c2 *fw_act_hist_log =
+			(struct sndk_fw_act_history_log_format_c2 *)(data);
+
+		oldestEntryIdx = SNDK_MAX_NUM_ACT_HIST_ENTRIES;
+		if (num_entries == SNDK_MAX_NUM_ACT_HIST_ENTRIES) {
+			/* find lowest/oldest entry */
+			for (i = 0; i < num_entries; i++) {
+				j = (i+1 == SNDK_MAX_NUM_ACT_HIST_ENTRIES) ? 0 : i+1;
+				if (le16_to_cpu(
+						fw_act_hist_log->entry[i].fw_act_hist_entries) >
+					le16_to_cpu(
+						fw_act_hist_log->entry[j].fw_act_hist_entries)) {
+					oldestEntryIdx = j;
+					break;
+				}
+			}
+		}
+		if (oldestEntryIdx == SNDK_MAX_NUM_ACT_HIST_ENTRIES)
+			entryIdx = 0;
+		else
+			entryIdx = oldestEntryIdx;
+
+		for (i = 0; i < num_entries; i++) {
+			struct sndk_fw_act_history_log_entry_c2 *e =
+				&fw_act_hist_log->entry[entryIdx];
+
+			memcpy(previous_fw,
+				(char *)&
+				(fw_act_hist_log->entry[entryIdx].previous_fw_version),
+				8);
+			fw_vers_len = strlen((char *)
+				&(fw_act_hist_log->entry[entryIdx].current_fw_version));
+			if (fw_vers_len > 1)
+				memcpy(new_fw,
+					(char *)&
+					(fw_act_hist_log->entry[entryIdx].current_fw_version),
+					8);
+			else
+				memcpy(new_fw, null_fw, 8);
+
+			json_object_add_value_int(root, "Entry",
+			    le16_to_cpu(fw_act_hist_log->entry[entryIdx].fw_act_hist_entries));
+
+			timestamp = (0x0000FFFFFFFFFFFF &
+				le64_to_cpu(
+					fw_act_hist_log->entry[entryIdx].timestamp));
+			json_object_add_value_uint64(root, "Timestamp", timestamp);
+
+			json_object_add_value_int(root, "Power Cycle Count",
+				le64_to_cpu(
+					fw_act_hist_log->entry[entryIdx].power_cycle_count));
+			json_object_add_value_string(root, "Previous Firmware",
+					previous_fw);
+			json_object_add_value_string(root, "New Firmware",
+					new_fw);
+			json_object_add_value_int(root, "Slot",
+				fw_act_hist_log->entry[entryIdx].slot_number);
+
+			sndk_get_commit_action_bin(
+			    fw_act_hist_log->entry[entryIdx].commit_action_type,
+			    commit_action_bin, sizeof(commit_action_bin));
+			json_object_add_value_string(root, "Action", commit_action_bin);
+
+			if (!le16_to_cpu(fw_act_hist_log->entry[entryIdx].result)) {
+				json_object_add_value_string(root, "Result", "pass");
+			} else {
+				snprintf((char *)fail_str, sizeof(fail_str),
+					 "fail #%d",
+					 (int)(le16_to_cpu(e->result)));
+				json_object_add_value_string(root, "Result", fail_str);
+			}
+
+			json_print_object(root, NULL);
+			printf("\n");
+
+			entryIdx++;
+			if (entryIdx >= SNDK_MAX_NUM_ACT_HIST_ENTRIES)
+				entryIdx = 0;
+		}
+	} else
+		nvme_show_error("ERROR: SNDK: %s: Unknown log page", __func__);
+
+	json_free_object(root);
+}
+
+static int sndk_print_fw_act_history_log(__u8 *data, int num_entries, int fmt)
+{
+	if (!data) {
+		nvme_show_error("ERROR: SNDK: Invalid buffer in print_fw act_history_log");
+		return -1;
+	}
+
+	switch (fmt) {
+	case NORMAL:
+		sndk_print_fw_act_history_log_normal(data, num_entries);
+		break;
+	case JSON:
+		sndk_print_fw_act_history_log_json(data, num_entries);
+		break;
+	}
+	return 0;
+}
+
+static int sndk_get_fw_act_history_C2(struct libnvme_global_ctx *ctx, struct libnvme_transport_handle *hdl,
+				     char *format)
+{
+	struct sndk_fw_act_history_log_format_c2 *fw_act_history_log;
+	__u32 tot_entries = 0, num_entries = 0;
+	nvme_print_flags_t fmt;
+	__u8 *data;
+	int ret;
+	bool c2GuidMatch = false;
+
+	if (!sndk_check_device(ctx, hdl))
+		return -1;
+
+	ret = validate_output_format(format, &fmt);
+	if (ret < 0) {
+		nvme_show_error("ERROR: SNDK: invalid output format");
+		return ret;
+	}
+
+	data = (__u8 *)malloc(sizeof(__u8) * SNDK_FW_ACT_HISTORY_C2_LOG_BUF_LEN);
+	if (!data) {
+		nvme_show_error("ERROR: SNDK: malloc: %s", libnvme_strerror(errno));
+		return -1;
+	}
+
+	memset(data, 0, sizeof(__u8) * SNDK_FW_ACT_HISTORY_C2_LOG_BUF_LEN);
+
+	ret = nvme_get_log_simple(hdl,
+				  SNDK_NVME_GET_FW_ACT_HISTORY_C2_LOG_ID,
+				  data, SNDK_FW_ACT_HISTORY_C2_LOG_BUF_LEN);
+
+	if (strcmp(format, "json"))
+		nvme_show_status(ret);
+
+	if (!ret) {
+		/* Get the log page data and verify the GUID */
+		fw_act_history_log = (struct sndk_fw_act_history_log_format_c2 *)(data);
+
+		c2GuidMatch = !memcmp(ocp_C2_guid,
+				fw_act_history_log->log_page_guid,
+				SNDK_GUID_LENGTH);
+
+		if (c2GuidMatch) {
+			/* parse the data */
+			tot_entries = le32_to_cpu(fw_act_history_log->num_entries);
+
+			if (tot_entries > 0) {
+				num_entries = (tot_entries < SNDK_MAX_NUM_ACT_HIST_ENTRIES) ?
+						tot_entries : SNDK_MAX_NUM_ACT_HIST_ENTRIES;
+				ret = sndk_print_fw_act_history_log(data, num_entries,
+					fmt);
+			} else  {
+				nvme_show_error("INFO: SNDK: No entries found.");
+				ret = 0;
+			}
+		} else {
+			nvme_show_error("ERROR: SNDK: Invalid C2 log page GUID");
+			ret = -1;
+		}
+	} else {
+		nvme_show_error("ERROR: SNDK: Unable to read FW Activate History Log Page data");
+		ret = -1;
+	}
+
+	free(data);
+	return ret;
+}
+
+
+static int sndk_vs_fw_activate_history(int argc, char **argv,
+		struct command *command,
+		struct plugin *plugin)
+{
+	const char *desc = "Retrieve FW activate history table.";
+	__cleanup_nvme_global_ctx struct libnvme_global_ctx *ctx = NULL;
+	__cleanup_nvme_transport_handle struct libnvme_transport_handle *hdl = NULL;
+	uint64_t capabilities = 0;
+	int ret;
+
+	struct config {
+		char *output_format;
+	};
+
+	struct config cfg = {
+		.output_format = "normal",
+	};
+
+	OPT_ARGS(opts) = {
+		OPT_END()
+	};
+
+	ret = parse_and_open(&ctx, &hdl, argc, argv, desc, opts);
+	if (ret)
+		return ret;
+
+	ret = libnvme_scan_topology(ctx, NULL, NULL);
+	if (ret)
+		return ret;
+	capabilities = sndk_get_drive_capabilities(ctx, hdl);
+
+	if (capabilities & SNDK_DRIVE_CAP_FW_ACTIVATE_HISTORY_C2) {
+		ret = sndk_get_fw_act_history_C2(ctx, hdl, cfg.output_format);
+
+		if (ret) {
+			nvme_show_error("ERROR: SNDK: Failure reading the FW ");
+			nvme_show_error("Activate History, ret = %d", ret);
+		}
+	} else
+		/* Fall back to the wdc plugin command */
+		ret = run_wdc_vs_fw_activate_history(ctx, hdl);
+
+	return ret;
+}
+
+static int sndk_do_clear_fw_activate_history_fid(struct libnvme_transport_handle *hdl)
+{
+	int ret = -1;
+	__u64 result;
+	__u32 value = 1 << 31; /* Bit 31 - Clear Firmware Update History Log */
+
+	ret = nvme_set_features_simple(hdl, SNDK_NVME_CLEAR_FW_ACT_HIST_VU_FID, 0, value,
+				false, &result);
+
+	nvme_show_status(ret);
+	return ret;
+}
+
+static int sndk_clear_fw_activate_history(int argc, char **argv,
+		struct command *command,
+		struct plugin *plugin)
+{
+	const char *desc = "Clear FW activate history table.";
+	__cleanup_nvme_global_ctx struct libnvme_global_ctx *ctx = NULL;
+	__cleanup_nvme_transport_handle struct libnvme_transport_handle *hdl = NULL;
+	__u64 capabilities = 0;
+	int ret;
+
+	OPT_ARGS(opts) = {
+		OPT_END()
+	};
+
+	ret = parse_and_open(&ctx, &hdl, argc, argv, desc, opts);
+	if (ret)
+		return ret;
+
+	ret = libnvme_scan_topology(ctx, NULL, NULL);
+	if (ret)
+		return ret;
+ 	capabilities = sndk_get_drive_capabilities(ctx, hdl);
+
+	if (capabilities & SNDK_DRIVE_CAP_VU_FID_CLEAR_FW_ACT_HISTORY) {
+		ret = sndk_do_clear_fw_activate_history_fid(hdl);
+
+		if (ret) {
+			nvme_show_error("ERROR: SNDK: Failure clearing the FW ");
+			nvme_show_error("Activate History, ret = %d", ret);
+		}
+	} else
+		/* Fall back to the wdc plugin command */
+		ret = run_wdc_clear_fw_activate_history(ctx, hdl);
+
+	return ret;
+}
+
+static int sndk_vs_telemetry_controller_option(int argc, char **argv,
+		struct command *command,
+		struct plugin *plugin)
+{
+	return run_wdc_vs_telemetry_controller_option(argc, argv, command, plugin);
+}
+
+static int sndk_reason_identifier(int argc, char **argv,
+		struct command *command,
+		struct plugin *plugin)
+{
+	return run_wdc_reason_identifier(argc, argv, command, plugin);
+}
+
+static int sndk_log_page_directory(int argc, char **argv,
+		struct command *command,
+		struct plugin *plugin)
+{
+	return run_wdc_log_page_directory(argc, argv, command, plugin);
+}
+
+static int sndk_namespace_resize(int argc, char **argv,
+		struct command *command,
+		struct plugin *plugin)
+{
+	return run_wdc_namespace_resize(argc, argv, command, plugin);
+}
+
+static int sndk_vs_drive_info(int argc, char **argv,
+		struct command *command,
+		struct plugin *plugin)
+{
+	return run_wdc_vs_drive_info(argc, argv, command, plugin);
+}
+
+static int sndk_capabilities(int argc, char **argv,
+		struct command *command,
+		struct plugin *plugin)
+{
+	const char *desc = "Send a capabilities command.";
+	__cleanup_nvme_global_ctx struct libnvme_global_ctx *ctx = NULL;
+	__cleanup_nvme_transport_handle struct libnvme_transport_handle *hdl = NULL;
+	uint64_t capabilities = 0;
+	int ret;
+
+	OPT_ARGS(opts) = {
+		OPT_END()
+	};
+
+	ret = parse_and_open(&ctx, &hdl, argc, argv, desc, opts);
+	if (ret)
+		return ret;
+
+	/* get capabilities */
+	ret = libnvme_scan_topology(ctx, NULL, NULL);
+	if (ret || !sndk_check_device(ctx, hdl))
+		return -1;
+
+	capabilities = sndk_get_drive_capabilities(ctx, hdl);
+
+	/* print command and supported status */
+	printf("Sandisk Plugin Capabilities for NVME device:%s\n", libnvme_transport_handle_get_name(hdl));
+	printf("vs-internal-log               : %s\n",
+	       capabilities & SNDK_DRIVE_CAP_INTERNAL_LOG_MASK ? "Supported" : "Not Supported");
+	printf("vs-smart-add-log              : %s\n",
+	       capabilities & SNDK_DRIVE_CAP_SMART_LOG_MASK ? "Supported" : "Not Supported");
+	printf("--C0 Log Page                 : %s\n",
+	       capabilities & SNDK_DRIVE_CAP_C0_LOG_PAGE ? "Supported" : "Not Supported");
+	printf("--C1 Log Page                 : %s\n",
+	       capabilities & SNDK_DRIVE_CAP_C1_LOG_PAGE ? "Supported" : "Not Supported");
+	printf("--C3 Log Page                 : %s\n",
+	       capabilities & SNDK_DRIVE_CAP_C3_LOG_PAGE ? "Supported" : "Not Supported");
+	printf("--CA Log Page                 : %s\n",
+	       capabilities & SNDK_DRIVE_CAP_CA_LOG_PAGE ? "Supported" : "Not Supported");
+	printf("clear-pcie-correctable-errors : %s\n",
+	       capabilities & SNDK_DRIVE_CAP_CLEAR_PCIE_MASK ? "Supported" : "Not Supported");
+	printf("get-drive-status              : %s\n",
+	       capabilities & SNDK_DRIVE_CAP_DRIVE_STATUS ? "Supported" : "Not Supported");
+	printf("clear-assert-dump             : %s\n",
+	       capabilities & SNDK_DRIVE_CAP_CLEAR_ASSERT ? "Supported" : "Not Supported");
+	printf("drive-resize                  : %s\n",
+	       capabilities & SNDK_DRIVE_CAP_RESIZE_MASK ? "Supported" : "Not Supported");
+	printf("vs-fw-activate-history        : %s\n",
+	       capabilities & SNDK_DRIVE_CAP_FW_ACTIVATE_HISTORY_MASK ? "Supported" :
+	       "Not Supported");
+	printf("clear-fw-activate-history     : %s\n",
+	       capabilities & SNDK_DRIVE_CAP_CLEAR_FW_ACT_HISTORY_MASK ? "Supported" :
+	       "Not Supported");
+	printf("log-page-directory            : %s\n",
+	       capabilities & SNDK_DRIVE_CAP_LOG_PAGE_DIR ? "Supported" : "Not Supported");
+	printf("vs-drive-info                 : %s\n",
+	       capabilities & SNDK_DRIVE_CAP_INFO ? "Supported" : "Not Supported");
+	printf("cloud-SSD-plugin-version      : %s\n",
+	       capabilities & SNDK_DRIVE_CAP_CLOUD_SSD_VERSION ? "Supported" : "Not Supported");
+	printf("get-dev-capabilities-log      : %s\n",
+	       capabilities & SNDK_DRIVE_CAP_OCP_C4_LOG_PAGE ? "Supported" : "Not Supported");
+	printf("get-unsupported-reqs-log      : %s\n",
+	       capabilities & SNDK_DRIVE_CAP_OCP_C5_LOG_PAGE ? "Supported" : "Not Supported");
+	printf("get-latency-monitor-log       : %s\n",
+	       capabilities & SNDK_DRIVE_CAP_C3_LOG_PAGE ? "Supported" : "Not Supported");
+	printf("set-latency-monitor-feature   : %s\n",
+	       capabilities & SNDK_DRIVE_CAP_SET_LATENCY_MONITOR ? "Supported" : "Not Supported");
+	printf("capabilities                  : Supported\n");
+
+	return 0;
+}
+
+static int sndk_cloud_ssd_plugin_version(int argc, char **argv,
+		struct command *command,
+		struct plugin *plugin)
+{
+	return run_wdc_cloud_ssd_plugin_version(argc, argv, command, plugin);
+}
+
+static int sndk_vs_pcie_stats(int argc, char **argv,
+		struct command *command,
+		struct plugin *plugin)
+{
+	return run_wdc_vs_pcie_stats(argc, argv, command, plugin);
+}
+
+static int sndk_get_latency_monitor_log(int argc, char **argv,
+		struct command *command,
+		struct plugin *plugin)
+{
+	return run_wdc_get_latency_monitor_log(argc, argv, command, plugin);
+}
+
+static int sndk_get_error_recovery_log(int argc, char **argv,
+		struct command *command,
+		struct plugin *plugin)
+{
+	return run_wdc_get_error_recovery_log(argc, argv, command, plugin);
+}
+
+static int sndk_get_dev_capabilities_log(int argc, char **argv,
+		struct command *command,
+		struct plugin *plugin)
+{
+	return run_wdc_get_dev_capabilities_log(argc, argv, command, plugin);
+}
+
+static int sndk_get_unsupported_reqs_log(int argc, char **argv,
+		struct command *command,
+		struct plugin *plugin)
+{
+	return run_wdc_get_unsupported_reqs_log(argc, argv, command, plugin);
+}
+
+static int sndk_cloud_boot_SSD_version(int argc, char **argv,
+		struct command *command,
+		struct plugin *plugin)
+{
+	return run_wdc_cloud_boot_SSD_version(argc, argv, command, plugin);
+}
+
+static int sndk_vs_cloud_log(int argc, char **argv,
+		struct command *command,
+		struct plugin *plugin)
+{
+	return run_wdc_vs_cloud_log(argc, argv, command, plugin);
+}
+
+static int sndk_vs_hw_rev_log(int argc, char **argv,
+		struct command *command,
+		struct plugin *plugin)
+{
+	return run_wdc_vs_hw_rev_log(argc, argv, command, plugin);
+}
+
+static int sndk_vs_device_waf(int argc, char **argv,
+		struct command *command,
+		struct plugin *plugin)
+{
+	return run_wdc_vs_device_waf(argc, argv, command, plugin);
+}
+
+static int sndk_set_latency_monitor_feature(int argc, char **argv,
+		struct command *command,
+		struct plugin *plugin)
+{
+	return run_wdc_set_latency_monitor_feature(argc, argv, command, plugin);
+}
+
+static int sndk_vs_temperature_stats(int argc, char **argv,
+		struct command *command,
+		struct plugin *plugin)
+{
+	return run_wdc_vs_temperature_stats(argc, argv, command, plugin);
+}
+
+static int sndk_cu_smart_log(int argc, char **argv,
+		struct command *command,
+		struct plugin *plugin)
+{
+	return run_wdc_cu_smart_log(argc, argv, command, plugin);
+}
+
+static struct command sndk_vs_internal_fw_log_cmd = {
+	.name = "vs-internal-log",
+	.help = "Sandisk Internal Firmware Log",
+	.fn = sndk_vs_internal_fw_log,
+};
+
+static struct command sndk_vs_nand_stats_cmd = {
+	.name = "vs-nand-stats",
+	.help = "Sandisk NAND Statistics",
+	.fn = sndk_vs_nand_stats,
+};
+
+static struct command sndk_vs_smart_add_log_cmd = {
+	.name = "vs-smart-add-log",
+	.help = "Sandisk Additional Smart Log",
+	.fn = sndk_vs_smart_add_log,
+};
+
+static struct command sndk_clear_pcie_correctable_errors_cmd = {
+	.name = "clear-pcie-correctable-errors",
+	.help = "Sandisk Clear PCIe Correctable Error Count",
+	.fn = sndk_clear_pcie_correctable_errors,
+};
+
+static struct command sndk_drive_status_cmd = {
+	.name = "get-drive-status",
+	.help = "Sandisk Get Drive Status",
+	.fn = sndk_drive_status,
+};
+
+static struct command sndk_clear_assert_dump_cmd = {
+	.name = "clear-assert-dump",
+	.help = "Sandisk Clear Assert Dump",
+	.fn = sndk_clear_assert_dump,
+};
+
+static struct command sndk_drive_resize_cmd = {
+	.name = "drive-resize",
+	.help = "Sandisk Drive Resize",
+	.fn = sndk_drive_resize,
+};
+
+static struct command sndk_vs_fw_activate_history_cmd = {
+	.name = "vs-fw-activate-history",
+	.help = "Sandisk Get FW Activate History",
+	.fn = sndk_vs_fw_activate_history,
+};
+
+static struct command sndk_clear_fw_activate_history_cmd = {
+	.name = "clear-fw-activate-history",
+	.help = "Sandisk Clear FW Activate History",
+	.fn = sndk_clear_fw_activate_history,
+};
+
+static struct command sndk_vs_telemetry_controller_option_cmd = {
+	.name = "vs-telemetry-controller-option",
+	.help = "Sandisk Enable/Disable Controller Initiated Telemetry Log",
+	.fn = sndk_vs_telemetry_controller_option,
+	.needs_root = true,
+};
+
+static struct command sndk_reason_identifier_cmd = {
+	.name = "vs-error-reason-identifier",
+	.help = "Sandisk Telemetry Reason Identifier",
+	.fn = sndk_reason_identifier,
+	.needs_root = true,
+};
+
+static struct command sndk_log_page_directory_cmd = {
+	.name = "log-page-directory",
+	.help = "Sandisk Get Log Page Directory",
+	.fn = sndk_log_page_directory,
+};
+
+static struct command sndk_namespace_resize_cmd = {
+	.name = "namespace-resize",
+	.help = "Sandisk NamespaceDrive Resize",
+	.fn = sndk_namespace_resize,
+};
+
+static struct command sndk_vs_drive_info_cmd = {
+	.name = "vs-drive-info",
+	.help = "Sandisk Get Drive Info",
+	.fn = sndk_vs_drive_info,
+};
+
+static struct command sndk_vs_temperature_stats_cmd = {
+	.name = "vs-temperature-stats",
+	.help = "Sandisk Get Temperature Stats",
+	.fn = sndk_vs_temperature_stats,
+};
+
+static struct command sndk_capabilities_cmd = {
+	.name = "capabilities",
+	.help = "Sandisk Device Capabilities",
+	.fn = sndk_capabilities,
+};
+
+static struct command sndk_cloud_ssd_plugin_version_cmd = {
+	.name = "cloud-SSD-plugin-version",
+	.help = "Sandisk Cloud SSD Plugin Version",
+	.fn = sndk_cloud_ssd_plugin_version,
+};
+
+static struct command sndk_vs_pcie_stats_cmd = {
+	.name = "vs-pcie-stats",
+	.help = "Sandisk VS PCIE Statistics",
+	.fn = sndk_vs_pcie_stats,
+};
+
+static struct command sndk_get_latency_monitor_log_cmd = {
+	.name = "get-latency-monitor-log",
+	.help = "Sandisk Get Latency Monitor Log Page",
+	.fn = sndk_get_latency_monitor_log,
+};
+
+static struct command sndk_get_error_recovery_log_cmd = {
+	.name = "get-error-recovery-log",
+	.help = "Sandisk Get Error Recovery Log Page",
+	.fn = sndk_get_error_recovery_log,
+};
+
+static struct command sndk_get_dev_capabilities_log_cmd = {
+	.name = "get-dev-capabilities-log",
+	.help = "Sandisk Get Device Capabilities Log Page",
+	.fn = sndk_get_dev_capabilities_log,
+};
+
+static struct command sndk_get_unsupported_reqs_log_cmd = {
+	.name = "get-unsupported-reqs-log",
+	.help = "Sandisk Get Unsupported Requirements Log Page",
+	.fn = sndk_get_unsupported_reqs_log,
+};
+
+static struct command sndk_cloud_boot_SSD_version_cmd = {
+	.name = "cloud-boot-SSD-version",
+	.help = "Sandisk Get the Cloud Boot SSD Version",
+	.fn = sndk_cloud_boot_SSD_version,
+};
+
+static struct command sndk_vs_cloud_log_cmd = {
+	.name = "vs-cloud-log",
+	.help = "Sandisk Get the Cloud Log Page",
+	.fn = sndk_vs_cloud_log,
+};
+
+static struct command sndk_vs_hw_rev_log_cmd = {
+	.name = "vs-hw-rev-log",
+	.help = "Sandisk Get the Hardware Revision Log Page",
+	.fn = sndk_vs_hw_rev_log,
+};
+
+static struct command sndk_vs_device_waf_cmd = {
+	.name = "vs-device-waf",
+	.help = "Sandisk Calculate Device Write Amplication Factor",
+	.fn = sndk_vs_device_waf,
+};
+
+static struct command sndk_set_latency_monitor_feature_cmd = {
+	.name = "set-latency-monitor-feature",
+	.help = "Sandisk set Latency Monitor feature",
+	.fn = sndk_set_latency_monitor_feature,
+};
+
+static struct command sndk_cu_smart_log_cmd = {
+	.name = "cu-smart-log",
+	.help = "Sandisk Get Customer Unique Smart Log",
+	.fn = sndk_cu_smart_log,
+};
+
+static struct command *commands[] = {
+	&sndk_vs_internal_fw_log_cmd,
+	&sndk_vs_nand_stats_cmd,
+	&sndk_vs_smart_add_log_cmd,
+	&sndk_clear_pcie_correctable_errors_cmd,
+	&sndk_drive_status_cmd,
+	&sndk_clear_assert_dump_cmd,
+	&sndk_drive_resize_cmd,
+	&sndk_vs_fw_activate_history_cmd,
+	&sndk_clear_fw_activate_history_cmd,
+	&sndk_vs_telemetry_controller_option_cmd,
+	&sndk_reason_identifier_cmd,
+	&sndk_log_page_directory_cmd,
+	&sndk_namespace_resize_cmd,
+	&sndk_vs_drive_info_cmd,
+	&sndk_vs_temperature_stats_cmd,
+	&sndk_capabilities_cmd,
+	&sndk_cloud_ssd_plugin_version_cmd,
+	&sndk_vs_pcie_stats_cmd,
+	&sndk_get_latency_monitor_log_cmd,
+	&sndk_get_error_recovery_log_cmd,
+	&sndk_get_dev_capabilities_log_cmd,
+	&sndk_get_unsupported_reqs_log_cmd,
+	&sndk_cloud_boot_SSD_version_cmd,
+	&sndk_vs_cloud_log_cmd,
+	&sndk_vs_hw_rev_log_cmd,
+	&sndk_vs_device_waf_cmd,
+	&sndk_set_latency_monitor_feature_cmd,
+	&sndk_cu_smart_log_cmd,
+	NULL,
+};
+
+static struct plugin plugin = {
+	.name = "sndk",
+	.desc = "Sandisk vendor specific extensions",
+	.version = SANDISK_PLUGIN_VERSION,
+};
+
+static void __shr_constructor register_plugin(void)
+{
+	plugin_add_group(&plugin, NULL, commands);
+	register_extension(&plugin);
+}

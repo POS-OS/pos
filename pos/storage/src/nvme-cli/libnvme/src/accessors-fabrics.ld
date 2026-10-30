@@ -1,0 +1,116 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later
+
+/**
+ * This file is part of libnvme.
+ *
+ * Copyright (c) 2025, Dell Technologies Inc. or its subsidiaries.
+ * Authors: Martin Belanger <Martin.Belanger@dell.com>
+ *
+ * This symbol list is maintained by hand, not auto-generated. When
+ * you run the update below, it does not rewrite this file -- it
+ * prints which symbols should be added or removed. Add or remove
+ * those symbols yourself, in the correct ABI version section.
+ *
+ * To check: meson compile -C [BUILD-DIR] update-accessors
+ * Or:       make update-accessors
+ */
+
+LIBNVMF_ACCESSORS_3 {
+	global:
+		libnvmf_context_get_concat;
+		libnvmf_context_get_connect;
+		libnvmf_context_get_ctrl_loss_tmo;
+		libnvmf_context_get_ctrlkey;
+		libnvmf_context_get_data_digest;
+		libnvmf_context_get_default_keep_alive_timeout;
+		libnvmf_context_get_default_max_discovery_retries;
+		libnvmf_context_get_device;
+		libnvmf_context_get_devid_file;
+		libnvmf_context_get_disable_sqflow;
+		libnvmf_context_get_discovery_ctrl;
+		libnvmf_context_get_duplicate_connect;
+		libnvmf_context_get_fast_io_fail_tmo;
+		libnvmf_context_get_hdr_digest;
+		libnvmf_context_get_host_iface;
+		libnvmf_context_get_host_traddr;
+		libnvmf_context_get_hostid;
+		libnvmf_context_get_hostkey;
+		libnvmf_context_get_hostnqn;
+		libnvmf_context_get_keep_alive_tmo;
+		libnvmf_context_get_keyring;
+		libnvmf_context_get_keyring_id;
+		libnvmf_context_get_nbft_path;
+		libnvmf_context_get_no_reuse;
+		libnvmf_context_get_nr_io_queues;
+		libnvmf_context_get_nr_poll_queues;
+		libnvmf_context_get_nr_write_queues;
+		libnvmf_context_get_queue_size;
+		libnvmf_context_get_reconnect_delay;
+		libnvmf_context_get_subsysnqn;
+		libnvmf_context_get_tls;
+		libnvmf_context_get_tls_configured_key_id;
+		libnvmf_context_get_tls_key;
+		libnvmf_context_get_tls_key_id;
+		libnvmf_context_get_tls_key_identity;
+		libnvmf_context_get_tos;
+		libnvmf_context_get_traddr;
+		libnvmf_context_get_transport;
+		libnvmf_context_get_trsvcid;
+		libnvmf_context_set_concat;
+		libnvmf_context_set_connect;
+		libnvmf_context_set_ctrl_loss_tmo;
+		libnvmf_context_set_data_digest;
+		libnvmf_context_set_default_keep_alive_timeout;
+		libnvmf_context_set_default_max_discovery_retries;
+		libnvmf_context_set_disable_sqflow;
+		libnvmf_context_set_discovery_ctrl;
+		libnvmf_context_set_duplicate_connect;
+		libnvmf_context_set_fast_io_fail_tmo;
+		libnvmf_context_set_hdr_digest;
+		libnvmf_context_set_keep_alive_tmo;
+		libnvmf_context_set_keyring_id;
+		libnvmf_context_set_nbft_path;
+		libnvmf_context_set_no_reuse;
+		libnvmf_context_set_nr_io_queues;
+		libnvmf_context_set_nr_poll_queues;
+		libnvmf_context_set_nr_write_queues;
+		libnvmf_context_set_queue_size;
+		libnvmf_context_set_reconnect_delay;
+		libnvmf_context_set_tls;
+		libnvmf_context_set_tls_configured_key_id;
+		libnvmf_context_set_tls_key_id;
+		libnvmf_context_set_tos;
+		libnvmf_discovery_args_free;
+		libnvmf_discovery_args_get_lsp;
+		libnvmf_discovery_args_get_max_retries;
+		libnvmf_discovery_args_init_defaults;
+		libnvmf_discovery_args_new;
+		libnvmf_discovery_args_set_lsp;
+		libnvmf_discovery_args_set_max_retries;
+		libnvmf_tid_free;
+		libnvmf_tid_get_host_iface;
+		libnvmf_tid_get_host_traddr;
+		libnvmf_tid_get_hostid;
+		libnvmf_tid_get_hostnqn;
+		libnvmf_tid_get_subsysnqn;
+		libnvmf_tid_get_traddr;
+		libnvmf_tid_get_transport;
+		libnvmf_tid_get_trsvcid;
+		libnvmf_tid_new;
+		libnvmf_uri_get_fragment;
+		libnvmf_uri_get_host;
+		libnvmf_uri_get_path_segments;
+		libnvmf_uri_get_port;
+		libnvmf_uri_get_protocol;
+		libnvmf_uri_get_query;
+		libnvmf_uri_get_scheme;
+		libnvmf_uri_get_userinfo;
+		libnvmf_uri_set_fragment;
+		libnvmf_uri_set_host;
+		libnvmf_uri_set_path_segments;
+		libnvmf_uri_set_port;
+		libnvmf_uri_set_protocol;
+		libnvmf_uri_set_query;
+		libnvmf_uri_set_scheme;
+		libnvmf_uri_set_userinfo;
+};

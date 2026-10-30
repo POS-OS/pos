@@ -1,0 +1,57 @@
+nvme-id-ns(1)
+=============
+
+NAME
+----
+nvme-show-regs - Reads and shows the defined NVMe controller registers for
+NVMe over PCIe or the controller properties for NVMe over Fabrics.
+
+SYNOPSIS
+--------
+[verse]
+'nvme' [<global-options>] 'show-regs' <device>
+
+DESCRIPTION
+-----------
+Reads and shows the controller registers. For an NVMe over PCIe controller,
+nvme maps its PCI memory space through sysfs (the resource0 file of the PCI
+device) and reads them there. For an NVMe over Fabrics controller, it reads
+its properties with Property Get commands: CAP, VS, CC, CSTS and the ones of
+NSSR, NSSD and CRTO the controller implements.
+
+The <device> parameter is mandatory and must be the nvme admin character
+device (ex: /dev/nvme0).
+
+With -v, the fields of each register are shown decoded. The JSON output has
+the value of each register under its name, with -v an object of the value
+and its decoded fields. The binary output is the registers from 0h to E1Bh,
+as they are in the PCI memory space, with zeros for the ones not read.
+
+OPTIONS
+-------
+include::global-options.txt[]
+
+EXAMPLES
+--------
+* Show the NVMe over PCIe controller registers or the NVMe over Fabric controller
+properties in a binary format:
++
+------------
+# nvme show-regs /dev/nvme0 -o binary
+------------
+* Show the NVMe over PCIe controller registers or the NVMe over Fabric controller
+properties in a human readable format:
++
+------------
+# nvme show-regs /dev/nvme0 -v
+------------
+* Show the NVMe over PCIe controller registers or NVMe-oF controller properties
+in a json format:
++
+------------
+# nvme show-regs /dev/nvme0 -o json
+------------
+
+NVME
+----
+Part of the nvme-user suite

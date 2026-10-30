@@ -1,0 +1,40 @@
+nvme-sndk-vs-fw-activate-history(1)
+===================================
+
+NAME
+----
+nvme-sndk-vs-fw-activate-history - Execute NVMe sndk vs-fw-activate-history Vendor Unique Command, return result
+
+SYNOPSIS
+--------
+[verse]
+'nvme' [<global-options>] 'sndk vs-fw-activate-history' <device>
+
+DESCRIPTION
+-----------
+For the NVMe device given, read a Vendor Unique sndk log page that returns the firmware activation
+history.
+
+The <device> parameter is mandatory and must be the NVMe character device (ex: /dev/nvme0).
+
+This will only work on Sandisk devices supporting this feature.
+Results for any other device are undefined.
+
+On success it returns 0, error code otherwise.
+
+OPTIONS
+-------
+
+include::global-options.txt[]
+
+EXAMPLES
+--------
+* Has the program issue sndk vs-fw-activate-history Vendor Unique Command :
++
+------------
+# nvme sndk vs-fw-activate-history /dev/nvme0
+------------
+
+NVME
+----
+Part of the nvme-user suite.

@@ -1,0 +1,72 @@
+nvme-keys-export(1)
+===================
+
+NAME
+----
+nvme-keys-export - Export NVMe TLS PSKs from a keyring
+
+SYNOPSIS
+--------
+[verse]
+'nvme' [<global-options>] 'keys export' [--keyring=<name> | -k <name>]
+			[--keyfile=<file> | -f <file>]
+
+DESCRIPTION
+-----------
+Export all NVMe TLS pre-shared keys (PSKs) from the system keyring
+in the form
+
+<identity> <psk>
+
+where '<identity>' is the TLS PSK identity the key is stored under
+and '<psk>' is the TLS PSK itself in PSK interchange format
+'NVMeTLSkey-1:<hmac>:<base64 encoded data>:'. Each key is exported in a
+single line.
+
+The PSK interchange format otherwise carries a configured PSK: it is
+what linknvme:nvme-keys-gen-tls-psk[1] prints and what
+linknvme:nvme-keys-insert-tls-psk[1] and linknvme:nvme-keys-check-tls-psk[1]
+read. The keys exported here are TLS PSKs instead. This output is
+meant for linknvme:nvme-keys-import[1], which stores each key back under
+its identity unchanged; it is not intended to be passed to
+linknvme:nvme-keys-insert-tls-psk[1] or linknvme:nvme-keys-check-tls-psk[1].
+
+OPTIONS
+-------
+-k <name>::
+--keyring=<name>::
+	Name of the keyring to export the TLS PSKs from. Default
+	is '.nvme'.
+
+-f <file>::
+--keyfile=<file>::
+	File to write the exported keys to instead of stdout.
+
+include::global-options.txt[]
+
+EXAMPLES
+--------
+
+* Export previously created keys from the kernel keyring and store them into a file
++
+------------
+# nvme keys export -f nvme-tls-keys.txt
+------------
+
+* Export/list all keys from the .nvme keyring using nvme and keyctl
++
+------------
+# nvme keys export
+NVMe0R01 hostnqn0 subsys0 NVMeTLSkey-1:01:/b9tVz2OXJVISnoFgrPAygyS86XYJWkAapQeULns6PMpM8wv:
+
+# keyctl show
+Session Keyring
+ 573249525 --alswrv      0     0  keyring: _ses
+ 353599402 --alswrv      0 65534   \_ keyring: _uid.0
+ 475911922 ---lswrv      0     0   \_ keyring: .nvme
+ 649274894 --als-rv      0     0       \_ psk: NVMe0R01 hostnqn0 subsys0
+------------
+
+NVME
+----
+Part of the nvme-user suite

@@ -1,0 +1,166 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/linux-nvme/nvme-cli/command-metadata-schema.json",
+  "title": "nvme-cli command metadata",
+  "description": "Schema for the JSON emitted by `nvme dump-command-metadata`, which describes every command and its accepted options for tooling such as shell-completion generators, documentation, and drift checks.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "name", "commands", "plugins"],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "description": "Bumped on any breaking change to the output structure. Consumers should reject a major version they do not understand.",
+      "minimum": 1
+    },
+    "name": {
+      "type": "string",
+      "description": "Program name (\"nvme\")."
+    },
+    "version": {
+      "type": "string",
+      "description": "Program version string. Omitted if unknown."
+    },
+    "description": {
+      "type": "string",
+      "description": "Program description. Omitted if unset."
+    },
+    "commands": {
+      "type": "array",
+      "description": "Top-level (builtin) commands.",
+      "items": { "$ref": "#/$defs/command" }
+    },
+    "plugins": {
+      "type": "array",
+      "description": "Named plugins, each grouping its own commands.",
+      "items": { "$ref": "#/$defs/plugin" }
+    }
+  },
+  "$defs": {
+    "plugin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "commands"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Plugin name, used as the first argument to dispatch its commands."
+        },
+        "description": {
+          "type": "string",
+          "description": "Plugin description. Omitted if unset."
+        },
+        "commands": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/command" }
+        }
+      }
+    },
+    "command": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "device", "options"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Command name as typed on the command line."
+        },
+        "device": {
+          "type": "string",
+          "enum": ["required", "optional", "none"],
+          "description": "Whether the command takes a device operand (since schema version 2)."
+        },
+        "alias": {
+          "type": "string",
+          "description": "Alternate name accepted for the command. Omitted if none."
+        },
+        "deprecated": {
+          "type": "boolean",
+          "description": "True for a deprecated command. Absent otherwise.",
+          "const": true
+        },
+        "replacement": {
+          "type": "string",
+          "description": "The command which replaces a deprecated one, as \"<plugin> <command>\". Omitted if none."
+        },
+        "description": {
+          "type": "string",
+          "description": "Command description (the command-list one-liner). Omitted if unset."
+        },
+        "options": {
+          "type": "array",
+          "description": "Options the command accepts. Empty for commands that take no options.",
+          "items": { "$ref": "#/$defs/option" }
+        }
+      }
+    },
+    "option": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["long", "argument"],
+      "properties": {
+        "long": {
+          "type": "string",
+          "description": "Long option name, without the leading \"--\"."
+        },
+        "short": {
+          "type": "string",
+          "description": "Single-character short option name, without the leading \"-\". Omitted if none.",
+          "minLength": 1,
+          "maxLength": 1
+        },
+        "argument": {
+          "type": "string",
+          "description": "Whether the option consumes an argument.",
+          "enum": ["none", "required", "optional"]
+        },
+        "type": {
+          "type": "string",
+          "description": "The kind of value: flag (no value), count (no value, may be repeated), int, u8, u16, u32 and u64 (numbers of that size; the unsigned ones take no negative number), size (a number with an optional binary suffix such as Ki), double, string, enum (one of \"values\"), enum-list (\"values\" separated by commas), file or directory (a path).",
+          "enum": ["flag", "count", "int", "u8", "u16", "u32", "u64", "size", "double", "string", "enum", "enum-list", "file", "directory"]
+        },
+        "range": {
+          "type": "object",
+          "description": "The numbers an unsigned option accepts, if fewer than its type holds. The names in \"values\" are accepted besides. Absent otherwise.",
+          "properties": {
+            "min": { "type": "integer", "minimum": 0 },
+            "max": { "type": "integer", "minimum": 0 }
+          },
+          "required": ["min", "max"],
+          "additionalProperties": false
+        },
+        "metavar": {
+          "type": "string",
+          "description": "Placeholder name for the option's value (e.g. \"NUM\", \"FMT\"). Present only for options that take a value."
+        },
+        "description": {
+          "type": "string",
+          "description": "Option help text. Omitted if unset."
+        },
+        "global": {
+          "type": "boolean",
+          "description": "True for the shared global options appended to every command (verbose, output-format, timeout, ...). Absent otherwise.",
+          "const": true
+        },
+        "hidden": {
+          "type": "boolean",
+          "description": "True for options accepted on the command line but suppressed from --help. Absent otherwise.",
+          "const": true
+        },
+        "deprecated": {
+          "type": "string",
+          "description": "The option which replaces a deprecated one, e.g. \"--verbose/-v\". A deprecated option is hidden as well. Omitted if not deprecated."
+        },
+        "old_name": {
+          "type": "string",
+          "description": "The long name of earlier versions, still accepted with a warning. Omitted if none."
+        },
+        "values": {
+          "type": "array",
+          "description": "The names the option accepts as values, e.g. the output formats or named special values such as \"all\" for a namespace identifier. A numeric option also takes a number. Absent when the option has no named values.",
+          "items": { "type": "string" },
+          "minItems": 1
+        }
+      }
+    }
+  }
+}

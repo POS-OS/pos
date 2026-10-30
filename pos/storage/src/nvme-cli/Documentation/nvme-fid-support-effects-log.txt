@@ -1,0 +1,36 @@
+nvme-fid-support-effects-log(1)
+===============================
+
+NAME
+----
+nvme-fid-support-effects-log - Send NVMe FID Support and Effects log, return result and structure (deprecated)
+
+SYNOPSIS
+--------
+[verse]
+'nvme' [<global-options>] 'fid-support-effects-log' <device>
+
+DESCRIPTION
+-----------
+Deprecated alias for linknvme:nvme-log-fid-support-effects[1], kept for scripts written
+against nvme-cli versions older than 3.0. Options and behavior are
+identical; only the top-level command name is retained.
+
+New scripts should use 'nvme log fid-support-effects' instead. This alias prints a
+deprecation warning on stderr and may be removed in a future release.
+
+See linknvme:nvme-log-fid-support-effects[1] for the full option reference.
+
+include::global-options.txt[]
+
+EXAMPLES
+--------
+No Examples
+
+NVME
+----
+Part of the nvme-user suite
+
+SEE ALSO
+--------
+linknvme:nvme-log-fid-support-effects[1]

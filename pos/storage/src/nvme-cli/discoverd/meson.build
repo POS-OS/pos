@@ -1,0 +1,75 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+#
+# This file is part of nvme-cli.
+# Copyright (c) 2026 Dell Technologies Inc. or its subsidiaries.
+#
+# Authors: Martin Belanger <martin.belanger@dell.com>
+#
+
+discoverd_sources = files(
+    'src/config.c',
+    'src/dlp.c',
+    'src/events.c',
+    'src/fc.c',
+    'src/inventory.c',
+    'src/main.c',
+    'src/netif.c',
+    'src/state.c',
+    'src/tid.c',
+    'src/units.c',
+)
+
+if want_mdns
+    discoverd_sources += files('src/mdns.c')
+else
+    discoverd_sources += files('src/no-mdns.c')
+endif
+
+discoverd_inc = include_directories('src')
+
+# Absolute path to the nvme binary that the transient units exec (units.c).
+nvme_bin_path = sbindir / 'nvme'
+
+nvme_discoverd = executable(
+    'nvme-discoverd',
+    discoverd_sources,
+    include_directories: discoverd_inc,
+    c_args: [
+        '-DNVME_PATH="@0@"'.format(nvme_bin_path),
+    ],
+    dependencies: [
+        ccan_dep,
+        daemon_util_dep,
+        libnvme_dep,
+        libsystemd_dep,
+        shared_dep,
+    ],
+    install: true,
+    install_dir: sbindir,
+    install_tag: 'nvme-discoverd',
+)
+
+if get_option('tests')
+    subdir('tests')
+endif
+
+configure_file(
+    input: 'systemd/nvme-discoverd.service.in',
+    output: 'nvme-discoverd.service',
+    configuration: substs,
+    install: true,
+    install_dir: systemddir,
+    install_tag: 'nvme-discoverd',
+)
+
+# Every knob has a default, so the daemon needs no configuration file.
+# Install a commented sample, like nvme-fabrics.conf.sample: installing the
+# live file would overwrite the admin's settings on every install.
+configure_file(
+    input: 'etc/nvme/nvme-discoverd.conf.sample.in',
+    output: 'nvme-discoverd.conf.sample',
+    configuration: substs,
+    install: true,
+    install_dir: sysconfdir / 'nvme',
+    install_tag: 'nvme-discoverd',
+)

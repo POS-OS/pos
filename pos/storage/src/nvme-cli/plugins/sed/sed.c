@@ -1,0 +1,254 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+#include <errno.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+
+#include <libnvme.h>
+
+#include <shared/compiler-attributes-util.h>
+
+#include "cleanup.h"
+#include "global-ctx.h"
+#include "nvme-print.h"
+#include "plugin.h"
+#include "sedopal_cmd.h"
+
+OPT_ARGS(no_opts) = {
+	OPT_END()
+};
+
+OPT_ARGS(init_opts) = {
+	OPT_FLAG("read-only", 'r', &sedopal_lock_ro,
+		 "Set locking range to read-only"),
+	OPT_END()
+};
+
+OPT_ARGS(key_opts) = {
+	OPT_FLAG("ask-key", 'k', &sedopal_ask_key,
+			"prompt for SED authentication key"),
+	OPT_END()
+};
+
+OPT_ARGS(revert_opts) = {
+	OPT_FLAG("destructive", 'e', &sedopal_destructive_revert,
+			"destructive revert"),
+	OPT_FLAG("psid", 'p', &sedopal_psid_revert, "PSID revert"),
+	OPT_END()
+};
+
+OPT_ARGS(lock_opts) = {
+	OPT_FLAG("read-only", 'r', &sedopal_lock_ro,
+		 "Set locking range to read-only"),
+	OPT_FLAG("ask-key", 'k', &sedopal_ask_key,
+			"prompt for SED authentication key"),
+	OPT_END()
+};
+
+OPT_ARGS(discovery_opts) = {
+	OPT_FLAG("udev", 'u', &sedopal_discovery_udev,
+		"Print locking information in form suitable for udev rules"),
+	OPT_END()
+};
+
+/*
+ * Open the NVMe device specified on the command line. It must be the
+ * NVMe namespace device (e.g. /dev/nvme0n1).
+ */
+static int sed_opal_open_device(struct libnvme_global_ctx **ctx, struct libnvme_transport_handle **hdl, int argc, char **argv,
+		const char *desc, struct argconfig_commandline_options *opts)
+{
+	int err;
+
+	err = parse_and_open(ctx, hdl, argc, argv, desc, opts);
+	if (err)
+		return err;
+
+	if (!libnvme_transport_handle_is_ns(*hdl)) {
+		nvme_show_error(
+			"ERROR : The NVMe namespace device (e.g. /dev/nvme0n1) "
+			"must be specified\n");
+		err = -EINVAL;
+	}
+
+	return err;
+}
+
+static int sed_opal_discover(int argc, char **argv, struct command *acmd,
+		struct plugin *plugin)
+{
+	const char *desc = "Query SED device and display locking features";
+	__cleanup_nvme_global_ctx struct libnvme_global_ctx *ctx = NULL;
+	__cleanup_nvme_transport_handle struct libnvme_transport_handle *hdl = NULL;
+	int err;
+
+	err = sed_opal_open_device(&ctx, &hdl, argc, argv, desc, discovery_opts);
+	if (err)
+		return err;
+
+	err = sedopal_cmd_discover(hdl);
+
+	return err;
+}
+
+static int sed_opal_initialize(int argc, char **argv, struct command *acmd,
+		struct plugin *plugin)
+{
+	const char *desc = "Initialize a SED device for locking";
+	__cleanup_nvme_global_ctx struct libnvme_global_ctx *ctx = NULL;
+	__cleanup_nvme_transport_handle struct libnvme_transport_handle *hdl = NULL;
+	int err;
+
+	err = sed_opal_open_device(&ctx, &hdl, argc, argv, desc, init_opts);
+	if (err)
+		return err;
+
+	err = sedopal_cmd_initialize(hdl);
+	if ((err != 0) && (err != -EOPNOTSUPP))
+		nvme_show_error("initialize: SED error -  %s",
+				sedopal_error_to_text(err));
+
+	return err;
+}
+
+static int sed_opal_revert(int argc, char **argv, struct command *acmd,
+		struct plugin *plugin)
+{
+	const char *desc = "Revert a SED device from locking state";
+	__cleanup_nvme_global_ctx struct libnvme_global_ctx *ctx = NULL;
+	__cleanup_nvme_transport_handle struct libnvme_transport_handle *hdl = NULL;
+	int err;
+
+	err = sed_opal_open_device(&ctx, &hdl, argc, argv, desc, revert_opts);
+	if (err)
+		return err;
+
+	err = sedopal_cmd_revert(hdl);
+	if ((err != 0) && (err != -EOPNOTSUPP) && (err != EPERM))
+		nvme_show_error("revert: SED error -  %s",
+				sedopal_error_to_text(err));
+
+	return err;
+}
+
+static int sed_opal_lock(int argc, char **argv, struct command *acmd,
+		struct plugin *plugin)
+{
+	const char *desc = "Lock a SED device";
+	__cleanup_nvme_global_ctx struct libnvme_global_ctx *ctx = NULL;
+	__cleanup_nvme_transport_handle struct libnvme_transport_handle *hdl = NULL;
+	int err;
+
+	err = sed_opal_open_device(&ctx, &hdl, argc, argv, desc, lock_opts);
+	if (err)
+		return err;
+
+	err = sedopal_cmd_lock(hdl);
+	if ((err != 0) && (err != -EOPNOTSUPP))
+		nvme_show_error("lock: SED error -  %s",
+				sedopal_error_to_text(err));
+
+	return err;
+}
+
+static int sed_opal_unlock(int argc, char **argv, struct command *acmd,
+		struct plugin *plugin)
+{
+	const char *desc = "Unlock a SED device";
+	__cleanup_nvme_global_ctx struct libnvme_global_ctx *ctx = NULL;
+	__cleanup_nvme_transport_handle struct libnvme_transport_handle *hdl = NULL;
+	int err;
+
+	err = sed_opal_open_device(&ctx, &hdl, argc, argv, desc, lock_opts);
+	if (err)
+		return err;
+
+	err = sedopal_cmd_unlock(hdl);
+	if ((err != 0) && (err != -EOPNOTSUPP))
+		nvme_show_error("unlock: SED error -  %s",
+				sedopal_error_to_text(err));
+
+	return err;
+}
+
+static int sed_opal_password(int argc, char **argv, struct command *acmd,
+		struct plugin *plugin)
+{
+	int err;
+	const char *desc = "Change the locking password of a SED device";
+	__cleanup_nvme_global_ctx struct libnvme_global_ctx *ctx = NULL;
+	__cleanup_nvme_transport_handle struct libnvme_transport_handle *hdl = NULL;
+
+	err = sed_opal_open_device(&ctx, &hdl, argc, argv, desc, no_opts);
+	if (err)
+		return err;
+
+	err = sedopal_cmd_password(hdl);
+	if ((err != 0) && (err != EPERM))
+		nvme_show_error("password: SED error -  %s",
+				sedopal_error_to_text(err));
+
+	return err;
+}
+
+static struct command sed_opal_discover_cmd = {
+	.name = "discover",
+	.help = "Discover SED Opal Locking Features",
+	.fn = sed_opal_discover,
+	.alias = "1",
+};
+
+static struct command sed_opal_initialize_cmd = {
+	.name = "initialize",
+	.help = "Initialize a SED Opal Device for locking",
+	.fn = sed_opal_initialize,
+};
+
+static struct command sed_opal_revert_cmd = {
+	.name = "revert",
+	.help = "Revert a SED Opal Device from locking",
+	.fn = sed_opal_revert,
+};
+
+static struct command sed_opal_lock_cmd = {
+	.name = "lock",
+	.help = "Lock a SED Opal Device",
+	.fn = sed_opal_lock,
+};
+
+static struct command sed_opal_unlock_cmd = {
+	.name = "unlock",
+	.help = "Unlock a SED Opal Device",
+	.fn = sed_opal_unlock,
+};
+
+static struct command sed_opal_password_cmd = {
+	.name = "password",
+	.help = "Change the SED Opal Device password",
+	.fn = sed_opal_password,
+};
+
+static struct command *commands[] = {
+	&sed_opal_discover_cmd,
+	&sed_opal_initialize_cmd,
+	&sed_opal_revert_cmd,
+	&sed_opal_lock_cmd,
+	&sed_opal_unlock_cmd,
+	&sed_opal_password_cmd,
+	NULL,
+};
+
+static struct plugin plugin = {
+	.name = "sed",
+	.desc = "SED Opal Command Set",
+	.version = NVME_VERSION,
+	.core = true,
+	.group = "Security & Access Control",
+};
+
+static void __shr_constructor register_plugin(void)
+{
+	plugin_add_group(&plugin, NULL, commands);
+	register_extension(&plugin);
+}

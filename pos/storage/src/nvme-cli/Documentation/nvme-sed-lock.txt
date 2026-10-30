@@ -1,0 +1,38 @@
+nvme-sed-lock(1)
+================
+
+NAME
+----
+nvme-sed-lock - Lock a SED Opal Device
+
+SYNOPSIS
+--------
+[verse]
+'nvme' [<global-options>] 'sed lock'
+			[--read-only | -r]
+			[--ask-key | -k]
+			<device>
+
+DESCRIPTION
+-----------
+Lock the given NVMe device.
+
+OPTIONS
+-------
+-r::
+--read-only::
+	Set locking range to read-only.
+
+-k::
+--ask-key::
+	Prompt for SED authentication key.
+
+include::global-options.txt[]
+
+EXAMPLES
+--------
+nvme sed lock /dev/nvme5n1
+
+NVME
+----
+Part of nvme-cli

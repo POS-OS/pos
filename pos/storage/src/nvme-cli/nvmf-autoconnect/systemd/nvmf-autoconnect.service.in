@@ -1,0 +1,34 @@
+[Unit]
+Description=Connect NVMe-oF subsystems automatically during boot
+ConditionPathExists=|@SYSCONFDIR@/nvme/config.json
+ConditionPathExists=|@SYSCONFDIR@/nvme/discovery.conf
+ConditionPathExists=|@SYSCONFDIR@/nvme/nvme-fabrics.conf
+ConditionDirectoryNotEmpty=|@SYSCONFDIR@/nvme/nvme-fabrics.conf.d
+Wants=modprobe@nvme_fabrics.service
+After=modprobe@nvme_fabrics.service
+After=network-online.target
+After=nvme-discoverd.service
+# A TLS connection fails at once if tlshd is not running.
+After=tlshd.service
+Before=remote-fs-pre.target
+
+[Service]
+ProtectSystem=full
+ProtectHome=true
+ProtectHostname=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectProc=invisible
+RestrictRealtime=true
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RemoveIPC=yes
+RestrictAddressFamilies=AF_INET AF_INET6
+Type=oneshot
+# '+' runs systemctl outside RestrictAddressFamilies, which blocks AF_UNIX.
+ExecCondition=+/bin/sh -c "! @SYSTEMCTL@ -q is-active nvme-discoverd.service"
+ExecStart=@SBINDIR@/nvme connect-all --owner=autoconnect
+
+[Install]
+WantedBy=default.target

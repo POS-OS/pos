@@ -1,0 +1,14 @@
+.TH "libnvme_namespace_next_path" 9 "libnvme_namespace_next_path" "September 2026" "libnvme API manual" LINUX
+.SH NAME
+libnvme_namespace_next_path \- Next path iterator
+.SH SYNOPSIS
+.B "struct libnvme_path *" libnvme_namespace_next_path
+.BI "(struct libnvme_ns *ns "  ","
+.BI "struct libnvme_path *p "  ");"
+.SH ARGUMENTS
+.IP "ns" 12
+Namespace instance
+.IP "p" 12
+Previous \fIstruct libnvme_path\fP object of an \fIns\fP iterator
+.SH "RETURN"
+Next \fIstruct libnvme_path\fP object of an \fIns\fP iterator

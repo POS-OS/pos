@@ -1,0 +1,11 @@
+.TH "libnvme_ns_get_read_ios" 9 "libnvme_ns_get_read_ios" "September 2026" "libnvme API manual" LINUX
+.SH NAME
+libnvme_ns_get_read_ios \- Get num of read I/Os
+.SH SYNOPSIS
+.B "unsigned long" libnvme_ns_get_read_ios
+.BI "(struct libnvme_ns *n "  ");"
+.SH ARGUMENTS
+.IP "n" 12
+\fIstruct libnvme_ns\fP object
+.SH "RETURN"
+Num of read IOs processed between two stat samples

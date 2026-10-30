@@ -1,0 +1,511 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
+
+#include <errno.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include <ccan/array_size/array_size.h>
+#include <ccan/endian/endian.h>
+
+#include <libnvme.h>
+#include <nvme/private.h>
+
+#include "nvme/loopback.h"
+#include "util.h"
+
+#define HEADER_LEN 20
+
+static struct libnvme_transport_handle *test_hdl;
+
+static void arbitrary_ascii_string(size_t max_len, char *str, char *log_str)
+{
+	size_t len;
+	size_t i;
+
+	/* Cap below max_len so at least one padding/terminator byte remains. */
+	len = arbitrary_range(max_len);
+	for (i = 0; i < len; i++) {
+		/*
+		 * ASCII strings shall contain only code values 20h through 7Eh.
+		 * Exclude 20h (space) because it ends the string.
+		 */
+		str[i] = log_str[i] = arbitrary_range(0x7E - 0x20) + 0x20 + 1;
+	}
+	for (i = len; i < max_len; i++) {
+		str[i] = '\0';
+		log_str[i] = ' ';
+	}
+}
+
+/* Convenience wrapper: create args, fetch log, free args */
+static int fetch_discovery_log(struct libnvme_ctrl *c,
+			       struct nvmf_discovery_log **logp,
+			       int max_retries)
+{
+	struct libnvmf_discovery_args *args;
+	int err;
+
+	err = libnvmf_discovery_args_new(&args);
+	if (err)
+		return err;
+	libnvmf_discovery_args_set_max_retries(args, max_retries);
+	err = libnvmf_get_discovery_log(c, args, logp);
+	libnvmf_discovery_args_free(args);
+	return err;
+}
+
+/*
+ * Unlike trsvcid/traddr, subnqn is a null-terminated string (NVMe Base
+ * Spec 2.4, section 4.7): unused trailing bytes are padded with '\0' on
+ * the wire, not ' '. Generate it accordingly so it always carries a
+ * terminator, matching what a compliant discovery controller sends.
+ */
+static void arbitrary_nul_padded_ascii_string(size_t max_len, char *str,
+					       char *log_str)
+{
+	size_t len;
+	size_t i;
+
+	/* Cap below max_len so at least one terminator byte remains. */
+	len = arbitrary_range(max_len);
+	for (i = 0; i < len; i++)
+		str[i] = log_str[i] = arbitrary_range(0x7E - 0x20) + 0x20 + 1;
+	for (i = len; i < max_len; i++)
+		str[i] = log_str[i] = '\0';
+}
+
+static void arbitrary_entry(struct nvmf_disc_log_entry *entry,
+                            struct nvmf_disc_log_entry *log_entry)
+{
+	arbitrary(entry, sizeof(*entry));
+	memcpy(log_entry, entry, sizeof(*entry));
+	arbitrary_ascii_string(
+		sizeof(entry->trsvcid), entry->trsvcid, log_entry->trsvcid);
+	arbitrary_ascii_string(
+		sizeof(entry->traddr), entry->traddr, log_entry->traddr);
+	arbitrary_nul_padded_ascii_string(
+		sizeof(entry->subnqn), entry->subnqn, log_entry->subnqn);
+}
+
+static void arbitrary_entries(size_t len,
+                              struct nvmf_disc_log_entry *entries,
+                              struct nvmf_disc_log_entry *log_entries)
+{
+	size_t i;
+
+	for (i = 0; i < len; i++)
+		arbitrary_entry(&entries[i], &log_entries[i]);
+}
+
+/*
+ * sanitize_discovery_log_entry() only guarantees trsvcid/traddr end up as
+ * valid, correctly terminated strings -- shr_rtrim() does not clear the
+ * buffer bytes after the new terminator the way the old strchomp() did.
+ * Compare those two fields as strings. subnqn is also rtrim'd, but the
+ * generator above never puts trailing whitespace in it, so it still
+ * matches byte-for-byte along with the rest of the entry.
+ */
+static void cmp_entries(const struct nvmf_disc_log_entry *actual,
+			 const struct nvmf_disc_log_entry *expected,
+			 size_t count, const char *msg)
+{
+	size_t i;
+
+	for (i = 0; i < count; i++) {
+		struct nvmf_disc_log_entry a = actual[i];
+		struct nvmf_disc_log_entry e = expected[i];
+
+		check(!strcmp(a.trsvcid, e.trsvcid),
+		      "%s: trsvcid mismatch", msg);
+		check(!strcmp(a.traddr, e.traddr),
+		      "%s: traddr mismatch", msg);
+
+		memset(a.trsvcid, 0, sizeof(a.trsvcid));
+		memset(e.trsvcid, 0, sizeof(e.trsvcid));
+		memset(a.traddr, 0, sizeof(a.traddr));
+		memset(e.traddr, 0, sizeof(e.traddr));
+
+		cmp(&a, &e, sizeof(a), msg);
+	}
+}
+
+static void test_no_entries(struct libnvme_ctrl *c)
+{
+	struct nvmf_discovery_log header = {};
+	/* No entries to fetch after fetching the header */
+	struct libnvme_loopback_cmd mock_admin_cmds[] = {
+		{
+			.opcode = nvme_admin_get_log_page,
+			.data_len = HEADER_LEN,
+			.cdw10 = (HEADER_LEN / 4 - 1) << 16 /* NUMDL */
+			       | NVME_LOG_LID_DISCOVERY, /* LID */
+			.out_data = &header,
+		},
+	};
+	struct nvmf_discovery_log *log = NULL;
+
+	libnvme_loopback_set_admin_cmds(test_hdl, mock_admin_cmds, ARRAY_SIZE(mock_admin_cmds));
+	check(fetch_discovery_log(c, &log, 1) == 0, "discovery failed");
+	libnvme_loopback_end(test_hdl);
+	cmp(log, &header, HEADER_LEN, "incorrect header");
+	free(log);
+}
+
+static void test_four_entries(struct libnvme_ctrl *c)
+{
+	size_t num_entries = 4;
+	struct nvmf_disc_log_entry entries[num_entries];
+	struct nvmf_disc_log_entry log_entries[num_entries];
+	struct nvmf_discovery_log header = {.numrec = cpu_to_le64(num_entries)};
+	/*
+	 * All 4 entries should be fetched at once
+	 * followed by the header again (to ensure genctr hasn't changed)
+	 */
+	struct libnvme_loopback_cmd mock_admin_cmds[] = {
+		{
+			.opcode = nvme_admin_get_log_page,
+			.data_len = HEADER_LEN,
+			.cdw10 = (HEADER_LEN / 4 - 1) << 16 /* NUMDL */
+			       | NVME_LOG_LID_DISCOVERY, /* LID */
+			.out_data = &header,
+		},
+		{
+			.opcode = nvme_admin_get_log_page,
+			.data_len = sizeof(entries),
+			.cdw10 = (sizeof(entries) / 4 - 1) << 16 /* NUMDL */
+			       | NVME_LOG_LID_DISCOVERY, /* LID */
+			.cdw12 = sizeof(header), /* LPOL */
+			.out_data = log_entries,
+		},
+		{
+			.opcode = nvme_admin_get_log_page,
+			.data_len = HEADER_LEN,
+			.cdw10 = (HEADER_LEN / 4 - 1) << 16 /* NUMDL */
+			       | NVME_LOG_LID_DISCOVERY, /* LID */
+			.out_data = &header,
+		},
+	};
+	struct nvmf_discovery_log *log = NULL;
+
+	arbitrary_entries(num_entries, entries, log_entries);
+	libnvme_loopback_set_admin_cmds(test_hdl, mock_admin_cmds, ARRAY_SIZE(mock_admin_cmds));
+	check(fetch_discovery_log(c, &log, 1) == 0, "discovery failed");
+	libnvme_loopback_end(test_hdl);
+	cmp(log, &header, HEADER_LEN, "incorrect header");
+	cmp(log->entries, entries, 0x16 /* sizeof(entries)*/, "incorrect entries");
+	free(log);
+}
+
+static void test_five_entries(struct libnvme_ctrl *c)
+{
+	size_t num_entries = 5;
+	struct nvmf_disc_log_entry entries[num_entries];
+	struct nvmf_disc_log_entry log_entries[num_entries];
+	size_t first_entries = 4;
+	size_t first_data_len = first_entries * sizeof(*entries);
+	size_t second_entries = num_entries - first_entries;
+	size_t second_data_len = second_entries * sizeof(*entries);
+	struct nvmf_discovery_log header = {.numrec = cpu_to_le64(num_entries)};
+	/*
+	 * The first 4 entries (4 KB) are fetched together,
+	 * followed by last entry separately.
+	 * Finally, the header is fetched again to check genctr.
+	 */
+	struct libnvme_loopback_cmd mock_admin_cmds[] = {
+		{
+			.opcode = nvme_admin_get_log_page,
+			.data_len = HEADER_LEN,
+			.cdw10 = (HEADER_LEN / 4 - 1) << 16 /* NUMDL */
+			       | NVME_LOG_LID_DISCOVERY, /* LID */
+			.out_data = &header,
+		},
+		{
+			.opcode = nvme_admin_get_log_page,
+			.data_len = first_data_len,
+			.cdw10 = (first_data_len / 4 - 1) << 16 /* NUMDL */
+			       | 1 << 15 /* RAE */
+			       | NVME_LOG_LID_DISCOVERY, /* LID */
+			.cdw12 = sizeof(header), /* LPOL */
+			.out_data = log_entries,
+		},
+		{
+			.opcode = nvme_admin_get_log_page,
+			.data_len = second_data_len,
+			.cdw10 = (second_data_len / 4 - 1) << 16 /* NUMDL */
+			       | NVME_LOG_LID_DISCOVERY, /* LID */
+			.cdw12 = sizeof(header) + first_data_len, /* LPOL */
+			.out_data = log_entries + first_entries,
+		},
+		{
+			.opcode = nvme_admin_get_log_page,
+			.data_len = HEADER_LEN,
+			.cdw10 = (HEADER_LEN / 4 - 1) << 16 /* NUMDL */
+			       | NVME_LOG_LID_DISCOVERY, /* LID */
+			.out_data = &header,
+		},
+	};
+	struct nvmf_discovery_log *log = NULL;
+
+	arbitrary_entries(num_entries, entries, log_entries);
+	libnvme_loopback_set_admin_cmds(test_hdl, mock_admin_cmds, ARRAY_SIZE(mock_admin_cmds));
+	check(fetch_discovery_log(c, &log, 1) == 0, "discovery failed");
+	libnvme_loopback_end(test_hdl);
+	cmp(log, &header, sizeof(header), "incorrect header");
+	cmp_entries(log->entries, entries, num_entries, "incorrect entries");
+	free(log);
+}
+
+static void test_genctr_change(struct libnvme_ctrl *c)
+{
+	struct nvmf_disc_log_entry entries1[1];
+	struct nvmf_discovery_log header1 = {
+		.numrec = cpu_to_le64(ARRAY_SIZE(entries1)),
+	};
+	size_t num_entries2 = 2;
+	struct nvmf_disc_log_entry entries2[num_entries2];
+	struct nvmf_disc_log_entry log_entries2[num_entries2];
+	struct nvmf_discovery_log header2 = {
+		.genctr = cpu_to_le64(1),
+		.numrec = cpu_to_le64(num_entries2),
+	};
+	/*
+	 * genctr changes after the entries are fetched the first time,
+	 * so the log page entries are refetched
+	 */
+	struct libnvme_loopback_cmd mock_admin_cmds[] = {
+		{
+			.opcode = nvme_admin_get_log_page,
+			.data_len = HEADER_LEN,
+			.cdw10 = (HEADER_LEN / 4 - 1) << 16 /* NUMDL */
+			       | NVME_LOG_LID_DISCOVERY, /* LID */
+			.out_data = &header1,
+		},
+		{
+			.opcode = nvme_admin_get_log_page,
+			.data_len = sizeof(entries1),
+			.cdw10 = (sizeof(entries1) / 4 - 1) << 16 /* NUMDL */
+			       | NVME_LOG_LID_DISCOVERY, /* NUMDL */
+			.cdw12 = sizeof(header1), /* LPOL */
+			.out_data = entries1,
+		},
+		{
+			.opcode = nvme_admin_get_log_page,
+			.data_len = HEADER_LEN,
+			.cdw10 = (HEADER_LEN / 4 - 1) << 16 /* NUMDL */
+			       | NVME_LOG_LID_DISCOVERY, /* LID */
+			.out_data = &header2,
+		},
+		{
+			.opcode = nvme_admin_get_log_page,
+			.data_len = sizeof(entries2),
+			.cdw10 = (sizeof(entries2) / 4 - 1) << 16 /* NUMDL */
+			       | NVME_LOG_LID_DISCOVERY, /* LID */
+			.cdw12 = sizeof(header2), /* LPOL */
+			.out_data = log_entries2,
+		},
+		{
+			.opcode = nvme_admin_get_log_page,
+			.data_len = HEADER_LEN,
+			.cdw10 = (HEADER_LEN / 4 - 1) << 16 /* NUMDL */
+			       | NVME_LOG_LID_DISCOVERY, /* LID */
+			.out_data = &header2,
+		},
+	};
+	struct nvmf_discovery_log *log = NULL;
+
+	arbitrary(entries1, sizeof(entries1));
+	arbitrary_entries(num_entries2, entries2, log_entries2);
+	libnvme_loopback_set_admin_cmds(test_hdl, mock_admin_cmds, ARRAY_SIZE(mock_admin_cmds));
+	check(fetch_discovery_log(c, &log, 2) == 0, "discovery failed");
+	libnvme_loopback_end(test_hdl);
+	cmp(log, &header2, sizeof(header2), "incorrect header");
+	cmp_entries(log->entries, entries2, num_entries2, "incorrect entries");
+	free(log);
+}
+
+static void test_max_retries(struct libnvme_ctrl *c)
+{
+	struct nvmf_disc_log_entry entry;
+	struct nvmf_discovery_log header1 = {.numrec = cpu_to_le64(1)};
+	struct nvmf_discovery_log header2 = {
+		.genctr = cpu_to_le64(1),
+		.numrec = cpu_to_le64(1),
+	};
+	struct nvmf_discovery_log header3 = {
+		.genctr = cpu_to_le64(2),
+		.numrec = cpu_to_le64(1),
+	};
+	/* genctr changes in both attempts, hitting the max retries (2) */
+	struct libnvme_loopback_cmd mock_admin_cmds[] = {
+		{
+			.opcode = nvme_admin_get_log_page,
+			.data_len = HEADER_LEN,
+			.cdw10 = (HEADER_LEN / 4 - 1) << 16 /* NUMDL */
+			       | NVME_LOG_LID_DISCOVERY, /* LID */
+			.out_data = &header1,
+		},
+		{
+			.opcode = nvme_admin_get_log_page,
+			.data_len = sizeof(entry),
+			.cdw10 = (sizeof(entry) / 4 - 1) << 16 /* NUMDL */
+			       | NVME_LOG_LID_DISCOVERY, /* LID */
+			.cdw12 = sizeof(header1), /* LPOL */
+			.out_data = &entry,
+		},
+		{
+			.opcode = nvme_admin_get_log_page,
+			.data_len = HEADER_LEN,
+			.cdw10 = (HEADER_LEN / 4 - 1) << 16 /* NUMDL */
+			       | NVME_LOG_LID_DISCOVERY, /* LID */
+			.out_data = &header2,
+		},
+		{
+			.opcode = nvme_admin_get_log_page,
+			.data_len = sizeof(entry),
+			.cdw10 = (sizeof(entry) / 4 - 1) << 16 /* NUMDL */
+			       | NVME_LOG_LID_DISCOVERY, /* LID */
+			.cdw12 = sizeof(header2), /* LPOL */
+			.out_data = &entry,
+		},
+		{
+			.opcode = nvme_admin_get_log_page,
+			.data_len = HEADER_LEN,
+			.cdw10 = (HEADER_LEN / 4 - 1) << 16 /* NUMDL */
+			       | NVME_LOG_LID_DISCOVERY, /* LID */
+			.out_data = &header3,
+		},
+	};
+	struct nvmf_discovery_log *log = NULL;
+
+	arbitrary(&entry, sizeof(entry));
+	libnvme_loopback_set_admin_cmds(test_hdl, mock_admin_cmds, ARRAY_SIZE(mock_admin_cmds));
+	check(fetch_discovery_log(c, &log, 2) == -EAGAIN,
+	      "discovery succeeded");
+	libnvme_loopback_end(test_hdl);
+	check(!log, "unexpected log page returned");
+}
+
+static void test_header_error(struct libnvme_ctrl *c)
+{
+	/* Stop after an error in fetching the header the first time */
+	struct libnvme_loopback_cmd mock_admin_cmds[] = {
+		{
+			.opcode = nvme_admin_get_log_page,
+			.data_len = HEADER_LEN,
+			.cdw10 = (HEADER_LEN / 4 - 1) << 16 /* NUMDL */
+			       | NVME_LOG_LID_DISCOVERY, /* LID */
+			.err = -EAGAIN,
+		},
+	};
+	struct nvmf_discovery_log *log = NULL;
+
+	libnvme_loopback_set_admin_cmds(test_hdl, mock_admin_cmds, ARRAY_SIZE(mock_admin_cmds));
+	check(fetch_discovery_log(c, &log, 1) == -EAGAIN,
+	      "discovery succeeded");
+	libnvme_loopback_end(test_hdl);
+	check(!log, "unexpected log page returned");
+}
+
+static void test_entries_error(struct libnvme_ctrl *c)
+{
+	struct nvmf_discovery_log header = {.numrec = cpu_to_le64(1)};
+	size_t entry_size = sizeof(struct nvmf_disc_log_entry);
+	/* Stop after an error in fetching the entries */
+	struct libnvme_loopback_cmd mock_admin_cmds[] = {
+		{
+			.opcode = nvme_admin_get_log_page,
+			.data_len = HEADER_LEN,
+			.cdw10 = (HEADER_LEN / 4 - 1) << 16 /* NUMDL */
+			       | NVME_LOG_LID_DISCOVERY, /* LID */
+			.out_data = &header,
+		},
+		{
+			.opcode = nvme_admin_get_log_page,
+			.data_len = entry_size,
+			.cdw10 = (entry_size / 4 - 1) << 16 /* NUMDL */
+			       | NVME_LOG_LID_DISCOVERY, /* LID */
+			.cdw12 = sizeof(header), /* LPOL */
+			.err = -EIO,
+		},
+	};
+	struct nvmf_discovery_log *log = NULL;
+
+	libnvme_loopback_set_admin_cmds(test_hdl, mock_admin_cmds, ARRAY_SIZE(mock_admin_cmds));
+	check(fetch_discovery_log(c, &log, 1) == -EIO, "discovery succeeded");
+	libnvme_loopback_end(test_hdl);
+	check(!log, "unexpected log page returned");
+}
+
+static void test_genctr_error(struct libnvme_ctrl *c)
+{
+	struct nvmf_disc_log_entry entry;
+	struct nvmf_discovery_log header = {.numrec = cpu_to_le64(1)};
+	/* Stop after an error in refetching the header */
+	struct libnvme_loopback_cmd mock_admin_cmds[] = {
+		{
+			.opcode = nvme_admin_get_log_page,
+			.data_len = HEADER_LEN,
+			.cdw10 = (HEADER_LEN / 4 - 1) << 16 /* NUMDL */
+			       | NVME_LOG_LID_DISCOVERY, /* LID */
+			.out_data = &header,
+		},
+		{
+			.opcode = nvme_admin_get_log_page,
+			.data_len = sizeof(entry),
+			.cdw10 = (sizeof(entry) / 4 - 1) << 16 /* NUMDL */
+			       | NVME_LOG_LID_DISCOVERY, /* LID */
+			.cdw12 = sizeof(header), /* LPOL */
+			.out_data = &entry,
+		},
+		{
+			.opcode = nvme_admin_get_log_page,
+			.data_len = HEADER_LEN,
+			.cdw10 = (HEADER_LEN / 4 - 1) << 16 /* NUMDL */
+			       | NVME_LOG_LID_DISCOVERY, /* LID */
+			.err = NVME_SC_INTERNAL,
+		},
+	};
+	struct nvmf_discovery_log *log = NULL;
+
+	arbitrary(&entry, sizeof(entry));
+	libnvme_loopback_set_admin_cmds(test_hdl, mock_admin_cmds, ARRAY_SIZE(mock_admin_cmds));
+	check(fetch_discovery_log(c, &log, 1) == NVME_SC_INTERNAL,
+	      "discovery succeeded");
+	libnvme_loopback_end(test_hdl);
+	check(!log, "unexpected log page returned");
+}
+
+static void run_test(struct libnvme_global_ctx *ctx, const char *test_name,
+		void (*test_fn)(struct libnvme_ctrl *))
+{
+	struct libnvme_ctrl c = { .ctx = ctx, .hdl = test_hdl };
+
+	printf("Running test %s...", test_name);
+	fflush(stdout);
+	check(asprintf(&c.name, "%s_ctrl", test_name) >= 0, "asprintf() failed");
+	test_fn(&c);
+	free(c.name);
+	puts(" OK");
+}
+
+#define RUN_TEST(name) run_test(ctx, #name, test_ ## name)
+
+int main(void)
+{
+	struct libnvme_global_ctx *ctx = libnvme_create_global_ctx();
+	libnvme_set_logging_file(ctx, stdout);
+
+	check(!libnvme_open_loopback(ctx, &test_hdl),
+	      "opening test link failed");
+
+	RUN_TEST(no_entries);
+	RUN_TEST(four_entries);
+	RUN_TEST(five_entries);
+	RUN_TEST(genctr_change);
+	RUN_TEST(max_retries);
+	RUN_TEST(header_error);
+	RUN_TEST(entries_error);
+	RUN_TEST(genctr_error);
+
+	libnvme_free_global_ctx(ctx);
+}

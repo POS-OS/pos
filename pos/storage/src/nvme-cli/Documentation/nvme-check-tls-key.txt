@@ -1,0 +1,54 @@
+nvme-check-tls-key(1)
+=====================
+
+NAME
+----
+nvme-check-tls-key - Check a NVMe TLS PSK (deprecated)
+
+SYNOPSIS
+--------
+[verse]
+'nvme' [<global-options>] 'check-tls-key' [--keyring=<name> | -k <name>]
+			[--keytype=<type> | -t <type>]
+			[--hostnqn=<nqn> | -n <nqn>]
+			[--subsysnqn=<nqn> | -c <nqn>]
+			[--keydata=<key> | -d <key>]
+			[--identity=<id-vers> | -I <id-vers>]
+			[--compat | -C]
+
+DESCRIPTION
+-----------
+Deprecated alias for linknvme:nvme-keys-check-tls-psk[1], kept for scripts
+written against nvme-cli versions older than 3.0, with two differences
+from nvme-cli 2.x:
+
+* '--insert'/'-i' and '--keyfile'/'-f' are gone. 2.x used them to derive
+  a TLS PSK and store it in the keyring; the new 'check-tls-psk' never
+  modifies the keyring -- that moved to linknvme:nvme-keys-insert-tls-psk[1].
+
+* The identity is no longer the first line of stdout. 2.x printed it
+  alone; the alias prints 'Configured PSK is valid (HMAC <id>, length
+  <len>)' first and reports the keyring state after it, so a script
+  taking the identity with 'head -1' reads the wrong line. Searching the
+  keyring is itself new, and a keyring that does not exist is reported
+  as a failure: the command exits 1 where 2.x exited 0.
+
+New scripts should use 'nvme keys check-tls-psk' instead. This alias
+prints a deprecation warning on stderr and may be removed in a future
+release.
+
+See linknvme:nvme-keys-check-tls-psk[1] for the full option reference.
+
+include::global-options.txt[]
+
+EXAMPLES
+--------
+No Examples
+
+NVME
+----
+Part of the nvme-user suite
+
+SEE ALSO
+--------
+linknvme:nvme-keys-check-tls-psk[1], linknvme:nvme-keys-insert-tls-psk[1]

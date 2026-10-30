@@ -1,0 +1,104 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+/*
+ * Copyright (c) 2023 Solidigm.
+ *
+ * Authors: leonardo.da.cunha@solidigm.com
+ */
+
+#include <errno.h>
+
+#include <libnvme.h>
+
+#include <ccan/endian/endian.h>
+
+#include "cleanup.h"
+#include "global-ctx.h"
+#include "nvme-print.h"
+#include "plugin.h"
+
+static void free_nsp(struct libnvme_ns **n)
+{
+	libnvme_free_ns(*n);
+}
+
+int sldgm_get_drive_info(int argc, char **argv, struct command *acmd, struct plugin *plugin)
+{
+	const char *desc = "Get drive HW information";
+	const char *FTL_unit_size_str = "FTL_unit_size";
+	__cleanup_nvme_global_ctx struct libnvme_global_ctx *ctx = NULL;
+	__cleanup_nvme_transport_handle struct libnvme_transport_handle *hdl = NULL;
+	nvme_print_flags_t flags;
+	struct libnvme_ctrl *c;
+	/* a namespace scanned on its own isn't part of the tree */
+	__cleanup(free_nsp) struct libnvme_ns *scanned = NULL;
+	struct libnvme_ns *n;
+	struct nvme_id_ns ns = { 0 };
+	__u8 flbaf_inUse;
+	unsigned int lba_size;
+	uint64_t ftl_unit_size;
+	int err;
+
+	OPT_ARGS(opts) = {
+		OPT_END()
+	};
+
+	err = parse_and_open(&ctx, &hdl, argc, argv, desc, opts);
+	if (err)
+		return err;
+
+	flags = nvme_args.output_flags;
+
+	err = libnvme_scan_topology(ctx, NULL, NULL);
+	if (err)
+		return err;
+
+	err = libnvme_scan_ctrl(ctx, libnvme_transport_handle_get_name(hdl), &c);
+	if (!err)
+		n = libnvme_ctrl_first_ns(c);
+	else {
+		err = libnvme_scan_namespace(ctx,
+			libnvme_transport_handle_get_name(hdl), &scanned);
+		if (err) {
+			nvme_show_error("solidigm-vs-drive-info: drive missing namespace");
+			return err;
+		}
+		n = scanned;
+	}
+	if (!n) {
+		nvme_show_error("solidigm-vs-drive-info: no namespace");
+		return -ENODEV;
+	}
+
+	err = libnvme_ns_identify(n, &ns);
+	if (err) {
+		nvme_show_err(err, "identify namespace");
+		return err;
+	}
+
+	if (!(ns.nsfeat & 0x10)) {
+		nvme_show_error("solidigm-vs-drive-info: performance options not available");
+		return -EINVAL;
+	}
+
+	nvme_id_ns_flbas_to_lbaf_inuse(ns.flbas, &flbaf_inUse);
+	lba_size = nvme_lbaf_data_size(ns.lbaf[flbaf_inUse].ds);
+	if (!lba_size) {
+		nvme_show_error("solidigm-vs-drive-info: bad LBA data size");
+		return -EINVAL;
+	}
+	ftl_unit_size = (le16_to_cpu(ns.npwg) + 1ULL) * lba_size / 1024;
+
+	if (flags == JSON) {
+		struct json_object *root = json_create_object();
+
+		json_object_add_value_uint64(root, FTL_unit_size_str,
+					     ftl_unit_size);
+		json_print_object(root, NULL);
+		printf("\n");
+		json_free_object(root);
+	} else {
+		printf("%s: %"PRIu64"\n", FTL_unit_size_str, ftl_unit_size);
+	}
+
+	return err;
+}

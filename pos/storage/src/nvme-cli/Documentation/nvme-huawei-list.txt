@@ -1,0 +1,29 @@
+nvme-list(1)
+============
+
+NAME
+----
+nvme-huawei-list - List all recognized Huawei NVMe devices
+
+SYNOPSIS
+--------
+[verse]
+'nvme' [<global-options>] 'huawei list'
+
+DESCRIPTION
+-----------
+Scan the sysfs tree for NVM Express devices and return the /dev node
+for those Huawei devices as well as some pertinent information about them.
+
+OPTIONS
+-------
+
+include::global-options.txt[]
+
+EXAMPLES
+--------
+No examples yet.
+
+NVME
+----
+Part of the nvme-user suite

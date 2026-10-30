@@ -1,0 +1,10 @@
+===
+API
+===
+
+.. module:: libnvme
+
+This part of the documentation lists the full API reference of all public classes and
+functions.
+
+@API_INCLUDES@

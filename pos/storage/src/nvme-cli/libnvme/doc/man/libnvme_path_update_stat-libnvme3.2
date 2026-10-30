@@ -1,0 +1,15 @@
+.TH "libnvme_path_update_stat" 9 "libnvme_path_update_stat" "September 2026" "libnvme API manual" LINUX
+.SH NAME
+libnvme_path_update_stat \- Update stat of an nvme_path_t object
+.SH SYNOPSIS
+.B "int" libnvme_path_update_stat
+.BI "(struct libnvme_path *p "  ","
+.BI "bool diffstat "  ");"
+.SH ARGUMENTS
+.IP "p" 12
+\fIstruct libnvme_path\fP object
+.IP "diffstat" 12
+If set to true then getters return the diff stat otherwise
+return the current absolute stat
+.SH "RETURN"
+0 on success, negative error code otherwise.

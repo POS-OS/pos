@@ -1,0 +1,48 @@
+nvme-sndk-vs-hw-rev-log(1)
+==========================
+
+NAME
+----
+nvme-sndk-vs-hw-rev-log - Send NVMe sndk vs-hw-rev-log Vendor Unique Command, return result
+
+SYNOPSIS
+--------
+[verse]
+'nvme' [<global-options>] 'sndk vs-hw-rev-log' <device>
+			[--namespace-id=<nsid> | -n <nsid>]
+
+DESCRIPTION
+-----------
+For the NVMe device given, retrieves and formats the Vendor Unique sndk hw revision log page.
+
+The <device> parameter is mandatory and may be either the NVMe character
+device (ex: /dev/nvme0) or block device (ex: /dev/nvme0n1).
+
+This will only work on Sandisk devices supporting this feature.
+Results for any other device are undefined.
+
+On success it returns 0, error code otherwise.
+
+OPTIONS
+-------
+-n <nsid>::
+--namespace-id=<nsid>::
+	Sets the command's nsid value to the given nsid. Defaults to
+	0xffffffff if not given. This option may not affect anything
+	depending on the log page, which may or may not be specific to
+	a namespace.
+	The broadcast value 0xffffffff can also be given as 'all' or '-1'.
+
+include::global-options.txt[]
+
+EXAMPLES
+--------
+* Has the program issue sndk vs-hw-rev-log plugin Command :
++
+------------
+# nvme sndk vs-hw-rev-log /dev/nvme0
+------------
+
+NVME
+----
+Part of the nvme-user suite.

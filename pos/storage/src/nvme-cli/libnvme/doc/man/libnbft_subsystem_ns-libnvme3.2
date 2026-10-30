@@ -1,0 +1,133 @@
+.TH "libnvme" 9 "struct libnbft_subsystem_ns" "September 2026" "API Manual" LINUX
+.SH NAME
+struct libnbft_subsystem_ns \- Subsystem Namespace (SSNS) info
+.SH SYNOPSIS
+struct libnbft_subsystem_ns {
+.br
+.BI "    int index;"
+.br
+.BI "    struct libnbft_discovery *discovery;"
+.br
+.BI "    struct libnbft_security *security;"
+.br
+.BI "    int num_hfis;"
+.br
+.BI "    struct libnbft_hfi **hfis;"
+.br
+.BI "    char transport[8];"
+.br
+.BI "    char traddr[40];"
+.br
+.BI "    char *trsvcid;"
+.br
+.BI "    __u16 subsys_port_id;"
+.br
+.BI "    __u32 nsid;"
+.br
+.BI "    enum libnbft_nid_type nid_type;"
+.br
+.BI "    __u8 *nid;"
+.br
+.BI "    char *subsys_nqn;"
+.br
+.BI "    __u16 trflags;"
+.br
+.BI "    int controller_id;"
+.br
+.BI "    int asqsz;"
+.br
+.BI "    char *dhcp_root_path_string;"
+.br
+.BI "    __u8 naed;"
+.br
+.BI "    __u8 cipeec;"
+.br
+.BI "    __u16 cto;"
+.br
+.BI "    __u8 nceec;"
+.br
+.BI "    __u16 flags;"
+.br
+.BI "
+};
+.br
+
+.SH Members
+.IP "index" 12
+SSNS Descriptor Index in the descriptor list.
+.IP "discovery" 12
+Primary Discovery Controller associated with
+this SSNS Descriptor.
+.IP "security" 12
+Security Profile Descriptor associated with
+this namespace.
+.IP "num_hfis" 12
+Number of HFIs.
+.IP "hfis" 12
+List of HFIs associated with this namespace.
+Includes the primary HFI at the first position
+and all secondary HFIs. This array is null-terminated.
+.IP "transport" 12
+Transport Type string (e.g. 'tcp').
+.IP "traddr" 12
+Subsystem Transport Address.
+.IP "trsvcid" 12
+Subsystem Transport Service Identifier.
+.IP "subsys_port_id" 12
+The Subsystem Port ID.
+.IP "nsid" 12
+The Namespace ID of this descriptor or when \fInid\fP
+should be used instead.
+.IP "nid_type" 12
+Namespace Identifier Type, see \fIenum libnbft_nid_type\fP.
+.IP "nid" 12
+The Namespace Identifier value.
+.IP "subsys_nqn" 12
+Subsystem and Namespace NQN.
+.IP "trflags" 12
+Transport Specific Flags bitmask,
+see \fIenum nbft_ssns_trflags\fP.
+.IP "controller_id" 12
+Controller ID (SSNS Extended Information Descriptor):
+The controller ID associated with the Admin Queue
+or 0 if not supported.
+.IP "asqsz" 12
+Admin Submission Queue Size (SSNS Extended Information
+Descriptor) or 0 if not supported.
+.IP "dhcp_root_path_string" 12
+DHCP Root Path Override string (SSNS Extended
+Information Descriptor).
+.IP "naed" 12
+Namespace Availability Enhanced Diagnostic
+(SSNS Extended Information Descriptor). Provides
+additional status codes from the pre-OS driver when
+the namespace is unavailable.
+See \fIenum nbft_ssns_ext_info_naed\fP for values.
+Zero indicates no additional information.
+Only present in NBFT rev. 1.1+, zero otherwise.
+.IP "cipeec" 12
+Connect Invalid Parameters Extended Error Code
+(SSNS Extended Information Descriptor). Provides
+additional error detail when the pre-OS driver
+received a Connect Invalid Parameters status.
+See \fIenum nbft_ssns_ext_info_cipeec\fP for values.
+Zero indicates no extended error.
+Only present in NBFT rev. 1.1+, zero otherwise.
+.IP "cto" 12
+Connection Timeout in seconds (SSNS Extended
+Information Descriptor). The timeout value used
+by the pre-OS driver for connecting to the object
+specified with this SSNS descriptor. A value of
+0xFFFF indicates that no timeout was specified.
+Zero indicates either a timeout of zero seconds
+or that the field is not present (NBFT rev. 1.0).
+.IP "nceec" 12
+Network and Connection Extended Error Code
+(SSNS Extended Information Descriptor). Provides
+error codes specific to network and connection
+errors encountered by the pre-OS driver.
+See \fIenum nbft_ssns_ext_info_nceec\fP for values.
+Zero indicates no extended error.
+Only present in NBFT rev. 1.1+, zero otherwise.
+.IP "flags" 12
+SSNS Flags bitmask, see \fIenum nbft_ssns_flags\fP.

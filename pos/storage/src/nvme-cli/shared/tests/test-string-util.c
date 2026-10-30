@@ -1,0 +1,392 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
+/*
+ * This file is part of nvme-cli.
+ * Copyright (c) 2026 Dell Technologies Inc. or its subsidiaries.
+ *
+ * Authors: Martin Belanger <martin.belanger@dell.com>
+ */
+
+#include <errno.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include <shared/string-util.h>
+
+static bool check_str(const char *name, const char *got, const char *want)
+{
+	bool eq = (got == want) || (got && want && !strcmp(got, want));
+
+	if (eq) {
+		printf(" - %s [PASS]\n", name);
+		return true;
+	}
+
+	printf(" - %s: got \"%s\", want \"%s\" [FAIL]\n",
+	       name, got ? got : "(null)", want ? want : "(null)");
+	return false;
+}
+
+static bool check_bool(const char *name, bool got, bool want)
+{
+	if (got == want) {
+		printf(" - %s [PASS]\n", name);
+		return true;
+	}
+
+	printf(" - %s: got %d, want %d [FAIL]\n", name, got, want);
+	return false;
+}
+
+static bool test_streq0(void)
+{
+	bool pass = true;
+
+	printf("test_streq0:\n");
+
+	pass &= check_bool("NULL == NULL", shr_streq0(NULL, NULL), true);
+	pass &= check_bool("NULL != non-NULL",
+			    shr_streq0(NULL, "a"), false);
+	pass &= check_bool("non-NULL != NULL",
+			    shr_streq0("a", NULL), false);
+	pass &= check_bool("equal strings", shr_streq0("abc", "abc"), true);
+	pass &= check_bool("different strings",
+			    shr_streq0("abc", "abd"), false);
+	pass &= check_bool("case differs, not equal",
+			    shr_streq0("ABC", "abc"), false);
+
+	return pass;
+}
+
+static bool test_streqcase0(void)
+{
+	bool pass = true;
+
+	printf("test_streqcase0:\n");
+
+	pass &= check_bool("NULL == NULL", shr_streqcase0(NULL, NULL), true);
+	pass &= check_bool("NULL != non-NULL",
+			    shr_streqcase0(NULL, "a"), false);
+	pass &= check_bool("case differs, still equal",
+			    shr_streqcase0("ABC", "abc"), true);
+	pass &= check_bool("different strings",
+			    shr_streqcase0("abc", "abd"), false);
+
+	return pass;
+}
+
+static bool test_xstrdup(void)
+{
+	char input[] = "hello";
+	char *dup;
+	bool pass = true;
+
+	printf("test_xstrdup:\n");
+
+	pass &= check_str("NULL in → NULL out", shr_xstrdup(NULL), NULL);
+
+	dup = shr_xstrdup(input);
+	pass &= check_bool("returns a new allocation, not the input pointer",
+			    dup != NULL && dup != input, true);
+	pass &= check_str("copy has the same content", dup, "hello");
+	free(dup);
+
+	return pass;
+}
+
+static bool test_startswith(void)
+{
+	bool pass = true;
+
+	printf("test_startswith:\n");
+
+	pass &= check_str("matching prefix returns the remainder",
+			   shr_startswith("keyword", "key"), "word");
+	pass &= check_str("exact match returns the empty remainder",
+			   shr_startswith("key", "key"), "");
+	pass &= check_str("non-matching prefix returns NULL",
+			   shr_startswith("value", "key"), NULL);
+	pass &= check_str("empty prefix always matches, full string remains",
+			   shr_startswith("anything", ""), "anything");
+
+	return pass;
+}
+
+static bool test_rtrim(void)
+{
+	char buf1[] = "hello world  ";
+	char buf2[] = "no-padding";
+	char buf3[] = "   ";
+	char buf4[] = "trailing only \t\n";
+	bool pass = true;
+
+	printf("test_rtrim:\n");
+
+	pass &= check_str("trailing whitespace stripped",
+			   shr_rtrim(buf1), "hello world");
+	pass &= check_str("no padding is a no-op",
+			   shr_rtrim(buf2), "no-padding");
+	pass &= check_str("all-whitespace trims to empty", shr_rtrim(buf3), "");
+	pass &= check_str("trailing only", shr_rtrim(buf4), "trailing only");
+
+	return pass;
+}
+
+static bool test_ltrim(void)
+{
+	char buf1[] = "  hello world";
+	char buf2[] = "no-padding";
+	char buf3[] = "   ";
+	char buf4[] = "\t\n leading only";
+	bool pass = true;
+
+	printf("test_ltrim:\n");
+
+	pass &= check_str("leading whitespace skipped",
+			   shr_ltrim(buf1), "hello world");
+	pass &= check_str("no padding is a no-op",
+			   shr_ltrim(buf2), "no-padding");
+	pass &= check_str("all-whitespace skips to empty", shr_ltrim(buf3), "");
+	pass &= check_str("leading only", shr_ltrim(buf4), "leading only");
+
+	return pass;
+}
+
+static bool test_trim(void)
+{
+	char buf1[] = "  hello world  ";
+	char buf2[] = "no-padding";
+	char buf3[] = "   ";
+	char buf4[] = "\t\n leading only";
+	char buf5[] = "trailing only \t\n";
+	bool pass = true;
+
+	printf("test_trim:\n");
+
+	pass &= check_str("both sides trimmed", shr_trim(buf1), "hello world");
+	pass &= check_str("no padding is a no-op",
+			   shr_trim(buf2), "no-padding");
+	pass &= check_str("all-whitespace trims to empty", shr_trim(buf3), "");
+	pass &= check_str("leading whitespace only",
+			   shr_trim(buf4), "leading only");
+	pass &= check_str("trailing whitespace only",
+			   shr_trim(buf5), "trailing only");
+
+	return pass;
+}
+
+static bool test_valid_name(void)
+{
+	bool pass = true;
+
+	printf("test_valid_name:\n");
+
+	pass &= check_bool("alnum + '_' + '-' accepted",
+			    shr_valid_name("Valid_Name-123"), true);
+	pass &= check_bool("NULL rejected", shr_valid_name(NULL), false);
+	pass &= check_bool("empty string rejected", shr_valid_name(""), false);
+	pass &= check_bool("space rejected", shr_valid_name("bad name"), false);
+	pass &= check_bool("'.' rejected", shr_valid_name("bad.name"), false);
+	pass &= check_bool("'/' rejected", shr_valid_name("bad/name"), false);
+
+	return pass;
+}
+
+static bool test_sanitize_name(void)
+{
+	char valid[] = "Valid_Name-123";
+	char traversal[] = "../etc";
+	char mixed[] = "a b.c";
+	bool pass = true;
+
+	printf("test_sanitize_name:\n");
+
+	pass &= check_str("NULL in, NULL out", shr_sanitize_name(NULL), NULL);
+	pass &= check_str("an already valid name is left alone",
+			   shr_sanitize_name(valid), "Valid_Name-123");
+	pass &= check_str("only the rejected characters are replaced",
+			   shr_sanitize_name(traversal), "___etc");
+	pass &= check_str("spaces and dots become '_'",
+			   shr_sanitize_name(mixed), "a_b_c");
+	pass &= check_bool("the result always satisfies shr_valid_name()",
+			    shr_valid_name(mixed), true);
+
+	return pass;
+}
+
+static bool test_kv_strip(void)
+{
+	char buf1[] = "  key = value \x20\n";
+	char buf2[] = "key = value # a trailing comment";
+	char buf3[] = "# a whole-line comment\n";
+	char buf4[] = "\n";
+	char buf5[] = "key=value#nospacecomment";
+	bool pass = true;
+
+	printf("test_kv_strip:\n");
+
+	pass &= check_str("leading/trailing whitespace and newline stripped",
+			   shr_kv_strip(buf1), "key = value");
+	pass &= check_str("trailing comment (with its leading spaces) stripped",
+			   shr_kv_strip(buf2), "key = value");
+	pass &= check_str("whole-line comment strips to empty",
+			   shr_kv_strip(buf3), "");
+	pass &= check_str("blank line strips to empty", shr_kv_strip(buf4), "");
+	pass &= check_str("comment with no preceding space still stripped",
+			   shr_kv_strip(buf5), "key=value");
+
+	return pass;
+}
+
+static bool test_kv_keymatch(void)
+{
+	bool pass = true;
+
+	printf("test_kv_keymatch:\n");
+
+	pass &= check_str("'key = value' matches key, returns value",
+			   shr_kv_keymatch("key = value", "key"), "value");
+	pass &= check_str("'key=value' (no spaces) matches too",
+			   shr_kv_keymatch("key=value", "key"), "value");
+	pass &= check_str("wrong key does not match",
+			   shr_kv_keymatch("otherkey = value", "key"), NULL);
+	pass &= check_str("key as a prefix of a longer word does not match",
+			   shr_kv_keymatch("keyword = value", "key"), NULL);
+
+	return pass;
+}
+
+static bool check_escape(const char *in, const char *want)
+{
+	char *out = shr_escape(in);
+	bool ok = out && !strcmp(out, want);
+
+	printf(" - \"%s\" -> \"%s\" [%s]\n", want, out ? out : "(null)",
+	       ok ? "PASS" : "FAIL");
+	free(out);
+	return ok;
+}
+
+static bool test_escape(void)
+{
+	bool pass = true;
+
+	printf("test_escape:\n");
+
+	pass &= check_escape("plain", "plain");
+	pass &= check_escape("", "");
+	pass &= check_escape("a\033[31mb", "a\\x1b[31mb");
+	pass &= check_escape("tab\there", "tab\\x09here");
+	pass &= check_escape("del\x7f", "del\\x7f");
+	pass &= check_escape("\xc3\xa4", "\xc3\xa4");
+
+	return pass;
+}
+
+static bool check_ret(const char *name, long got, long want)
+{
+	if (got == want) {
+		printf(" - %s [PASS]\n", name);
+		return true;
+	}
+
+	printf(" - %s: got %ld, want %ld [FAIL]\n", name, got, want);
+	return false;
+}
+
+static bool test_strscpy(void)
+{
+	char buf[4] = "xyz";
+	bool pass = true;
+
+	printf("test_strscpy:\n");
+
+	pass &= check_ret("fits", shr_strscpy(buf, "ab", sizeof(buf)), 2);
+	pass &= check_str("fits, copied", buf, "ab");
+	pass &= check_ret("fits exactly",
+			  shr_strscpy(buf, "abc", sizeof(buf)), 3);
+	pass &= check_str("fits exactly, copied", buf, "abc");
+	pass &= check_ret("too long", shr_strscpy(buf, "abcd", sizeof(buf)),
+			  -E2BIG);
+	pass &= check_str("too long, cut off", buf, "abc");
+	pass &= check_ret("empty", shr_strscpy(buf, "", sizeof(buf)), 0);
+	pass &= check_str("empty, copied", buf, "");
+	pass &= check_ret("no room", shr_strscpy(buf, "a", 0), -E2BIG);
+
+	return pass;
+}
+
+static bool test_strscat(void)
+{
+	char buf[6] = "ab";
+	bool pass = true;
+
+	printf("test_strscat:\n");
+
+	pass &= check_ret("fits", shr_strscat(buf, "cd", sizeof(buf)), 4);
+	pass &= check_str("fits, appended", buf, "abcd");
+	pass &= check_ret("too long", shr_strscat(buf, "efg", sizeof(buf)),
+			  -E2BIG);
+	pass &= check_str("too long, cut off", buf, "abcde");
+	pass &= check_ret("full", shr_strscat(buf, "x", sizeof(buf)), -E2BIG);
+	pass &= check_str("full, unchanged", buf, "abcde");
+
+	return pass;
+}
+
+static bool test_snprintf_append(void)
+{
+	char buf[8];
+	size_t len = 0;
+	bool pass = true;
+
+	printf("test_snprintf_append:\n");
+
+	buf[0] = '\0';
+	pass &= check_ret("first",
+			  shr_snprintf_append(buf, sizeof(buf), &len, "%d", 12),
+			  0);
+	pass &= check_ret("second",
+			  shr_snprintf_append(buf, sizeof(buf), &len, "-%s",
+					      "ab"),
+			  0);
+	pass &= check_str("appended", buf, "12-ab");
+	pass &= check_ret("length", len, 5);
+	pass &= check_ret("cut off",
+			  shr_snprintf_append(buf, sizeof(buf), &len, "%s",
+					      "xyz"),
+			  -E2BIG);
+	pass &= check_str("cut off, terminated", buf, "12-abxy");
+	pass &= check_ret("length at the end", len, 7);
+	pass &= check_ret("full",
+			  shr_snprintf_append(buf, sizeof(buf), &len, "z"),
+			  -E2BIG);
+	pass &= check_str("full, unchanged", buf, "12-abxy");
+
+	return pass;
+}
+
+int main(void)
+{
+	bool pass = true;
+
+	pass &= test_streq0();
+	pass &= test_streqcase0();
+	pass &= test_xstrdup();
+	pass &= test_startswith();
+	pass &= test_rtrim();
+	pass &= test_ltrim();
+	pass &= test_trim();
+	pass &= test_valid_name();
+	pass &= test_sanitize_name();
+	pass &= test_kv_strip();
+	pass &= test_kv_keymatch();
+	pass &= test_escape();
+	pass &= test_strscpy();
+	pass &= test_strscat();
+	pass &= test_snprintf_append();
+
+	fflush(stdout);
+	exit(pass ? EXIT_SUCCESS : EXIT_FAILURE);
+}

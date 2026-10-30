@@ -1,0 +1,139 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+#
+# Python unit tests that need no NVMe hardware.  The C equivalents live in
+# ../c/; the CLI-driven tests in ../../cli/; the device tests in ../../e2e/.
+#
+# python3 is found once, in ../../meson.build.
+
+if python3.found()
+    # dump-command-metadata lives in the "utils" plugin and is compiled out
+    # without json-c, so its test only makes sense when both are present.
+    # Tests added here that don't depend on json-c/utils belong outside this
+    # inner guard.
+    if json_c_dep.found() and 'utils' in selected_plugins
+        test(
+            'nvme-cli - command-metadata-schema',
+            python3,
+            args: [
+                files('test_command_metadata_schema.py'),
+                nvme_exe,
+                meson.project_source_root() / 'plugins' / 'utils' / 'command-metadata-schema.json',
+            ],
+            depends: nvme_exe,
+            timeout: 120,
+            suite: 'check',
+        )
+
+        # The global options are one table; the documentation has to list
+        # each of them, also as a key of nvme-cli.conf.
+        test(
+            'nvme-cli - global-options-doc',
+            python3,
+            args: [
+                files('test_global_options_doc.py'),
+                nvme_exe,
+                meson.project_source_root() / 'Documentation',
+            ],
+            depends: nvme_exe,
+            timeout: 60,
+            suite: 'check',
+        )
+
+        # The global options are looked up first, -h is the help; a
+        # command option must use neither, nor a name twice.
+        test(
+            'nvme-cli - option-names',
+            python3,
+            args: [
+                files('test_option_names.py'),
+                nvme_exe,
+            ],
+            depends: nvme_exe,
+            timeout: 60,
+            suite: 'check',
+        )
+    endif
+
+    # Argument handling of the completion generator; needs no nvme binary or
+    # json-c (it feeds a minimal model on stdin), so it lives outside the guard.
+    test(
+        'nvme-cli - generate-completions-args',
+        python3,
+        args: [
+            files('test_generate_completions_args.py'),
+            meson.project_source_root() / 'completions' / 'generate-completions.py',
+        ],
+        timeout: 60,
+        suite: 'check',
+    )
+
+    # The generated completion scripts must not depend on the order commands,
+    # plugins, or options arrive in; this shuffles the committed fixture and
+    # checks each shell's output is byte-identical. Committed inputs, no binary.
+    test(
+        'nvme-cli - generate-completions-stable',
+        python3,
+        args: [
+            files('test_generate_completions_stable.py'),
+            meson.project_source_root() / 'completions' / 'generate-completions.py',
+            meson.project_source_root() / 'completions' / 'test-command-metadata.json',
+        ],
+        timeout: 60,
+        suite: 'check',
+    )
+
+    # Commands, plugins, sub-commands, and options must be listed
+    # alphabetically; this checks each shell's generated output is sorted.
+    # Complements the stability test above. Committed inputs, no binary.
+    test(
+        'nvme-cli - generate-completions-sorted',
+        python3,
+        args: [
+            files('test_generate_completions_sorted.py'),
+            meson.project_source_root() / 'completions' / 'generate-completions.py',
+            meson.project_source_root() / 'completions' / 'test-command-metadata.json',
+        ],
+        timeout: 60,
+        suite: 'check',
+    )
+
+    # The options complete what their type and range in the metadata say.
+    test(
+        'nvme-cli - generate-completions-values',
+        python3,
+        args: [
+            files('test_generate_completions_values.py'),
+            meson.project_source_root() / 'completions' / 'generate-completions.py',
+            meson.project_source_root() / 'completions' / 'test-command-metadata.json',
+        ],
+        timeout: 60,
+        suite: 'check',
+    )
+
+    # The completion test fixture is a hand-written, synthetic metadata model;
+    # validate it against the schema so a schema change the fixture no longer
+    # satisfies is caught. Both inputs are committed, so no binary needed.
+    test(
+        'nvme-cli - completion-fixture-schema',
+        python3,
+        args: [
+            files('test_completion_fixture_schema.py'),
+            meson.project_source_root() / 'completions' / 'test-command-metadata.json',
+            meson.project_source_root() / 'plugins' / 'utils' / 'command-metadata-schema.json',
+        ],
+        timeout: 60,
+        suite: 'check',
+    )
+
+    # Test e2e runner's TAP/JSON generation.
+    test(
+        'nvme-cli-e2e - tap',
+        python3,
+        args: [
+            files('test_e2e_runner_tap.py'),
+            meson.project_source_root() / 'tests' / 'e2e' / 'runner.py',
+        ],
+        timeout: 60,
+        suite: 'unit',
+    )
+endif

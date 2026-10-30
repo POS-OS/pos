@@ -1,0 +1,279 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
+/*
+ * This file is part of nvme-cli.
+ * Copyright (c) 2026 SUSE Software Solutions
+ *
+ * Authors: Daniel Wagner <dwagner@suse.de>
+ */
+
+#include <errno.h>
+#include <locale.h>
+#include <math.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include <ccan/array_size/array_size.h>
+
+#include <shared/suffix-util.h>
+
+static bool check_ret(const char *name, int got, int want)
+{
+	if (got == want) {
+		printf(" - %s [PASS]\n", name);
+		return true;
+	}
+
+	printf(" - %s: got %d, want %d [FAIL]\n", name, got, want);
+	return false;
+}
+
+static bool check_u64(const char *name, uint64_t got, uint64_t want)
+{
+	if (got == want) {
+		printf(" - %s [PASS]\n", name);
+		return true;
+	}
+
+	printf(" - %s: got %llu, want %llu [FAIL]\n",
+	       name, (unsigned long long)got, (unsigned long long)want);
+	return false;
+}
+
+static bool check_str(const char *name, const char *got, const char *want)
+{
+	bool eq = got && !strcmp(got, want);
+
+	if (eq) {
+		printf(" - %s [PASS]\n", name);
+		return true;
+	}
+
+	printf(" - %s: got \"%s\", want \"%s\" [FAIL]\n", name, got ? got : "(null)", want);
+	return false;
+}
+
+struct parse_test {
+	const char *val;
+	uint64_t exp;
+	int ret;
+};
+
+static bool test_suffix_si_parse(void)
+{
+	static const struct parse_test tests[] = {
+		{ "11995709440", 11995709440ULL, 0 },
+		{ "1199570940", 1199570940ULL, 0 },
+		{ "234.567M", 234567000ULL, 0 },
+		{ "1.2k", 1200ULL, 0 },
+		{ "6.14T", 6140000000000ULL, 0 },
+		{ "123.4567k", 123456ULL, 0 },
+		{ "12345.6789101112M", 12345678910ULL, 0 },
+		{ "6.14", 6ULL, 0 },
+		{ "6.14#", 0, -EINVAL },
+		{ "2,33", 0, -EINVAL },
+		{ "3..3", 0, -EINVAL },
+		{ "123.12MM", 0, -EINVAL },
+		{ "800G", 800000000000ULL, 0 },
+		{ "800GG", 0, -EINVAL },
+		{ "800G800", 0, -EINVAL },
+		{ "800.0G", 800000000000ULL, 0 },
+		{ "800.G", 0, -EINVAL },
+		{ "800.", 0, -EINVAL },
+		{ "1.500k", 1500ULL, 0 },
+		{ "1.09k", 1090ULL, 0 },
+		{ "1.05k", 1050ULL, 0 },
+		{ "18E", 18000000000000000000ULL, 0 },
+		{ "19E", 0, -EINVAL },
+		{ "18446744073709551616", 0, -EINVAL },
+		{ "18446744073709551615", 18446744073709551615ULL, 0 },
+		{ "18446744073709551615.9k", 0, -EINVAL },
+		{ "-1k", 0, -EINVAL },
+		{ " 1k", 0, -EINVAL },
+		{ "+1k", 0, -EINVAL },
+		{ "010k", 0, -EINVAL },
+		{ "0.5k", 500ULL, 0 },
+		{ "", 0, -EINVAL },
+	};
+	bool pass = true;
+	unsigned int i;
+
+	printf("test_suffix_si_parse:\n");
+
+	setlocale(LC_NUMERIC, "C");
+
+	for (i = 0; i < sizeof(tests) / sizeof(tests[0]); i++) {
+		char *endptr;
+		uint64_t num = 0;
+		int ret = shr_suffix_si_parse(tests[i].val, &endptr, &num);
+		char desc[64];
+
+		snprintf(desc, sizeof(desc), "\"%s\"", tests[i].val);
+		pass &= check_ret(desc, ret, tests[i].ret);
+		if (ret == 0 && tests[i].ret == 0)
+			pass &= check_u64(desc, num, tests[i].exp);
+	}
+
+	return pass;
+}
+
+static bool test_suffix_si_parse_units(void)
+{
+	static const struct {
+		const char *val;
+		uint64_t align;
+		uint64_t unit;
+		uint64_t exp;
+		int ret;
+	} tests[] = {
+		/* without a suffix, units */
+		{ "1000", 1 << 20, 4096, 1000ULL, 0 },
+		{ "0xfff", 1 << 20, 4096, 0xfffULL, 0 },
+		/* bytes, aligned up, in units */
+		{ "1G", 1 << 20, 4096, 954ULL * (1 << 20) / 4096, 0 },
+		{ "1M", 1 << 20, 512, 2048ULL, 0 },
+		{ "5G", 8ULL << 30, 4096, (8ULL << 30) / 4096, 0 },
+		{ "1k", 0, 512, 1ULL, 0 },
+		{ "1.5k", 0, 1, 1500ULL, 0 },
+		/* the aligned size doesn't fit */
+		{ "18E", 1ULL << 62, 1, 0, -ERANGE },
+		{ "1k", 0, 0, 0, -EINVAL },
+		{ "1x", 0, 1, 0, -EINVAL },
+	};
+	bool pass = true;
+	unsigned int i;
+
+	printf("test_suffix_si_parse_units:\n");
+
+	for (i = 0; i < ARRAY_SIZE(tests); i++) {
+		uint64_t num = 0;
+		char desc[96];
+		int ret;
+
+		ret = shr_suffix_si_parse_units(tests[i].val, tests[i].align,
+						tests[i].unit, &num);
+
+		snprintf(desc, sizeof(desc), "\"%s\" align %llu unit %llu",
+			 tests[i].val, (unsigned long long)tests[i].align,
+			 (unsigned long long)tests[i].unit);
+		pass &= check_ret(desc, ret, tests[i].ret);
+		if (ret == 0 && tests[i].ret == 0)
+			pass &= check_u64(desc, num, tests[i].exp);
+	}
+
+	return pass;
+}
+
+static bool test_suffix_binary_parse(void)
+{
+	static const struct parse_test tests[] = {
+		{ "1234", 1234ULL, 0 },
+		{ "1Ki", 1024ULL, 0 },
+		{ "34Gi", 36507222016ULL, 0 },
+		{ "34.9Ki", 0, -EINVAL },
+		{ "32Gii", 0, -EINVAL },
+		{ "16777215Ti", 16777215ULL << 40, 0 },
+		{ "16777216Ti", 0, -EINVAL },
+		{ "18446744073709551616", 0, -EINVAL },
+		{ "-1Ki", 0, -EINVAL },
+		{ " 1Ki", 0, -EINVAL },
+		{ "010Ki", 0, -EINVAL },
+		{ "0", 0, 0 },
+		{ "1ki", 1024ULL, 0 },
+		{ "", 0, -EINVAL },
+	};
+	bool pass = true;
+	unsigned int i;
+
+	printf("test_suffix_binary_parse:\n");
+
+	for (i = 0; i < sizeof(tests) / sizeof(tests[0]); i++) {
+		char *endptr;
+		uint64_t num = 0;
+		int ret = shr_suffix_binary_parse(tests[i].val, &endptr, &num);
+		char desc[64];
+
+		snprintf(desc, sizeof(desc), "\"%s\"", tests[i].val);
+		pass &= check_ret(desc, ret, tests[i].ret);
+		if (ret == 0 && tests[i].ret == 0)
+			pass &= check_u64(desc, num, tests[i].exp);
+	}
+
+	return pass;
+}
+
+static bool test_suffix_si_get(void)
+{
+	bool pass = true;
+	double val;
+
+	printf("test_suffix_si_get:\n");
+
+	val = 1500.0;
+	pass &= check_str("1500 -> k suffix", shr_suffix_si_get(&val), "k");
+	pass &= check_ret("1500 -> value scaled", (int)(val * 1000), 1500);
+
+	val = 42.0;
+	pass &= check_str("below 1k has no suffix", shr_suffix_si_get(&val), "");
+
+	return pass;
+}
+
+static bool test_suffix_si_get_ld(void)
+{
+	bool pass = true;
+	long double val = 5000000.0L;
+
+	printf("test_suffix_si_get_ld:\n");
+
+	pass &= check_str("5000000 -> M suffix", shr_suffix_si_get_ld(&val), "M");
+	pass &= check_ret("5000000 -> value scaled", (int)val, 5);
+
+	return pass;
+}
+
+static bool test_suffix_binary_get(void)
+{
+	bool pass = true;
+	long long val = 2048;
+
+	printf("test_suffix_binary_get:\n");
+
+	pass &= check_str("2048 -> Ki suffix", shr_suffix_binary_get(&val), "Ki");
+	pass &= check_ret("2048 -> value scaled", (int)val, 2);
+
+	val = 42;
+	pass &= check_str("below 1Ki has no suffix", shr_suffix_binary_get(&val), "");
+
+	return pass;
+}
+
+static bool test_suffix_dbinary_get(void)
+{
+	bool pass = true;
+	double val = 3.0 * (1LL << 20);
+
+	printf("test_suffix_dbinary_get:\n");
+
+	pass &= check_str("3 Mi -> Mi suffix", shr_suffix_dbinary_get(&val), "Mi");
+	pass &= check_ret("3 Mi -> value scaled", (int)val, 3);
+
+	return pass;
+}
+
+int main(void)
+{
+	bool pass = true;
+
+	pass &= test_suffix_si_parse();
+	pass &= test_suffix_si_parse_units();
+	pass &= test_suffix_binary_parse();
+	pass &= test_suffix_si_get();
+	pass &= test_suffix_si_get_ld();
+	pass &= test_suffix_binary_get();
+	pass &= test_suffix_dbinary_get();
+
+	fflush(stdout);
+	exit(pass ? EXIT_SUCCESS : EXIT_FAILURE);
+}

@@ -1,0 +1,40 @@
+nvme-list-secondary(1)
+======================
+
+NAME
+----
+nvme-list-secondary - Show secondary controller list associated with the primary
+controller of the given device (deprecated)
+
+SYNOPSIS
+--------
+[verse]
+'nvme' [<global-options>] 'list-secondary' <device>
+			[--cntid=<cntid> | -c <cntid>]
+			[--num-entries=<entries> | -e <entries>]
+
+DESCRIPTION
+-----------
+Deprecated alias for linknvme:nvme-id-secondary-ctrl-list[1], kept for scripts
+written against nvme-cli versions older than 3.0. Options and behavior
+are identical; only the top-level command name is retained.
+
+New scripts should use 'nvme id secondary-ctrl-list' instead. This alias
+prints a deprecation warning on stderr and may be removed in a future
+release.
+
+See linknvme:nvme-id-secondary-ctrl-list[1] for the full option reference.
+
+include::global-options.txt[]
+
+EXAMPLES
+--------
+No Examples
+
+NVME
+----
+Part of the nvme-user suite
+
+SEE ALSO
+--------
+linknvme:nvme-id-secondary-ctrl-list[1]

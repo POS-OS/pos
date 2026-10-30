@@ -1,0 +1,40 @@
+nvme-nvm-id-ns-lba-format(1)
+============================
+
+NAME
+----
+nvme-nvm-id-ns-lba-format - Send NVMe Identify NVM Command Set specific
+Namespace data structure for specified LBA format, display structure (deprecated)
+
+SYNOPSIS
+--------
+[verse]
+'nvme' [<global-options>] 'nvm-id-ns-lba-format' <device>
+			[--uuid-index=<uuid-index> | -U <uuid_index>]
+			[--lba-format-index=<lba_format_index> | -i <lba_format_index>]
+
+DESCRIPTION
+-----------
+Deprecated alias for linknvme:nvme-id-nvm-ns-lba-format[1], kept for scripts
+written against nvme-cli versions older than 3.0. Options and behavior
+are identical; only the top-level command name is retained.
+
+New scripts should use 'nvme id nvm-ns-lba-format' instead. This alias
+prints a deprecation warning on stderr and may be removed in a future
+release.
+
+See linknvme:nvme-id-nvm-ns-lba-format[1] for the full option reference.
+
+include::global-options.txt[]
+
+EXAMPLES
+--------
+No Examples
+
+NVME
+----
+Part of the nvme-user suite
+
+SEE ALSO
+--------
+linknvme:nvme-id-nvm-ns-lba-format[1]

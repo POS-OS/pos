@@ -1,0 +1,90 @@
+nvme-disconnect(1)
+==================
+
+NAME
+----
+nvme-disconnect - Disconnect one or more Fabrics controller(s).
+
+SYNOPSIS
+--------
+[verse]
+'nvme' [<global-options>] 'disconnect' [--device=<device> | -d <device>]
+			[--exclude | -x]
+			[<fabrics-options>]
+
+DESCRIPTION
+-----------
+Disconnects and removes one or more existing NVMe over Fabrics controllers.
+If the --device option is specified, the controller with that name will be
+removed. If --nqn is given by itself, every controller connected to the
+subsystem identified by subnqn will be removed. If --nqn is combined with
+any of the other fabrics options below (the same ones 'nvme connect'
+accepts, such as --transport, --traddr, --trsvcid, --host-traddr,
+--host-iface, --hostnqn or --hostid), only the controller(s) matching all of
+the specified options are removed -- useful for disambiguating between
+multiple controllers connected to the same subsystem. --device cannot be
+combined with --nqn or any of the other fabrics options.
+
+With --exclude, a matching entry is written to the system-wide NVMe-oF
+exclusion list before the controller (or subsystem) is torn down, so that a
+cooperating orchestrator sees the exclusion in place before the removal event
+fires and does not immediately reconnect. See nvme-exclusion-add(1) and the
+exclusion list overview for details.
+
+OPTIONS
+-------
+-d <device>::
+--device <device>::
+	Indicates that the controller with the specified name should be
+	removed. Cannot be combined with --nqn or any of the fabrics
+	options below.
+
+-x::
+--exclude::
+	Write a matching entry to the 'user' exclusion list before
+	disconnecting, so orchestrators do not auto-reconnect the
+	controller. The entry is built from the controller's transport
+	parameters (or, with a bare --nqn, from the subsystem NQN).
+
+include::fabrics-options.txt[]
+
+include::global-options.txt[]
+
+EXAMPLES
+--------
+* Disconnect all controllers for a subsystem named
+nqn.2014-08.com.example:nvme:nvm-subsystem-sn-d78432:
++
+------------
+# nvme disconnect --nqn=nqn.2014-08.com.example:nvme:nvm-subsystem-sn-d78432
+------------
+
+* Disconnect the controller nvme4
++
+------------
+# nvme disconnect --device=nvme4
+------------
+
+* Disconnect only the tcp controller for a subsystem at a given traddr,
+leaving other controllers of the same subsystem (e.g. over a different
+transport address) connected:
++
+------------
+# nvme disconnect --nqn=nqn.2014-08.com.example:nvme:nvm-subsystem-sn-d78432 \
+                   --transport=tcp --traddr=192.168.1.100
+------------
+
+* Disconnect nvme4 and exclude it so orchestrators do not reconnect it:
++
+------------
+# nvme disconnect --device=nvme4 --exclude
+------------
+
+SEE ALSO
+--------
+nvme-connect(1)
+nvme-exclusion-add(1)
+
+NVME
+----
+Part of the nvme-user suite

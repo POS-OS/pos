@@ -1,0 +1,227 @@
+'\" t
+.\"     Title: nvme-resv-acquire
+.\"    Author: [FIXME: author] [see http://www.docbook.org/tdg5/en/html/author]
+.\" Generator: DocBook XSL Stylesheets vsnapshot <http://docbook.sf.net/>
+.\"      Date: 09/18/2026
+.\"    Manual: NVMe Manual
+.\"    Source: NVMe
+.\"  Language: English
+.\"
+.TH "NVME\-RESV\-ACQUIRE" "1" "09/18/2026" "NVMe" "NVMe Manual"
+.\" -----------------------------------------------------------------
+.\" * Define some portability stuff
+.\" -----------------------------------------------------------------
+.\" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.\" http://bugs.debian.org/507673
+.\" http://lists.gnu.org/archive/html/groff/2009-02/msg00013.html
+.\" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.ie \n(.g .ds Aq \(aq
+.el       .ds Aq '
+.\" -----------------------------------------------------------------
+.\" * set default formatting
+.\" -----------------------------------------------------------------
+.\" disable hyphenation
+.nh
+.\" disable justification (adjust text to left margin only)
+.ad l
+.\" -----------------------------------------------------------------
+.\" * MAIN CONTENT STARTS HERE *
+.\" -----------------------------------------------------------------
+.SH "NAME"
+nvme-resv-acquire \- Acquire an nvme reservation
+.SH "SYNOPSIS"
+.sp
+.nf
+\fInvme\fR [<global\-options>] \fIresv acquire\fR <device>
+                        [\-\-namespace\-id=<nsid> | \-n <nsid>]
+                        [\-\-crkey=<crkey> | \-c <crkey>]
+                        [\-\-prkey=<prkey> | \-p <prkey>]
+                        [\-\-rtype=<rtype> | \-t <rtype>]
+                        [\-\-racqa=<racqa> | \-a <racqa>]
+                        [\-\-iekey | \-i]
+.fi
+.SH "DESCRIPTION"
+.sp
+The Reservation Acquire command is used to acquire a reservation on a namespace, preempt a reservation held on a namespace, and abort a reservation held on a namespace\&.
+.sp
+The bare \fInvme resv\-acquire\fR form (without a space) still works as a deprecated alias and will be removed in a future major version\&. New scripts should use \fInvme resv acquire\fR instead\&.
+.SH "OPTIONS"
+.PP
+\-n <nsid>, \-\-namespace\-id=<nsid>
+.RS 4
+Override the nsid field\&. If using the admin character device, this parameter is required\&.
+.RE
+.PP
+\-c <crkey>, \-\-crkey=<crkey>
+.RS 4
+Current Reservation Key: The field specifies the current reservation key associated with the host\&. If the IEKEY bit is set to \(oq1\(cq in the command, then the CRKEY check succeeds regardless of the value in this field\&.
+.RE
+.PP
+\-p <prkey>, \-\-prkey=<prkey>
+.RS 4
+Preempt Reservation Key: If the Reservation Acquire Action is set to 001b (i\&.e\&., Preempt) or 010b (i\&.e\&., Preempt and Abort), then this field specifies the reservation key to be unregistered from the namespace\&. For all other Reservation Acquire Action values, this field is reserved\&.
+.RE
+.PP
+\-t <rtype>, \-\-rtype=<rtype>
+.RS 4
+Reservation Type: This field specifies the type of reservation to be created\&.
+.TS
+allbox tab(:);
+lt lt
+lt lt
+lt lt
+lt lt
+lt lt
+lt lt
+lt lt
+lt lt
+lt lt.
+T{
+Value
+T}:T{
+Definition
+T}
+T{
+0h
+T}:T{
+Reserved
+T}
+T{
+1h
+T}:T{
+Write Exclusive Reservation
+T}
+T{
+2h
+T}:T{
+Exclusive Access Reservation
+T}
+T{
+3h
+T}:T{
+Write Exclusive \- Registrants Only Reservation
+T}
+T{
+4h
+T}:T{
+Exclusive Access \- Registrants Only Reservation
+T}
+T{
+5h
+T}:T{
+Write Exclusive \- All Registrants Reservation
+T}
+T{
+6h
+T}:T{
+Exclusive Access \- All Registrants Reservation
+T}
+T{
+07h\-FFh
+T}:T{
+Reserved
+T}
+.TE
+.sp 1
+.RE
+.PP
+\-a <racqa>, \-\-racqa=<racqa>
+.RS 4
+Reservation Acquire Action: This field specifies the action that is performed by the command\&.
+.TS
+allbox tab(:);
+lt lt
+lt lt
+lt lt
+lt lt
+lt lt.
+T{
+Value
+T}:T{
+Definition
+T}
+T{
+0
+T}:T{
+Acquire
+T}
+T{
+1
+T}:T{
+Preempt
+T}
+T{
+2
+T}:T{
+Preempt and Abort
+T}
+T{
+3\-7
+T}:T{
+Reserved
+T}
+.TE
+.sp 1
+.RE
+.PP
+\-i, \-\-iekey
+.RS 4
+Ignore Existing Key: If this bit is set to a
+\fI1\fR, then the Current Reservation Key (CRKEY) check is disabled and the command shall succeed regardless of the CRKEY field value\&.
+.sp
+Indicator option, defaults to
+\fI0\fR\&.
+.RE
+.SH "GLOBAL OPTIONS"
+.sp
+The following options are defined at the top\-level nvme command and are available to this subcommand:
+.PP
+\-\-dry\-run
+.RS 4
+Print the command that would be executed, but do not actually execute it\&.
+.RE
+.PP
+\-\-no\-ioctl\-probing
+.RS 4
+Disable probing for 64\-bit IOCTL support\&.
+.RE
+.PP
+\-\-no\-retries
+.RS 4
+Disable retry logic on transient errors\&.
+.RE
+.PP
+\-o <fmt>, \-\-output\-format=<fmt>
+.RS 4
+Set the reporting format to
+\fInormal\fR,
+\fItabular, \*(Aqjson\fR, or
+\fIbinary\fR\&. Only one output format may be used at a time\&.
+.RE
+.PP
+\-\-output\-format\-version=<version>
+.RS 4
+Select the output format version\&. Version
+\fI1\fR
+uses the original field naming, while version
+\fI2\fR
+(default) provides more consistent and script\-friendly field names\&.
+.RE
+.PP
+\-\-timeout=<ms>
+.RS 4
+Set the timeout for the command in milliseconds\&.
+.RE
+.PP
+\-v, \-\-verbose
+.RS 4
+Increase the level of detail in the output\&. May be specified multiple times to further increase verbosity\&.
+.RE
+.sp
+These options can also be set as machine\-wide defaults in nvme\-cli\&.conf(5)\&. A command\-line flag always overrides the file\&.
+.SH "EXAMPLES"
+.sp
+No examples yet
+.SH "NVME"
+.sp
+Part of the nvme\-user suite

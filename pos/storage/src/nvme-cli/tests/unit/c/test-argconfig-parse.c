@@ -1,0 +1,1305 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+
+#include <errno.h>
+#include <locale.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+
+#include <ccan/array_size/array_size.h>
+#include <shared/fs-util.h>
+#include <shared/parse-util.h>
+
+#include "../src/argconfig.h"
+#include "../src/cleanup.h"
+
+const char *libnvme_strerror(int errnum);
+
+static int test_rc;
+
+union val {
+	bool flag;
+	__u64 suffix;
+	__u32 uint;
+	int int_val;
+	__u64 long_val;
+	double double_val;
+	__u8 byte;
+	__u16 shrt;
+	int incr;
+	char *string;
+	char *fmt;
+	char *file;
+	char *dir;
+	char *list;
+	char *str;
+	__u8 val;
+};
+
+/* Distinct from NULL so we can tell "not parsed at all" apart from
+ * "parsed as --optstr with no attached value" (which sets it to NULL).
+ */
+static char optstr_unset[] = "unset";
+
+struct toval_test {
+	char *arg;
+	void *val;
+	union val exp;
+	int size;
+	int ret;
+};
+
+static void check_val(const char *arg, void *exp, void *val, int size)
+{
+	if ((size && !memcmp(exp, val, size)) ||
+	    (!size && !strcmp(*(char **)exp, *(char **)val)))
+		return;
+
+	switch (size) {
+	case 0:
+		printf("ERROR: printing {%s}, got '%s', expected '%s'\n",
+		       arg, *(char **)val, *(char **)exp);
+		break;
+	default:
+		printf("ERROR: printing {%s}, got '%llu', expected '%llu'\n",
+		       arg, *(unsigned long long *)val, *(unsigned long long *)exp);
+		break;
+	}
+
+	test_rc = 1;
+}
+
+struct cfg {
+	bool flag;
+	__u64 suffix;
+	__u32 uint;
+	int int_val;
+	__u64 long_val;
+	double double_val;
+	__u8 byte;
+	__u16 shrt;
+	int incr;
+	char *string;
+	char *fmt;
+	char *file;
+	char *dir;
+	char *list;
+	char *str;
+	__u8 val;
+	char *optstr;
+};
+
+static struct cfg cfg;
+
+#define VAL_TEST(a, c, v, l, r) \
+	{ a, &cfg.c, { .c = v }, l ? sizeof(cfg.c) : 0, r }
+
+static struct toval_test toval_tests[] = {
+	VAL_TEST("--flag", flag, true, true, 0),
+	VAL_TEST("--flag=1", flag, false, true, -EINVAL),
+	VAL_TEST("--suffix=0", suffix, 0, true, 0),
+	VAL_TEST("--suffix=1", suffix, 1, true, 0),
+	VAL_TEST("--suffix=1234", suffix, 1234, true, 0),
+	VAL_TEST("--suffix=4096", suffix, 4096, true, 0),
+	VAL_TEST("--suffix=1Ki", suffix, 1024, true, 0),
+	VAL_TEST("--suffix=34Gi", suffix, 36507222016, true, 0),
+	VAL_TEST("--suffix=34.9Ki", suffix, 0, true, -EINVAL),
+	VAL_TEST("--suffix=32Gii", suffix, 0, true, -EINVAL),
+	VAL_TEST("--uint=1", uint, 1, true, 0),
+	VAL_TEST("--uint=4294967295", uint, 4294967295, true, 0),
+	/* no octal: a leading 0 is rejected, 0 and 0x are fine */
+	VAL_TEST("--uint=010", uint, 0, true, -EINVAL),
+	VAL_TEST("--uint=0", uint, 0, true, 0),
+	VAL_TEST("--uint=0x10", uint, 16, true, 0),
+	VAL_TEST("--int=-010", int_val, 0, true, -EINVAL),
+	VAL_TEST("--suffix=010Ki", suffix, 0, true, -EINVAL),
+	VAL_TEST("--uint=4294967296", uint, 0, true, -EINVAL),
+	/* unsigned options reject negative numbers, signed ones don't */
+	VAL_TEST("--uint=-1", uint, 0, true, -EINVAL),
+	VAL_TEST("--uint= -1", uint, 0, true, -EINVAL),
+	VAL_TEST("--byte=-1", byte, 0, true, -EINVAL),
+	VAL_TEST("--shrt=-1", shrt, 0, true, -EINVAL),
+	VAL_TEST("--long=-1", long_val, 0, true, -EINVAL),
+	VAL_TEST("--suffix=-1", suffix, 0, true, -EINVAL),
+	VAL_TEST("--uint=10s", uint, 0, true, -EINVAL),
+	VAL_TEST("--uint=1 ", uint, 0, true, -EINVAL),
+	VAL_TEST("--byte=1x", byte, 0, true, -EINVAL),
+	VAL_TEST("--shrt=0x10g", shrt, 0, true, -EINVAL),
+	VAL_TEST("--long=5k", long_val, 0, true, -EINVAL),
+	VAL_TEST("--int=1x", int_val, 0, true, -EINVAL),
+	VAL_TEST("--double=1.5x", double_val, 0, true, -EINVAL),
+	VAL_TEST("--double=1.5", double_val, 1.5, true, 0),
+	VAL_TEST("--int=4294967296", int_val, 0, true, -EINVAL),
+	VAL_TEST("--int=-2147483649", int_val, 0, true, -EINVAL),
+	VAL_TEST("--int=-2147483648", int_val, INT32_MIN, true, 0),
+	VAL_TEST("--int= 1", int_val, 0, true, -EINVAL),
+	VAL_TEST("--uint= 1", uint, 0, true, -EINVAL),
+	VAL_TEST("--uint=+1", uint, 0, true, -EINVAL),
+	VAL_TEST("--double=nan", double_val, 0, true, -EINVAL),
+	VAL_TEST("--double=inf", double_val, 0, true, -EINVAL),
+	VAL_TEST("--double=1e999", double_val, 0, true, -EINVAL),
+	VAL_TEST("--double= 1", double_val, 0, true, -EINVAL),
+	VAL_TEST("--val=12x", val, 0, true, -EINVAL),
+	VAL_TEST("--int=-1", int_val, -1, true, 0),
+	VAL_TEST("--int=1", int_val, 1, true, 0),
+	VAL_TEST("--long=1", long_val, 1, true, 0),
+	VAL_TEST("--long=0x123456789abcdef0", long_val, 0x123456789abcdef0,
+		 true, 0),
+	VAL_TEST("--double=1", double_val, 1, true, 0),
+	VAL_TEST("--byte=1", byte, 1, true, 0),
+	VAL_TEST("--byte=256", byte, 0, true, -EINVAL),
+	VAL_TEST("--shrt=1", shrt, 1, true, 0),
+	VAL_TEST("--incr", incr, 1, true, 0),
+	VAL_TEST("--incr=1", incr, 0, true, -EINVAL),
+	VAL_TEST("--string=string", string, "string", false, 0),
+	VAL_TEST("--fmt=fmt", fmt, "fmt", false, 0),
+	VAL_TEST("--file=file", file, "file", false, 0),
+	VAL_TEST("--dir=dir", dir, "dir", false, 0),
+	VAL_TEST("--file", file, NULL, false, -EINVAL),
+	VAL_TEST("--list=list", list, "list", false, 0),
+	VAL_TEST("--str=str", str, "str", false, 0),
+	VAL_TEST("--val=", val, 0, true, -EINVAL),
+	VAL_TEST("--val=o", val, 1, true, 0),
+	VAL_TEST("--val=t", val, 0, true, -EINVAL),
+	VAL_TEST("--val=tw", val, 2, true, 0),
+	VAL_TEST("--val=two", val, 2, true, 0),
+	VAL_TEST("--val=twoo", val, 0, true, -EINVAL),
+	VAL_TEST("--val=th", val, 3, true, 0),
+	VAL_TEST("--val=three", val, 3, true, 0),
+	VAL_TEST("--val=threed", val, 0, true, -EINVAL),
+	VAL_TEST("--val=123", val, 123, true, 0),
+	VAL_TEST("--val=1234", val, 0, true, -EINVAL),
+
+	/* Short-option forms: the CLI accepts these interchangeably with
+	 * the long forms exercised above.
+	 */
+	VAL_TEST("-f", flag, true, true, 0),
+	VAL_TEST("-s1234", suffix, 1234, true, 0),
+	VAL_TEST("-u42", uint, 42, true, 0),
+	VAL_TEST("-b7", byte, 7, true, 0),
+	VAL_TEST("-tstr", string, "str", false, 0),
+
+	/* Help requests short-circuit parsing and return ARGCONFIG_HELP so
+	 * the caller doesn't proceed as if real options were parsed.
+	 */
+	{ "--help", &cfg.flag, { .flag = false }, 0, ARGCONFIG_HELP },
+	{ "-h", &cfg.flag, { .flag = false }, 0, ARGCONFIG_HELP },
+	{ "-?", &cfg.flag, { .flag = false }, 0, ARGCONFIG_HELP },
+
+	/* required_argument option with no value attached and no further
+	 * argv token to supply one.
+	 */
+	{ "--suffix", &cfg.suffix, { .suffix = 0 }, 0, -EINVAL },
+
+	/* Unrecognized long option. */
+	{ "--bogus", &cfg.flag, { .flag = false }, 0, -EINVAL },
+
+	/*
+	 * Long options need two dashes and their full name: "-flag" is
+	 * the short options -f -l with "ag" as value of -l, which is not a
+	 * number.
+	 */
+	{ "--fla", &cfg.flag, { .flag = false }, 0, -EINVAL },
+	{ "--stri=x", &cfg.string, { .string = NULL }, 0, -EINVAL },
+	{ "-flag", &cfg.flag, { .flag = false }, 0, -EINVAL },
+	{ "-string=x", &cfg.string, { .string = NULL }, 0, -EINVAL },
+	/* An exact name wins over a longer name it is a prefix of. */
+	VAL_TEST("--str=exact", str, "exact", false, 0),
+};
+
+void toval_test(struct toval_test *test)
+{
+	const char *desc = "Test argconfig parse";
+	int ret;
+	char *argv[] = { "test-argconfig", test->arg };
+
+	OPT_VALS(opt_vals) = {
+		VAL_BYTE("one", 1),
+		VAL_BYTE("two", 2),
+		VAL_BYTE("three", 3),
+		VAL_END()
+	};
+
+	OPT_ARGS(opts) = {
+		OPT_FLAG("flag",'f', &cfg.flag, "flag"),
+		OPT_SUFFIX("suffix", 's', &cfg.suffix, "suffix"),
+		OPT_UINT("uint", 'u', &cfg.uint, "uint"),
+		OPT_INT("int", 'i', &cfg.int_val, "int"),
+		OPT_LONG("long", 'l', &cfg.long_val, "long"),
+		OPT_DOUBLE("double", 'd', &cfg.double_val, "double"),
+		OPT_BYTE("byte", 'b', &cfg.byte, "byte"),
+		OPT_SHRT("shrt", 'S', &cfg.shrt, "shrt"),
+		OPT_INCR("incr", 'I', &cfg.incr, "incr"),
+		OPT_STRING("string", 't', "STRING", &cfg.string, "string"),
+		OPT_FMT("fmt", 'F', &cfg.fmt, "fmt"),
+		OPT_FILE("file", 'L', &cfg.file, "file"),
+		OPT_DIR("dir", 'D', &cfg.dir, "dir"),
+		OPT_LIST("list", 'T', &cfg.list, "list"),
+		OPT_STR("str", 'r', &cfg.str, "str"),
+		OPT_BYTE("val", 'v', &cfg.val, "val", opt_vals),
+		OPT_END()
+	};
+
+	ret = argconfig_parse(2, argv, desc, opts);
+	if (ret != test->ret) {
+		printf("ERROR: converting {%s} failed\n", test->arg);
+		test_rc = 1;
+		return;
+	}
+	if (ret)
+		return;
+
+	check_val(test->arg, &test->exp, test->val, test->size);
+}
+
+/*
+ * OPT_STRING_OPTIONAL is the one type where the CLI must distinguish three
+ * outcomes: the flag never appeared, appeared with "--optstr=value", or
+ * appeared bare as "--optstr" (optarg is NULL, per getopt_long_only rules).
+ */
+static void optional_string_test(void)
+{
+	const char *desc = "Test optional string argument";
+	int ret;
+
+	OPT_ARGS(opts) = {
+		OPT_STRING_OPTIONAL("optstr", 'O', "STR", &cfg.optstr, "optional string"),
+		OPT_END()
+	};
+
+	{
+		char *argv[] = { "test-argconfig" };
+
+		cfg.optstr = optstr_unset;
+		ret = argconfig_parse(1, argv, desc, opts);
+		if (ret || cfg.optstr != optstr_unset) {
+			printf("ERROR: optional string: omitted flag was touched\n");
+			test_rc = 1;
+		}
+	}
+
+	{
+		char *argv[] = { "test-argconfig", "--optstr=given" };
+
+		cfg.optstr = optstr_unset;
+		ret = argconfig_parse(2, argv, desc, opts);
+		if (ret || !cfg.optstr || strcmp(cfg.optstr, "given")) {
+			printf("ERROR: optional string: '--optstr=given' not applied\n");
+			test_rc = 1;
+		}
+	}
+
+	{
+		char *argv[] = { "test-argconfig", "--optstr" };
+
+		cfg.optstr = optstr_unset;
+		ret = argconfig_parse(2, argv, desc, opts);
+		if (ret || cfg.optstr) {
+			printf("ERROR: optional string: bare '--optstr' should set NULL\n");
+			test_rc = 1;
+		}
+	}
+}
+
+/*
+ * Real command lines pass several options together; the per-option tests
+ * above each parse exactly one token, so exercise a realistic multi-flag
+ * invocation here, mixed with an OPT_GROUP() separator (as real commands
+ * do) and a check of argconfig_given(), the public "was this option
+ * given" query used throughout the plugins.
+ */
+static void combined_opts_test(void)
+{
+	const char *desc = "Test combined options";
+	char *argv[] = { "test-argconfig", "--flag", "--suffix=42", "--uint=7" };
+	int ret;
+
+	cfg.flag = false;
+	cfg.suffix = 0;
+	cfg.uint = 0;
+	cfg.int_val = -1;
+
+	OPT_ARGS(opts) = {
+		OPT_GROUP("Options"),
+		OPT_FLAG("flag", 'f', &cfg.flag, "flag"),
+		OPT_SUFFIX("suffix", 's', &cfg.suffix, "suffix"),
+		OPT_UINT("uint", 'u', &cfg.uint, "uint"),
+		OPT_INT("int", 'i', &cfg.int_val, "int"),
+		OPT_END()
+	};
+
+	ret = argconfig_parse(ARRAY_SIZE(argv), argv, desc, opts);
+	if (ret) {
+		printf("ERROR: combined options: parse failed: %d\n", ret);
+		test_rc = 1;
+		return;
+	}
+
+	if (!cfg.flag || cfg.suffix != 42 || cfg.uint != 7 || cfg.int_val != -1) {
+		printf("ERROR: combined options: values not all applied correctly\n");
+		test_rc = 1;
+	}
+
+	if (!argconfig_given(opts, &cfg.flag) ||
+	    !argconfig_given(opts, &cfg.suffix) ||
+	    !argconfig_given(opts, &cfg.uint) ||
+	    argconfig_given(opts, &cfg.int_val)) {
+		printf("ERROR: combined options: argconfig_given() mismatch\n");
+		test_rc = 1;
+	}
+}
+
+/* Number of arguments in a NULL terminated argument vector */
+static int argv_len(char **argv)
+{
+	int argc = 0;
+
+	while (argv[argc])
+		argc++;
+
+	return argc;
+}
+
+/*
+ * The non-option arguments are available through argconfig_operand(), in
+ * the order they were given, wherever they appear between the options.
+ */
+static void operands_test(void)
+{
+	const char *desc = "Test operands";
+	char **argv = (char *[]){ "test-argconfig", "dev0", "--flag", "dev1",
+				  "--uint", "3", "dev2", "--", "--flag",
+				  NULL };
+	int ret;
+
+	OPT_ARGS(opts) = {
+		OPT_FLAG("flag", 'f', &cfg.flag, "flag"),
+		OPT_UINT("uint", 'u', &cfg.uint, "uint"),
+		OPT_END()
+	};
+
+	ret = argconfig_parse(argv_len(argv), argv, desc, opts);
+	if (ret || argconfig_nr_operands() != 4 ||
+	    strcmp(argconfig_operand(0), "dev0") ||
+	    strcmp(argconfig_operand(1), "dev1") ||
+	    strcmp(argconfig_operand(2), "dev2") ||
+	    strcmp(argconfig_operand(3), "--flag") ||
+	    argconfig_operand(4) || argconfig_operand(-1)) {
+		printf("ERROR: operands: unexpected operands\n");
+		test_rc = 1;
+	}
+
+	{
+		char **bad = (char *[]){ "test-argconfig", "dev0", "--bogus",
+					 NULL };
+
+		ret = argconfig_parse(argv_len(bad), bad, desc, opts);
+		if (!ret || argconfig_nr_operands()) {
+			printf("ERROR: operands: kept after a failed parse\n");
+			test_rc = 1;
+		}
+	}
+}
+
+/*
+ * Options registered with argconfig_set_global_options() are accepted by
+ * every command and take precedence over its options of the same name.
+ * Their seen flags are kept across parses: the global options may already
+ * have been given before the command name.
+ */
+static void global_options_test(void)
+{
+	const char *desc = "Test global options";
+	int verbose = 0;
+	bool dry_run = false;
+	char *format = NULL;
+	int argind, ret;
+
+	OPT_ARGS(globals) = {
+		OPT_INCR("verbose", 'v', &verbose, "verbose"),
+		OPT_FLAG("dry-run", 'd', &dry_run, "dry run"),
+		OPT_FMT("output-format", 'o', &format, "format"),
+		OPT_END()
+	};
+	OPT_ARGS(opts) = {
+		OPT_FLAG("flag", 'f', &cfg.flag, "flag"),
+		/* -d is the global --dry-run */
+		OPT_UINT("uint", 'd', &cfg.uint, "uint"),
+		OPT_END()
+	};
+	OPT_ARGS(local) = {
+		OPT_FLAG("flag", 'f', &cfg.flag, "flag"),
+		OPT_END()
+	};
+
+	argconfig_set_global_options(globals);
+
+	{
+		char **argv = (char *[]){ "prog", "-v", "list", NULL };
+
+		ret = argconfig_parse_global(argv_len(argv), argv, local,
+					     &argind);
+		if (ret || argind != 2 || verbose != 1) {
+			printf("ERROR: global options: global parse failed\n");
+			test_rc = 1;
+		}
+	}
+
+	{
+		char **argv = (char *[]){ "list", "-f", "--verbose", "-d",
+					  "--uint=7", "-o", "json", "dev",
+					  NULL };
+
+		cfg.flag = false;
+		cfg.uint = 0;
+		ret = argconfig_parse(argv_len(argv), argv, desc, opts);
+		if (ret || !cfg.flag || cfg.uint != 7 || verbose != 2 ||
+		    !dry_run || !format || strcmp(format, "json") ||
+		    argconfig_nr_operands() != 1) {
+			printf("ERROR: global options: command parse failed\n");
+			test_rc = 1;
+		}
+		if (!argconfig_given(opts, &format) ||
+		    !argconfig_given(opts, &verbose) ||
+		    !argconfig_given(opts, &dry_run)) {
+			printf("ERROR: global options: seen mismatch\n");
+			test_rc = 1;
+		}
+	}
+
+	{
+		/* a later parse keeps the seen flags of the global options */
+		char **argv = (char *[]){ "list", "--dry-run", NULL };
+
+		ret = argconfig_parse(argv_len(argv), argv, desc, local);
+		if (ret || !dry_run ||
+		    !argconfig_given(local, &format) ||
+		    !argconfig_given(local, &dry_run)) {
+			printf("ERROR: global options: seen not kept\n");
+			test_rc = 1;
+		}
+	}
+
+	argconfig_set_global_options(NULL);
+}
+
+/*
+ * A table includes another one: its options are found, reset for each
+ * parse and given like the own ones.
+ */
+static void include_test(void)
+{
+	const char *desc = "Test include";
+	static bool shared_flag;
+	static __u32 shared_uint;
+	static struct argconfig_commandline_options shared[] = {
+		OPT_FLAG("shared-flag", 'S', &shared_flag, "shared flag"),
+		OPT_UINT("shared-uint", 0, &shared_uint, "shared uint"),
+		OPT_END()
+	};
+	bool own = false;
+	int ret;
+
+	OPT_ARGS(opts) = {
+		OPT_INCLUDE(shared, "Shared options"),
+		OPT_FLAG("own", 'o', &own, "own flag"),
+		OPT_END()
+	};
+
+	{
+		char *argv[5] = { "prog", "-S", "--shared-uint=3", "-o", NULL };
+
+		ret = argconfig_parse(4, argv, desc, opts);
+		if (ret || !shared_flag || shared_uint != 3 || !own ||
+		    !argconfig_given(opts, &shared_flag) ||
+		    !argconfig_given(opts, &shared_uint)) {
+			printf("ERROR: include: options not applied\n");
+			test_rc = 1;
+		}
+	}
+
+	{
+		/* a later parse starts over with the included options */
+		char *argv[2] = { "prog", NULL };
+
+		ret = argconfig_parse(1, argv, desc, opts);
+		if (ret || argconfig_given(opts, &shared_flag) ||
+		    argconfig_given(opts, &shared_uint)) {
+			printf("ERROR: include: seen not reset\n");
+			test_rc = 1;
+		}
+	}
+
+	{
+		char *argv[3] = { "prog", "--bogus", NULL };
+
+		ret = argconfig_parse(2, argv, desc, opts);
+		if (ret != -EINVAL) {
+			printf("ERROR: include: unknown option accepted\n");
+			test_rc = 1;
+		}
+	}
+}
+
+/* A double takes a decimal point in any locale */
+static void double_locale_test(void)
+{
+	const char *desc = "Test double";
+	char *argv[3] = { "prog", "--d=1.5", NULL };
+	double d = 0;
+	int ret;
+
+	OPT_ARGS(opts) = {
+		OPT_DOUBLE("d", 0, &d, "double"),
+		OPT_END()
+	};
+
+	if (!setlocale(LC_NUMERIC, "de_DE.UTF-8"))
+		return;	/* not installed */
+
+	ret = argconfig_parse(2, argv, desc, opts);
+	if (ret || d != 1.5) {
+		printf("ERROR: double: '1.5' in de_DE gave %d/%f\n", ret, d);
+		test_rc = 1;
+	}
+	setlocale(LC_NUMERIC, "C");
+}
+
+/* An empty value names nothing, even with a single name */
+static void empty_name_test(void)
+{
+	const char *desc = "Test empty name";
+	struct argconfig_opt_val only[] = {
+		VAL_ENUM("only", 7),
+		VAL_END()
+	};
+	char *argv[3] = { "prog", "--e=", NULL };
+	int e = 0, ret;
+
+	OPT_ARGS(opts) = {
+		OPT_ENUM("e", 0, &e, "enum", only),
+		OPT_END()
+	};
+
+	ret = argconfig_parse(2, argv, desc, opts);
+	if (ret != -EINVAL || e) {
+		printf("ERROR: empty name: gave %d/%d\n", ret, e);
+		test_rc = 1;
+	}
+}
+
+/* A template table bound to another struct stores into that one */
+static void bind_test(void)
+{
+	const char *desc = "Test bind";
+	struct pair {
+		bool flag;
+		__u32 uint;
+	};
+	static struct pair tmpl_pair;
+	static struct argconfig_commandline_options tmpl[] = {
+		OPT_FLAG("flag", 'f', &tmpl_pair.flag, "flag"),
+		OPT_UINT("uint", 'u', &tmpl_pair.uint, "uint"),
+		OPT_END()
+	};
+	struct pair local = { 0 };
+	struct argconfig_commandline_options *bound;
+	char *argv[4] = { "prog", "-f", "--uint=5", NULL };
+	int ret;
+
+	bound = argconfig_bind(tmpl, &tmpl_pair, sizeof(tmpl_pair), &local);
+	if (!bound) {
+		printf("ERROR: bind: no table\n");
+		test_rc = 1;
+		return;
+	}
+
+	{
+		OPT_ARGS(opts) = {
+			OPT_INCLUDE(bound, "Bound options"),
+			OPT_END()
+		};
+
+		ret = argconfig_parse(3, argv, desc, opts);
+		if (ret || !local.flag || local.uint != 5 ||
+		    tmpl_pair.flag || tmpl_pair.uint ||
+		    !argconfig_given(opts, &local.uint)) {
+			printf("ERROR: bind: values not in the bound struct\n");
+			test_rc = 1;
+		}
+	}
+	free(bound);
+}
+
+/* An enum takes only its names, in any case and as a unique prefix */
+static void enum_test(void)
+{
+	const char *desc = "Test enum";
+	struct argconfig_opt_val names[] = {
+		VAL_ENUM("host", 1),
+		VAL_ENUM("controller", 2),
+		VAL_ENUM("ctrl-init", 3),
+		VAL_END()
+	};
+	static const struct {
+		const char *arg;
+		int ret;
+		int val;
+	} tests[] = {
+		{ "--type=host", 0, 1 },
+		{ "--type=HOST", 0, 1 },
+		{ "--type=controller", 0, 2 },
+		{ "--type=ctrl-", 0, 3 },
+		{ "--type=c", -EINVAL, 0 },
+		{ "--type=1", -EINVAL, 0 },
+		{ "--type=bogus", -EINVAL, 0 },
+	};
+	unsigned int i;
+	int type, ret;
+
+	OPT_ARGS(opts) = {
+		OPT_ENUM("type", 't', &type, "type", names),
+		OPT_END()
+	};
+
+	for (i = 0; i < ARRAY_SIZE(tests); i++) {
+		char *argv[3] = { "prog", (char *)tests[i].arg, NULL };
+
+		type = 0;
+		ret = argconfig_parse(2, argv, desc, opts);
+		if (ret != tests[i].ret || type != tests[i].val) {
+			printf("ERROR: enum: {%s} gave %d/%d\n", tests[i].arg,
+			       ret, type);
+			test_rc = 1;
+		}
+	}
+	if (strcmp(argconfig_value_name(names, 2), "controller") ||
+	    argconfig_value_name(names, 4)) {
+		printf("ERROR: enum: value names\n");
+		test_rc = 1;
+	}
+}
+
+/* An option also takes its old name, the option itself is given then */
+static void old_name_test(void)
+{
+	const char *desc = "Test old name";
+	bool flag = false;
+	__u32 val = 0;
+	char **argv = (char *[]){ "prog", "--old-flag", "--old-uint=7", NULL };
+	int ret;
+
+	OPT_ARGS(opts) = {
+		OPT_FLAG("flag", 'f', &flag, "flag", .old_name = "old-flag"),
+		OPT_UINT("uint", 'u', &val, "uint", .old_name = "old-uint"),
+		OPT_END()
+	};
+
+	ret = argconfig_parse(argv_len(argv), argv, desc, opts);
+	if (ret || !flag || val != 7 || !argconfig_given(opts, &flag)) {
+		printf("ERROR: old name: unexpected result\n");
+		test_rc = 1;
+	}
+}
+
+/*
+ * argconfig_given() finds an option by the variable it stores to, also an
+ * alias of it or a global option, and NULL is never given.
+ */
+static void given_test(void)
+{
+	const char *desc = "Test given";
+	int verbose = 0;
+	bool alias = false, quiet = false;
+	char **argv = (char *[]){ "prog", "--old-flag", "-v", NULL };
+	int ret;
+
+	OPT_ARGS(globals) = {
+		OPT_INCR("verbose", 'v', &verbose, "verbose"),
+		OPT_FLAG("quiet", 'q', &quiet, "quiet"),
+		OPT_END()
+	};
+	OPT_ARGS(opts) = {
+		OPT_FLAG("flag", 'f', &alias, "flag"),
+		OPT_FLAG("old-flag", 0, &alias, NULL),
+		OPT_UINT("uint", 'u', &cfg.uint, "uint"),
+		OPT_END()
+	};
+
+	argconfig_set_global_options(globals);
+	ret = argconfig_parse(argv_len(argv), argv, desc, opts);
+	if (ret || !argconfig_given(opts, &alias) ||
+	    argconfig_given(opts, &cfg.uint) ||
+	    !argconfig_given(opts, &verbose) ||
+	    argconfig_given(opts, &quiet) || argconfig_given(opts, NULL)) {
+		printf("ERROR: given: unexpected result\n");
+		test_rc = 1;
+	}
+	argconfig_set_global_options(NULL);
+}
+
+/*
+ * A value table names special values of a numeric option, also negative
+ * ones, while other negative numbers are rejected.
+ */
+static void special_values_test(void)
+{
+	static const struct {
+		const char *arg;
+		int ret;
+		__u32 value;
+	} tests[] = {
+		{ "--nsid=all", 0, 0xffffffff },
+		{ "--nsid=-1", 0, 0xffffffff },
+		{ "--nsid=a", 0, 0xffffffff },
+		{ "--nsid=7", 0, 7 },
+		{ "--nsid=-2", -EINVAL, 0 },
+	};
+	OPT_VALS(nsid_values) = {
+		VAL_UINT("all", 0xffffffff),
+		VAL_UINT("-1", 0xffffffff),
+		VAL_END()
+	};
+	__u32 nsid;
+	unsigned int i;
+	int ret;
+
+	OPT_ARGS(opts) = {
+		OPT_UINT("nsid", 'n', &nsid, "nsid", nsid_values),
+		OPT_END()
+	};
+
+	for (i = 0; i < ARRAY_SIZE(tests); i++) {
+		char **argv = (char *[]){ "prog", (char *)tests[i].arg, NULL };
+
+		nsid = 0;
+		ret = argconfig_parse(argv_len(argv), argv, "test", opts);
+		if (ret != tests[i].ret || (!ret && nsid != tests[i].value)) {
+			printf("ERROR: special values: %s\n", tests[i].arg);
+			test_rc = 1;
+		}
+	}
+}
+
+/*
+ * A list of names is ORed into a bitmask, also over several uses of the
+ * option. Every name of the list has to be known, an empty one too.
+ */
+static void enum_list_test(void)
+{
+	struct argconfig_opt_val names[] = {
+		VAL_ENUM("host0", 1 << 0),
+		VAL_ENUM("host1", 1 << 1),
+		VAL_ENUM("ctlr", 1 << 2),
+		VAL_ENUM("controller", 1 << 2),
+		VAL_END()
+	};
+	static const struct {
+		const char *arg1, *arg2;
+		int ret;
+		__u32 val;
+	} tests[] = {
+		{ "--types=host0", NULL, 0, 0x1 },
+		{ "--types=host1,ctlr", NULL, 0, 0x6 },
+		{ "--types=HOST0,co", NULL, 0, 0x5 },
+		{ "-thost0", "-tcontroller", 0, 0x5 },
+		{ "--types=ctlr,controller", NULL, 0, 0x4 },
+		{ "--types=host", NULL, -EINVAL, 0 },
+		{ "--types=host0,", NULL, -EINVAL, 0 },
+		{ "--types=,host0", NULL, -EINVAL, 0 },
+		{ "--types=host0,,ctlr", NULL, -EINVAL, 0 },
+		{ "--types=", NULL, -EINVAL, 0 },
+		{ "--types=1", NULL, -EINVAL, 0 },
+		{ "--types=host0,bogus", NULL, -EINVAL, 0 },
+	};
+	unsigned int i;
+	__u32 types;
+	int ret;
+
+	OPT_ARGS(opts) = {
+		OPT_ENUM_LIST("types", 't', &types, "types", names),
+		OPT_END()
+	};
+
+	for (i = 0; i < ARRAY_SIZE(tests); i++) {
+		char *argv[4] = { "prog", (char *)tests[i].arg1,
+				  (char *)tests[i].arg2, NULL };
+
+		types = 0;
+		ret = argconfig_parse(tests[i].arg2 ? 3 : 2, argv, "test",
+				      opts);
+		if (ret != tests[i].ret || (!ret && types != tests[i].val)) {
+			printf("ERROR: enum list: {%s} gave %d/%u\n",
+			       tests[i].arg1, ret, types);
+			test_rc = 1;
+		}
+	}
+}
+
+/*
+ * A number outside the range of an option is rejected, a named value is
+ * taken as it is.
+ */
+static void range_test(void)
+{
+	static const struct {
+		const char *arg;
+		int ret;
+		__u32 value;
+	} tests[] = {
+		{ "--ranged=1", 0, 1 },
+		{ "--ranged=3", 0, 3 },
+		{ "--ranged=0", -EINVAL, 0 },
+		{ "--ranged=4", -EINVAL, 0 },
+		{ "--ranged=0x100000000", -EINVAL, 0 },
+		{ "--ranged=big", 0, 100 },
+		{ "--size=4Ki", 0, 4096 },
+		{ "--size=8Ki", -EINVAL, 0 },
+	};
+	OPT_VALS(values) = {
+		VAL_UINT("big", 100),
+		VAL_END()
+	};
+	__u64 size;
+	__u32 ranged;
+	unsigned int i;
+	int ret;
+
+	OPT_ARGS(opts) = {
+		OPT_UINT("ranged", 'r', &ranged, "ranged", values,
+			 .min = 1, .max = 3),
+		OPT_SUFFIX("size", 's', &size, "size", .max = 4096),
+		OPT_END()
+	};
+
+	for (i = 0; i < ARRAY_SIZE(tests); i++) {
+		char **argv = (char *[]){ "prog", (char *)tests[i].arg, NULL };
+
+		ranged = 0;
+		size = 0;
+		ret = argconfig_parse(argv_len(argv), argv, "test", opts);
+		if (ret != tests[i].ret ||
+		    (!ret && ranged + size != tests[i].value)) {
+			printf("ERROR: range: %s\n", tests[i].arg);
+			test_rc = 1;
+		}
+	}
+}
+
+#define COMMA_SEP_ARRAY_MAX_VALUES 4
+
+struct comma_sep_array_test {
+	const char *input;
+	int ret;
+	__u32 values[COMMA_SEP_ARRAY_MAX_VALUES];
+};
+
+const struct comma_sep_array_test comma_sep_array_tests[] = {
+	{"", 0},
+	{",,,", 0},
+	{" ", -1},
+	{"abc", -1},
+	{"0xFFFFFFFF", 1, {0xFFFFFFFF}},
+	{"0x100000000", -1},
+	{"123,0x456", 2, {123, 0x456}},
+	{",1,,2,", 2, {1, 2}},
+	{"1,22,333,4444", 4, {1, 22, 333, 4444}},
+	{"1,2,3,4,5", -1},
+};
+
+void comma_sep_array_test(const struct comma_sep_array_test *test)
+{
+	__cleanup_free char *input = strdup(test->input);
+	__u32 values[COMMA_SEP_ARRAY_MAX_VALUES] = {};
+	int ret = shr_parse_csv_u32(
+		input, values, COMMA_SEP_ARRAY_MAX_VALUES);
+	int i;
+
+	if (ret != test->ret) {
+		printf("ERROR: input '%s' return value %d != %d\n",
+		       test->input, ret, test->ret);
+		test_rc = 1;
+		return;
+	}
+
+	for (i = 0; i < ret; i++) {
+		if (values[i] != test->values[i]) {
+			printf("ERROR: input '%s' values[%d] = %u != %u\n",
+			       test->input, i, values[i], test->values[i]);
+			test_rc = 1;
+			return;
+		}
+	}
+}
+
+struct global_cfg {
+	int verbose;
+	bool dry_run;
+};
+
+static struct global_cfg gcfg;
+
+struct global_parse_test {
+	const char *desc;
+	char *argv[8];
+	int argc;
+	/*
+	 * Expected argind value after argconfig_parse_global() returns.
+	 * This is the index of the first non-option argument (the subcommand)
+	 * in argv, i.e. 1-based because argv[0] is the program name.
+	 */
+	int expected_argind;
+	int expected_ret;
+	int expected_verbose;
+	bool expected_dry_run;
+	const char *stderr_must_not_contain;
+};
+
+static const struct global_parse_test global_parse_tests[] = {
+	{
+		"no global opts: subcommand only",
+		{"prog", "list"},
+		2, 1, 0, 0, false,
+	},
+	{
+		"short -v before subcommand",
+		{"prog", "-v", "list"},
+		3, 2, 0, 1, false,
+	},
+	{
+		"long --verbose before subcommand",
+		{"prog", "--verbose", "list"},
+		3, 2, 0, 1, false,
+	},
+	{
+		"two -v flags before subcommand",
+		{"prog", "-v", "-v", "list"},
+		4, 3, 0, 2, false,
+	},
+	{
+		"bundled -vv (single token) before subcommand",
+		{"prog", "-vv", "list"},
+		3, 2, 0, 2, false,
+	},
+	{
+		"--dry-run before subcommand",
+		{"prog", "--dry-run", "list"},
+		3, 2, 0, 0, true,
+	},
+	{
+		"multiple global opts before subcommand",
+		{"prog", "-v", "--dry-run", "list"},
+		4, 3, 0, 1, true,
+	},
+	{
+		/*
+		 * The '+' prefix in the short-opts string causes getopt to stop
+		 * at the first non-option argument.  Global opts that appear
+		 * *after* the subcommand must be left for the subcommand's own
+		 * argconfig_parse() call to handle.
+		 */
+		"subcommand before option: stop at first non-option",
+		{"prog", "list", "-v"},
+		3, 1, 0, 0, false,
+	},
+	{
+		"only program name",
+		{"prog"},
+		1, 1, 0, 0, false,
+	},
+	{
+		"option with no following subcommand",
+		{"prog", "--verbose"},
+		2, 2, 0, 1, false,
+	},
+ 	{
+ 		"unknown option before subcommand should fail",
+ 		{"prog", "--no-such-opt", "list"},
+ 		3, 0, -EINVAL, 0, false,
+ 	},
+	{
+		"abbreviated long option fails",
+		{"prog", "--verb", "list"},
+		3, 0, -EINVAL, 0, false,
+	},
+	{
+		/* -v is applied before 'e' is rejected, as with getopt */
+		"single-dash long option fails",
+		{"prog", "-verbose", "list"},
+		3, 0, -EINVAL, 1, false,
+	},
+	{
+		"-- ends the global options",
+		{"prog", "--", "-v"},
+		3, 2, 0, 0, false,
+	},
+};
+
+static int parse_global_capture_stderr(int argc, char *argv[],
+				       struct argconfig_commandline_options *opts,
+				       int *argind, char *buf, size_t buf_size)
+{
+	FILE *tmp = NULL;
+	int ret;
+	int saved_stderr;
+	size_t n;
+
+	tmp = tmpfile();
+	if (!tmp) {
+		printf("ERROR: tmpfile failed: %s\n", libnvme_strerror(errno));
+		test_rc = 1;
+		return -errno;
+	}
+
+	saved_stderr = dup(STDERR_FILENO);
+	if (saved_stderr < 0) {
+		printf("ERROR: dup stderr failed: %s\n", libnvme_strerror(errno));
+		test_rc = 1;
+		fclose(tmp);
+		return -errno;
+	}
+
+	fflush(stderr);
+	if (dup2(fileno(tmp), STDERR_FILENO) < 0) {
+		printf("ERROR: redirect stderr failed: %s\n", libnvme_strerror(errno));
+		close(saved_stderr);
+		test_rc = 1;
+		fclose(tmp);
+		return -errno;
+	}
+
+	ret = argconfig_parse_global(argc, argv, opts, argind);
+	fflush(stderr);
+
+	if (fseek(tmp, 0, SEEK_SET) != 0) {
+		printf("ERROR: rewind captured stderr failed: %s\n",
+		       libnvme_strerror(errno));
+		close(saved_stderr);
+		test_rc = 1;
+		fclose(tmp);
+		return -errno;
+	}
+
+	n = fread(buf, 1, buf_size - 1, tmp);
+	buf[n] = '\0';
+
+	if (dup2(saved_stderr, STDERR_FILENO) < 0) {
+		printf("ERROR: restoring stderr failed: %s\n", libnvme_strerror(errno));
+		test_rc = 1;
+		close(saved_stderr);
+		fclose(tmp);
+		return -errno;
+	}
+	close(saved_stderr);
+	fclose(tmp);
+
+	return ret;
+}
+
+static void do_global_parse_test(const struct global_parse_test *test)
+{
+	int ret, argind = -1;
+	char stderr_buf[512] = "";
+
+	OPT_ARGS(opts) = {
+		OPT_INCR("verbose", 'v', &gcfg.verbose, "increase verbosity"),
+		OPT_FLAG("dry-run", 0, &gcfg.dry_run, "dry run mode"),
+		OPT_END()
+	};
+
+	gcfg.verbose = 0;
+	gcfg.dry_run = false;
+
+	if (test->stderr_must_not_contain)
+		ret = parse_global_capture_stderr(test->argc, (char **)test->argv,
+						  opts, &argind, stderr_buf,
+						  sizeof(stderr_buf));
+	else
+		ret = argconfig_parse_global(test->argc, (char **)test->argv,
+					     opts, &argind);
+
+	if (ret != test->expected_ret) {
+		printf("ERROR: global_parse {%s}: ret=%d expected=%d\n",
+		       test->desc, ret, test->expected_ret);
+		test_rc = 1;
+		return;
+	}
+
+	if (test->expected_ret == 0 && argind != test->expected_argind) {
+		printf("ERROR: global_parse {%s}: argind=%d expected=%d\n",
+		       test->desc, argind, test->expected_argind);
+		test_rc = 1;
+		return;
+	}
+
+	if (test->stderr_must_not_contain &&
+	    strstr(stderr_buf, test->stderr_must_not_contain)) {
+		printf("ERROR: global_parse {%s}: stderr unexpectedly contains '%s'\n",
+		       test->desc, test->stderr_must_not_contain);
+		test_rc = 1;
+		return;
+	}
+
+	if (gcfg.verbose != test->expected_verbose) {
+		printf("ERROR: global_parse {%s}: verbose=%d expected=%d\n",
+		       test->desc, gcfg.verbose, test->expected_verbose);
+		test_rc = 1;
+		return;
+	}
+
+	if (gcfg.dry_run != test->expected_dry_run) {
+		printf("ERROR: global_parse {%s}: dry_run=%d expected=%d\n",
+		       test->desc, gcfg.dry_run, test->expected_dry_run);
+		test_rc = 1;
+	}
+}
+
+/*
+ * A global option that takes a required argument but is given none (no
+ * "=value" and nothing left in argv to supply it) must fail the same way
+ * an unknown option does, rather than silently leaving the default in
+ * place.
+ */
+static void global_parse_missing_arg_test(void)
+{
+	char *argv[] = { "prog", "--count" };
+	unsigned int count = 0;
+	int ret, argind;
+
+	OPT_ARGS(opts) = {
+		OPT_UINT("count", 'c', &count, "count"),
+		OPT_END()
+	};
+
+	ret = argconfig_parse_global(ARRAY_SIZE(argv), argv, opts, &argind);
+	if (ret != -EINVAL) {
+		printf("ERROR: global_parse: '--count' with no value: ret=%d expected=%d\n",
+		       ret, -EINVAL);
+		test_rc = 1;
+	}
+}
+
+/*
+ * The global parse accepts -h, --help, -V and --version unless the table
+ * has its own, reports them with ARGCONFIG_HELP and ARGCONFIG_VERSION and
+ * still parses the other options up to the subcommand.
+ */
+static void global_parse_help_test(void)
+{
+	bool own_help = false;
+	int verbose = 0, argind, ret;
+
+	OPT_ARGS(opts) = {
+		OPT_INCR("verbose", 'v', &verbose, "increase verbosity"),
+		OPT_END()
+	};
+	OPT_ARGS(help_opts) = {
+		OPT_FLAG("help", 'h', &own_help, "help"),
+		OPT_END()
+	};
+
+	{
+		char **argv = (char *[]){ "prog", "-h", "-v", "list", NULL };
+
+		ret = argconfig_parse_global(argv_len(argv), argv, opts,
+					     &argind);
+		if (ret != ARGCONFIG_HELP || argind != 3 || verbose != 1) {
+			printf("ERROR: global help: -h -v list\n");
+			test_rc = 1;
+		}
+	}
+
+	{
+		char **argv = (char *[]){ "prog", "-vh", "--help", NULL };
+
+		verbose = 0;
+		ret = argconfig_parse_global(argv_len(argv), argv, opts,
+					     &argind);
+		if (ret != ARGCONFIG_HELP || argind != 3 || verbose != 1) {
+			printf("ERROR: global help: -vh --help\n");
+			test_rc = 1;
+		}
+	}
+
+	{
+		char **argv = (char *[]){ "prog", "-h", "list", NULL };
+
+		ret = argconfig_parse_global(argv_len(argv), argv, help_opts,
+					     &argind);
+		if (ret || argind != 2 || !own_help) {
+			printf("ERROR: global help: own -h of the table\n");
+			test_rc = 1;
+		}
+	}
+
+	{
+		char **argv = (char *[]){ "prog", "-vV", "list", NULL };
+
+		verbose = 0;
+		ret = argconfig_parse_global(argv_len(argv), argv, opts,
+					     &argind);
+		if (ret != ARGCONFIG_VERSION || argind != 2 || verbose != 1) {
+			printf("ERROR: global version: -vV list\n");
+			test_rc = 1;
+		}
+	}
+
+	{
+		char **argv = (char *[]){ "prog", "--help", "--version", NULL };
+
+		ret = argconfig_parse_global(argv_len(argv), argv, NULL,
+					     &argind);
+		if (ret != (ARGCONFIG_HELP | ARGCONFIG_VERSION) ||
+		    argind != 3) {
+			printf("ERROR: global version: --help --version\n");
+			test_rc = 1;
+		}
+	}
+}
+
+int main(void)
+{
+	unsigned int i;
+	FILE *f;
+
+	test_rc = 0;
+	setlocale(LC_NUMERIC, "C");
+	f = freopen(shr_dev_null(), "w", stderr);
+	if (!f) {
+		printf("ERROR: reopening stderr failed: %s\n", libnvme_strerror(errno));
+		test_rc = 1;
+	}
+
+	for (i = 0; i < ARRAY_SIZE(toval_tests); i++)
+		toval_test(&toval_tests[i]);
+
+	optional_string_test();
+	combined_opts_test();
+	operands_test();
+	global_options_test();
+	given_test();
+	old_name_test();
+	enum_test();
+	enum_list_test();
+	include_test();
+	bind_test();
+	double_locale_test();
+	empty_name_test();
+	special_values_test();
+	range_test();
+
+	for (i = 0; i < ARRAY_SIZE(comma_sep_array_tests); i++)
+		comma_sep_array_test(&comma_sep_array_tests[i]);
+
+	for (i = 0; i < ARRAY_SIZE(global_parse_tests); i++)
+		do_global_parse_test(&global_parse_tests[i]);
+
+	global_parse_missing_arg_test();
+	global_parse_help_test();
+
+	if (f)
+		fclose(f);
+
+	return test_rc ? EXIT_FAILURE : EXIT_SUCCESS;
+}

@@ -1,0 +1,110 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
+Kelly Kaoudis, kelly.n.kaoudis at intel.com, June 2015
+
+Setting Up NVMe Tab Autocompletion for bash, zsh, or PowerShell
+===============================================================
+
+If your working shell is bash...
+--------------------------------
+the following gets bash autocompletion to behave properly
+#echo "bind 'set show-all-if-ambiguous on'" >> ~/.bashrc
+#echo "bind 'set show-all-if-unmodified on'" >> ~/.bashrc
+#echo "bind 'set completion-ignore-case on'" >> ~/.bashrc
+#echo "bind 'set completion-map-case on'" >> ~/.bashrc
+
+add NVMe autocompletion script to your autocompletes directory
+#cp `pwd`/bash-nvme-completion.sh /etc/bash_completion.d/nvme
+
+make sure this bash knows where everything is
+#source /etc/bash_completion.d/nvme && source ~/.bashrc
+
+you should be able to autocomplete with the nvme utility now
+(double TABs still apply)! If autocompleting has disappeared,
+just re-source nvme and .bashrc. To see a full list of auto-completable
+NVMe commands, type "nvme help " and hit TAB.
+
+You may also need to uncomment the "enable bash completion in interactive
+shells" part of /etc/bash.bashrc, which hopefully looks something like:
+
+if [ -f /usr/share/bash-completion/bash_completion ]; then
+	. /usr/share/bash-completion/bash_completion
+elif [ -f /etc/bash_completion ]; then
+	. /etc/bash_completion
+fi
+
+(don't bother with the shopt part, your Bash version might not support shopt).
+
+Bash footnote: for bash vers >= 4.2, it appears to be the case that
+menu-complete **no longer works.** If the bash dev folks ever re-patch this,
+try binding TAB to menu-complete to cycle through the NVMe subcommand matches
+on whatever you typed.
+
+if your working shell is zsh...
+-------------------------------
+create the zsh completions directory if you don't have it
+#if [ ! -e "~/.zsh" ]; then
+#	mkdir ~/.zsh
+#	mkdir ~/.zsh/completion
+#fi
+
+#cp `pwd`/_nvme ~/.zsh/completion/_nvme
+
+add compinit if you don't have it in your .zshrc
+#echo "autoload -Uz compinit && compinit" >> ~/.zshrc
+
+add nvme autocompletions to your .zshrc
+#echo "# source for tab autocompletions" >> ~/.zshrc
+#echo "fpath=(~/.zsh/completion $fpath)" >> ~/.zshrc
+#echo "source ~/.zsh/completion/_nvme" >> ~/.zshrc
+
+make sure this zsh knows where everything is
+#source ~/.zsh/completion/_nvme && source ~/.zshrc
+
+You should be able to autocomplete with the nvme utility now (single TAB press
+should get you a completion with descriptions -- sadly, bash doesn't support
+descriptions within completions). If autocompletes disappear, just re-source
+_nvme and .zshrc. Also, make sure your .zshrc is ordered correctly: we want to
+source _nvme before updating our fpath. Both of these should occur before
+compinit is loaded.
+
+if your working shell is PowerShell...
+--------------------------------------
+dot-source the completion script in the current session
+#. ./nvme-completion.ps1
+
+to load it automatically in every session, append that dot-source line to
+your PowerShell profile
+#Add-Content $PROFILE ". $PWD/nvme-completion.ps1"
+
+You should be able to autocomplete with the nvme utility now. In PowerShell,
+single TAB cycles through the candidates one at a time and Ctrl+Space shows the
+full list. (In VS Code's integrated terminal Ctrl+Space is bound to IntelliSense
+-- use a standalone PowerShell terminal or rebind it.)
+
+Updating NVMe Tab Autocompletions
+=================================
+
+The completion scripts (bash-nvme-completion.sh, _nvme, and
+nvme-completion.ps1) are generated, not hand-edited. generate-completions.py
+builds all three from the command and option metadata that
+`nvme utils dump-command-metadata` emits, so one source of truth drives every
+shell.
+
+The generated files are committed to the source tree and are not rebuilt during
+a normal build. After adding or changing a command, plugin, or option,
+regenerate them:
+
+	meson compile -C .build update-completions
+
+then commit the updated bash-nvme-completion.sh, _nvme, and
+nvme-completion.ps1.
+
+Regenerate on Linux using the default build, which includes every plugin. A
+Windows build -- and any build configured with a reduced -Dplugins= set --
+leaves some plugins out, so completions generated there would be missing
+commands. A CI check (.github/workflows/check-completions.yml) regenerates from
+a full Linux build and fails if the committed files differ, so a partial
+regeneration will be caught.
+
+See TESTING.md for how to load the completions and verify them by hand.

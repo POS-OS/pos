@@ -1,0 +1,228 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+#include <ctype.h>
+#include <dirent.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <sys/time.h>
+#include <unistd.h>
+
+#include <libnvme.h>
+
+#include <shared/compiler-attributes-util.h>
+
+#include "cleanup.h"
+#include "global-ctx.h"
+#include "nvme-cmds.h"
+#include "nvme-print.h"
+#include "plugin.h"
+
+static __u32 char4_to_int(__u8 *data)
+{
+	int i;
+	__u32 result = 0;
+
+	for (i = 0; i < 4; i++) {
+		result = result << 8;
+		result += data[3 - i];
+	}
+	return result;
+}
+
+struct nvme_dera_smart_info_log
+{
+	__u8 quick_rebuild_cnt0[4]; 
+	__u8 quick_rebuild_cnt1[4]; 
+	__u8 full_rebuild_cnt0[4];
+	__u8 full_rebuild_cnt1[4];
+	__u8 raw_rebuild_cnt0[4];
+	__u8 raw_rebuild_cnt1[4];
+	__u8 cap_aged;		
+	__u8 cap_aged_ratio;
+	__u8 cap_status;	
+	__u8 cap_voltage[4];
+	__u8 cap_charge_ctrl_en;	 
+	__u8 cap_charge_ctrl_val[2];
+	__u8 cap_charge_max_thr[2]; 
+	__u8 cap_charge_min_thr[2]; 
+	__u8 dev_status; 
+	__u8 dev_status_up;
+	__u8 nand_erase_err_cnt[4]; 
+	__u8 nand_program_err_cnt[4]; 
+	__u8 ddra_1bit_err[2];
+	__u8 ddra_2bit_err[2];
+	__u8 ddrb_1bit_err[2];
+	__u8 ddrb_2bit_err[2];
+	__u8 ddr_err_bit;
+	__u8 pcie_corr_err[2];
+	__u8 pcie_uncorr_err[2];
+	__u8 pcie_fatal_err[2];
+	__u8 pcie_err_bit;
+	__u8 power_level; 
+	__u8 current_power[2]; 
+	__u8 nand_init_fail[2]; 
+	__u8 fw_loader_version[8]; 
+	__u8 uefi_driver_version[8]; 
+	__u8 gpio0_err[2]; 
+	__u8 gpio5_err[2]; 
+	__u8 gpio_err_bit[2]; 
+	__u8 rebuild_percent; 
+	__u8 pcie_volt_status; 
+	__u8 current_pcie_volt[2]; 
+	__u8 init_pcie_volt_thr[2]; 
+	__u8 rt_pcie_volt_thr[2]; 
+	__u8 init_pcie_volt_low[2]; 
+	__u8 rt_pcie_volt_low[2]; 
+	__u8 temp_sensor_abnormal[2];
+	__u8 nand_read_retry_fail_cnt[4]; 
+	__u8 fw_slot_version[8]; 
+	__u8 rsved[395];
+};
+
+enum dera_device_status
+{
+	DEVICE_STATUS_READY = 0x00,
+	DEVICE_STATUS_QUICK_REBUILDING = 0x01,
+	DEVICE_STATUS_FULL_REBUILDING = 0x02,
+	DEVICE_STATUS_RAW_REBUILDING = 0x03,
+	DEVICE_STATUS_CARD_READ_ONLY = 0x04,
+	DEVICE_STATUS_FATAL_ERROR = 0x05,
+	DEVICE_STATUS_BUSY = 0x06,
+	DEVICE_STAUTS_LOW_LEVEL_FORMAT = 0x07,
+	DEVICE_STAUTS_FW_COMMITING = 0x08,
+	DEVICE_STAUTS__OVER_TEMPRATURE = 0x09,
+};
+
+static int nvme_dera_get_device_status(struct libnvme_transport_handle *hdl, enum dera_device_status *result)
+{
+	int err = 0;
+
+	struct libnvme_passthru_cmd cmd = {
+		.opcode = 0xc0, 
+		.addr = (__u64)(uintptr_t)NULL,
+		.data_len = 0,
+		.cdw10 = 0,
+		.cdw12 = 0x104,
+	};
+
+	err = libnvme_exec_admin_passthru(hdl, &cmd);
+	if (!err && result)
+		*result = cmd.result;
+
+	return err;
+}
+
+static int get_status(int argc, char **argv, struct command *acmd, struct plugin *plugin)
+{
+	__cleanup_nvme_transport_handle struct libnvme_transport_handle *hdl = NULL;
+	enum dera_device_status state = DEVICE_STATUS_FATAL_ERROR;
+	__cleanup_nvme_global_ctx struct libnvme_global_ctx *ctx = NULL;
+	char *desc = "Get the Dera device status";
+	struct nvme_dera_smart_info_log log;
+	int err;
+
+	OPT_ARGS(opts) = {
+		OPT_END()
+	};
+
+	err = parse_and_open(&ctx, &hdl, argc, argv, desc, opts);
+	if (err)
+		return err;
+
+	err = nvme_get_log_simple(hdl, 0xc0, &log, sizeof(log));
+	if (err)
+		goto exit;
+
+	static const char *dev_status[] = {
+		"Normal",
+		"Quick Rebuilding",
+		"Full Rebuilding",
+		"Raw Rebuilding",
+		"Card Read Only",
+		"Fatal Error",
+		"Busy",
+		"Low Level Format",
+		"Firmware Committing",
+		"Over Temperature" };
+
+	static const char *volt_status[] = {
+		"Normal",
+		"Initial Low",
+		"Runtime Low",
+	};
+
+	err = nvme_dera_get_device_status(hdl, &state);
+	if (!err) {
+		if (state > 0 && state < 4)
+			printf("device_status                       : %s %d%% completed\n", dev_status[state], log.rebuild_percent);
+		else if (state < ARRAY_SIZE(dev_status))
+			printf("device_status                       : %s\n", dev_status[state]);
+		else
+			puts("device_status                       : Unknown");
+	} else {
+		goto exit;
+	}
+
+	printf("dev_status_up                       : %s\n",
+	       log.dev_status_up < ARRAY_SIZE(dev_status) ?
+	       dev_status[log.dev_status_up] : "Unknown");
+	printf("cap_aged                            : %s\n", log.cap_aged == 1 ? "True" : "False");
+	printf("cap_aged_ratio                      : %d%%\n", log.cap_aged_ratio < 100 ? log.cap_aged_ratio : 100);
+	printf("cap_status                          : %s\n", log.cap_status == 0 ? "Normal" : (log.cap_status == 1 ? "Warning" : "Critical"));
+	printf("cap_voltage                         : %u mV\n",
+	       char4_to_int(log.cap_voltage));
+	printf("nand_erase_err_cnt                  : %u\n",
+	       char4_to_int(log.nand_erase_err_cnt));
+	printf("nand_program_err_cnt                : %u\n",
+	       char4_to_int(log.nand_program_err_cnt));
+	printf("power_level                         : %d W\n", log.power_level);
+	printf("current_power                       : %d mW\n", log.current_power[1] << 8 | log.current_power[0]);
+	printf("nand_init_fail                      : %d\n", log.nand_init_fail[1] << 8 | log.nand_init_fail[0]);
+
+	if (log.pcie_volt_status < sizeof(volt_status) / sizeof(const char *))
+		printf("pcie_volt_status                    : %s\n", volt_status[log.pcie_volt_status]);
+	else
+		printf("pcie_volt_status                    : Unknown\n");
+
+	printf("current_pcie_volt                   : %d mV\n", log.current_pcie_volt[1] << 8 | log.current_pcie_volt[0]);
+	printf("init_pcie_volt_low_cnt              : %d\n", log.init_pcie_volt_low[1] << 8 | log.init_pcie_volt_low[0]);
+	printf("rt_pcie_volt_low_cnt                : %d\n", log.rt_pcie_volt_low[1] << 8 | log.rt_pcie_volt_low[0]);
+	printf("temp_sensor_abnormal_cnt            : %d\n", log.temp_sensor_abnormal[1] << 8 | log.temp_sensor_abnormal[0]);
+	printf("nand_read_retry_fail_cnt            : %u\n",
+	       char4_to_int(log.nand_read_retry_fail_cnt));
+	printf("fw_slot_version                     : %.*s\n", 8, log.fw_slot_version);
+
+exit:
+	if (err > 0)
+		nvme_show_status(err);
+
+	return err;
+}
+
+static struct command get_status_cmd = {
+	.name = "smart-log-add",
+	.help = "Retrieve Dera SMART Log, show it",
+	.fn = get_status,
+	.alias = "stat",
+};
+
+static struct command *commands[] = {
+	&get_status_cmd,
+	NULL,
+};
+
+static struct plugin plugin = {
+	.name = "dera",
+	.desc = "Dera vendor specific extensions",
+	.version = NVME_VERSION,
+};
+
+static void __shr_constructor register_plugin(void)
+{
+	plugin_add_group(&plugin, NULL, commands);
+	register_extension(&plugin);
+}
+

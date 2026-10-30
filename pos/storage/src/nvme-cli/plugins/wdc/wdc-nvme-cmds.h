@@ -1,0 +1,144 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
+/*
+ * Copyright (c) 2025 Western Digital Corporation or its affiliates.
+ *
+ *   Author: Jeff Lien <jeff.lien@wdc.com>,
+ */
+#pragma once
+
+#include "plugin.h"
+
+int run_wdc_cloud_ssd_plugin_version(int argc, char **argv,
+		struct command *command,
+		struct plugin *plugin);
+
+/* The options of vs-internal-log */
+struct wdc_vs_internal_fw_log_cfg {
+	char *file;
+	__u32 xfer_size;
+	__u32 data_area;
+	__u64 file_size;
+	__u64 offset;
+	int type;
+};
+
+/*
+ * These run the command on the device @hdl of @ctx, after the topology
+ * scan: the sandisk plugin runs them for older drives on the device it
+ * opened.
+ */
+int run_wdc_vs_internal_fw_log(struct libnvme_global_ctx *ctx,
+		struct libnvme_transport_handle *hdl,
+		struct wdc_vs_internal_fw_log_cfg *cfg);
+
+int run_wdc_vs_nand_stats(int argc, char **argv,
+		struct command *command,
+		struct plugin *plugin);
+
+int run_wdc_vs_smart_add_log(int argc, char **argv,
+		struct command *command,
+		struct plugin *plugin);
+
+int run_wdc_clear_pcie_correctable_errors(int argc, char **argv,
+		struct command *command,
+		struct plugin *plugin);
+
+int run_wdc_drive_status(int argc, char **argv,
+		struct command *command,
+		struct plugin *plugin);
+
+int run_wdc_clear_assert_dump(int argc, char **argv,
+		struct command *command,
+		struct plugin *plugin);
+
+int run_wdc_drive_resize(struct libnvme_global_ctx *ctx,
+		struct libnvme_transport_handle *hdl, uint64_t size);
+
+int run_wdc_vs_fw_activate_history(struct libnvme_global_ctx *ctx,
+		struct libnvme_transport_handle *hdl);
+
+int run_wdc_clear_fw_activate_history(struct libnvme_global_ctx *ctx,
+		struct libnvme_transport_handle *hdl);
+
+int run_wdc_vs_telemetry_controller_option(int argc, char **argv,
+		struct command *command,
+		struct plugin *plugin);
+
+int run_wdc_reason_identifier(int argc, char **argv,
+		struct command *command,
+		struct plugin *plugin);
+
+int run_wdc_log_page_directory(int argc, char **argv,
+		struct command *command,
+		struct plugin *plugin);
+
+int run_wdc_namespace_resize(int argc, char **argv,
+		struct command *command,
+		struct plugin *plugin);
+
+int run_wdc_vs_drive_info(int argc, char **argv,
+		struct command *command,
+		struct plugin *plugin);
+
+int run_wdc_cloud_ssd_plugin_version(int argc, char **argv,
+		struct command *command,
+		struct plugin *plugin);
+
+int run_wdc_vs_pcie_stats(int argc, char **argv,
+		struct command *command,
+		struct plugin *plugin);
+
+int run_wdc_get_latency_monitor_log(int argc, char **argv,
+		struct command *command,
+		struct plugin *plugin);
+
+int run_wdc_get_error_recovery_log(int argc, char **argv,
+		struct command *command,
+		struct plugin *plugin);
+
+int run_wdc_get_dev_capabilities_log(int argc, char **argv,
+		struct command *command,
+		struct plugin *plugin);
+
+int run_wdc_get_unsupported_reqs_log(int argc, char **argv,
+		struct command *command,
+		struct plugin *plugin);
+
+int run_wdc_cloud_boot_SSD_version(int argc, char **argv,
+		struct command *command,
+		struct plugin *plugin);
+
+int run_wdc_vs_cloud_log(int argc, char **argv,
+		struct command *command,
+		struct plugin *plugin);
+
+int run_wdc_vs_hw_rev_log(int argc, char **argv,
+		struct command *command,
+		struct plugin *plugin);
+
+int run_wdc_vs_device_waf(int argc, char **argv,
+		struct command *command,
+		struct plugin *plugin);
+
+int run_wdc_set_latency_monitor_feature(int argc, char **argv,
+		struct command *command,
+		struct plugin *plugin);
+
+int run_wdc_vs_temperature_stats(int argc, char **argv,
+		struct command *command,
+		struct plugin *plugin);
+
+int run_wdc_cu_smart_log(int argc, char **argv,
+		struct command *command,
+		struct plugin *plugin);
+
+bool run_wdc_nvme_check_supported_log_page(struct libnvme_global_ctx *ctx,
+		struct libnvme_transport_handle *hdl,
+		__u8 log_id,
+		__u8 uuid_index);
+
+__u32 run_wdc_get_fw_cust_id(struct libnvme_global_ctx *ctx,
+		struct libnvme_transport_handle *hdl);
+
+__u64 run_wdc_get_drive_capabilities(struct libnvme_global_ctx *ctx,
+		struct libnvme_transport_handle *hdl);

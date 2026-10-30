@@ -1,0 +1,38 @@
+nvme-telemetry-log(1)
+=====================
+
+NAME
+----
+nvme-telemetry-log - Retrieves a Telemetry Host-Initiated log page from an NVMe device (deprecated)
+
+SYNOPSIS
+--------
+[verse]
+'nvme' [<global-options>] 'telemetry-log' <device>
+			[--output-file=<file> | -O <file>]
+			[--host-generate=<gen> | -g <gen>]
+
+DESCRIPTION
+-----------
+Deprecated alias for linknvme:nvme-log-telemetry[1], kept for scripts written
+against nvme-cli versions older than 3.0. Options and behavior are
+identical; only the top-level command name is retained.
+
+New scripts should use 'nvme log telemetry' instead. This alias prints a
+deprecation warning on stderr and may be removed in a future release.
+
+See linknvme:nvme-log-telemetry[1] for the full option reference.
+
+include::global-options.txt[]
+
+EXAMPLES
+--------
+No Examples
+
+NVME
+----
+Part of the nvme-user suite
+
+SEE ALSO
+--------
+linknvme:nvme-log-telemetry[1]

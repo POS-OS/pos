@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+version: 2
+
+build:
+  os: ubuntu-24.04
+  jobs:
+    build:
+      html:
+        - mkdir -p $READTHEDOCS_OUTPUT/html/
+        - cp Documentation/*.html $READTHEDOCS_OUTPUT/html/
+        - mv $READTHEDOCS_OUTPUT/html/nvme.html $READTHEDOCS_OUTPUT/html/index.html
+
+formats: []

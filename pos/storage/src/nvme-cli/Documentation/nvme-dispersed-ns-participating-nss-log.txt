@@ -1,0 +1,38 @@
+nvme-dispersed-ns-participating-nss-log(1)
+==========================================
+
+NAME
+----
+nvme-dispersed-ns-participating-nss-log - Retrieve Dispersed Namespace
+Participating NVM Subsystems Log, show it (deprecated)
+
+SYNOPSIS
+--------
+[verse]
+'nvme' [<global-options>] 'dispersed-ns-participating-nss-log' <device>
+			[--namespace-id=<nsid> | -n <nsid>]
+
+DESCRIPTION
+-----------
+Deprecated alias for linknvme:nvme-log-dispersed-ns-participating-nss[1], kept for scripts written
+against nvme-cli versions older than 3.0. Options and behavior are
+identical; only the top-level command name is retained.
+
+New scripts should use 'nvme log dispersed-ns-participating-nss' instead. This alias prints a
+deprecation warning on stderr and may be removed in a future release.
+
+See linknvme:nvme-log-dispersed-ns-participating-nss[1] for the full option reference.
+
+include::global-options.txt[]
+
+EXAMPLES
+--------
+No Examples
+
+NVME
+----
+Part of the nvme-user suite
+
+SEE ALSO
+--------
+linknvme:nvme-log-dispersed-ns-participating-nss[1]

@@ -1,0 +1,55 @@
+nvme-create-ns(1)
+=================
+
+NAME
+----
+nvme-create-ns - Send NVMe Namespace management command to create namespace, returns results. (deprecated)
+
+SYNOPSIS
+--------
+[verse]
+'nvme' [<global-options>] 'create-ns' <device> [--nsze=<nsze> | -s <nsze>]
+			[--ncap=<ncap> | -c <ncap>]
+			[--flbas=<flbas> | -f <flbas>]
+			[--dps=<dps> | -d <dps>]
+			[--nmic=<nmic> | -m <nmic>]
+			[--anagrp-id=<anagrpid> | -a <anagrpid>]
+			[--nvmset-id=<nvmsetid> | -i <nvmsetid>]
+			[--endg-id=<endgid> | -e <endgid>]
+			[--csi=<command_set_identifier> | -y <command_set_identifier>]
+			[--lbstm=<lbstm> | -l <lbstm>]
+			[--nphndls=<nphndls> | -n <nphndls>]
+			[--block-size=<block-size> | -b <block-size>]
+			[--nsze-si=<nsze-si> | -S <nsze-si>]
+			[--ncap-si=<ncap-si> | -C <ncap-si>]
+			[--azr | -z]
+			[--rar=<rar> | -r <rar>]
+			[--ror=<ror> | -O <ror>]
+			[--rnumzrwa=<rnumzrwa> | -u <rnumzrwa>]
+			[--phndls=<placement-handle-list,> | -p <placement-handle-list,>]
+			[<global-options>]
+
+DESCRIPTION
+-----------
+Deprecated alias for linknvme:nvme-ns-create[1], kept for scripts written
+against nvme-cli versions older than 3.0. Options and behavior are
+identical; only the top-level command name is retained.
+
+New scripts should use 'nvme ns create' instead. This alias prints a
+deprecation warning on stderr and may be removed in a future release.
+
+See linknvme:nvme-ns-create[1] for the full option reference.
+
+include::global-options.txt[]
+
+EXAMPLES
+--------
+No Examples
+
+NVME
+----
+Part of the nvme-user suite
+
+SEE ALSO
+--------
+linknvme:nvme-ns-create[1]

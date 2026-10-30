@@ -1,0 +1,46 @@
+nvme-id-uuid(1)
+===============
+
+NAME
+----
+nvme-id-uuid - Send a Identify UUID List command to the specified device
+
+SYNOPSIS
+--------
+[verse]
+'nvme' [<global-options>] 'id uuid' <device> [--raw-binary | -b]
+
+DESCRIPTION
+-----------
+Send a Identify UUID List command command to the specified device, return
+results.
+
+The <device> parameter is mandatory and may be either the NVMe character
+device (ex: /dev/nvme0) or block device (ex: /dev/nvme0n1).
+
+On success it returns 0, error code otherwise.
+
+The bare 'nvme id-uuid' form (without a space) still works as a deprecated
+alias and will be removed in a future major version. New scripts should
+use 'nvme id uuid' instead.
+
+OPTIONS
+-------
+-b::
+--raw-binary::
+	Print the raw buffer to stdout. Structure is not parsed by
+	program. This overrides the vendor specific and human readable options.
+
+include::global-options.txt[]
+
+EXAMPLES
+--------
+* Has the program issue a id-uuid to display structure.
++
+------------
+# nvme id uuid /dev/nvme0
+------------
+
+NVME
+----
+Part of the nvme-user suite.

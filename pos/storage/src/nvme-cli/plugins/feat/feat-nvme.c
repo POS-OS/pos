@@ -1,0 +1,1898 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+#include <errno.h>
+#include <fcntl.h>
+
+#include <libnvme.h>
+
+#include <ccan/endian/endian.h>
+#include <ccan/ccan/array_size/array_size.h>
+#include <shared/compiler-attributes-util.h>
+#include <shared/parse-util.h>
+
+#include "cleanup.h"
+#include "global-ctx.h"
+#include "nvme-cmds.h"
+#include "nvme-print.h"
+#include "plugin.h"
+
+#define FEAT_PLUGIN_VERSION "1.0"
+
+#define POWER_MGMT_DESC "Get and set power management feature"
+#define PERFC_DESC "Get and set perf characteristics feature"
+#define HCTM_DESC "Get and set host controlled thermal management feature"
+#define TIMESTAMP_DESC "Get and set timestamp feature"
+#define TEMP_THRESH_DESC "Get and set temperature threshold feature"
+#define ARBITRATION_DESC "Get and set arbitration feature"
+#define VOLATILE_WC_DESC "Get and set volatile write cache feature"
+#define POWER_LIMIT_DESC "Get and set power limit feature"
+#define POWER_THRESH_DESC "Get and set power threshold feature"
+#define POWER_MEAS_DESC "Get and set power measurement feature"
+#define ERR_RECOVERY_DESC "Get and set error recovery feature"
+#define NUM_QUEUES_DESC "Get and set number of queues feature"
+#define HOST_BEHAVIOR_DESC "Get and set host behavior support feature"
+#define LBA_RANGE_DESC "Get and set lba range type feature"
+#define INT_COALESCE_DESC "Get and set interrupt coalescing feature"
+#define INT_VEC_CONF_DESC "Get and set interrupt vector configuration feature"
+#define WRITE_ATOM_NORMAL_DESC "Get and set write atomicity normal feature"
+#define ASYNC_EVENT_CONF_DESC "Get and set async event configuration feature"
+#define KEEP_ALIVE_TIMER_DESC "Get and set keep alive timer feature"
+
+/* --save and --sel, which every feature command takes */
+struct feat_args {
+	__u8 sel;
+	bool save;
+};
+
+
+#define STR(x) #x
+#define TMT(n) "thermal management temperature " STR(n)
+
+struct perfc_config {
+	__u32 namespace_id;
+	__u8 attri;
+	bool rvspa;
+	__u8 r4karl;
+	char *paid;
+	__u16 attrl;
+	char *vs_data;
+	struct feat_args feat;
+};
+
+struct temp_thresh_config {
+	__u16 tmpth;
+	__u8 tmpsel;
+	__u8 thsel;
+	__u8 tmpthh;
+	struct feat_args feat;
+};
+
+struct arbitration_config {
+	__u8 ab;
+	__u8 lpw;
+	__u8 mpw;
+	__u8 hpw;
+	struct feat_args feat;
+};
+
+struct err_recovery_config {
+	__u8 tler;
+	__u8 dulbe;
+	struct feat_args feat;
+};
+
+struct host_behavior_config {
+	__u8 acre;
+	__u8 etdas;
+	__u8 lbafee;
+	__u8 hdisns;
+	__u16 cdfe;
+	struct feat_args feat;
+};
+
+struct lba_range_type_config {
+	__u32 nsid;
+	__u8 num;
+	char *types;
+	char *lbaros;
+	char *hlbars;
+	char *slbas;
+	char *nlbs;
+	char *guids;
+	struct feat_args feat;
+};
+
+struct int_coalesce_config {
+	__u8 thr;
+	__u8 time;
+	struct feat_args feat;
+};
+
+struct int_vec_conf {
+	__u16 iv;
+	bool cd;
+	struct feat_args feat;
+};
+
+struct write_atom_normal_config {
+	bool dn;
+	struct feat_args feat;
+};
+
+struct keep_alive_timer_config {
+	__u32 kato;
+	struct feat_args feat;
+};
+
+static const char *power_mgmt_feat = "power management feature";
+static const char sel[] = "[0-3]: current/default/saved/supported";
+static const char save[] =
+	"Specifies that the controller shall save the attribute";
+
+/*
+ * The feature options, which store into feat_tmpl. feat_options() binds
+ * them to the struct feat_args of a command, which includes them after
+ * its own options, so that an option of the same short name comes before
+ * --save.
+ */
+static struct feat_args feat_tmpl;
+
+static struct argconfig_commandline_options feat_template[] = {
+	OPT_FLAG("save", 's', &feat_tmpl.save, save),
+	OPT_BYTE("sel",  'S', &feat_tmpl.sel,  sel,
+		 nvme_sel_values, .max = NVME_SEL_MAX),
+	OPT_END()
+};
+
+/* For a command which uses -s itself */
+static struct argconfig_commandline_options feat_template_save_long[] = {
+	OPT_FLAG("save", 0,   &feat_tmpl.save, save),
+	OPT_BYTE("sel",  'S', &feat_tmpl.sel,  sel,
+		 nvme_sel_values, .max = NVME_SEL_MAX),
+	OPT_END()
+};
+
+static struct argconfig_commandline_options *
+feat_options(struct feat_args *feat, bool save_short)
+{
+	return argconfig_bind(save_short ? feat_template :
+				feat_template_save_long,
+			      &feat_tmpl, sizeof(feat_tmpl), feat);
+}
+static const char *perfc_feat = "performance characteristics feature";
+static const char *hctm_feat = "host controlled thermal management feature";
+static const char *timestamp_feat = "timestamp feature";
+static const char *temp_thresh_feat = "temperature threshold feature";
+static const char *arbitration_feat = "arbitration feature";
+static const char *volatile_wc_feat = "volatile write cache feature";
+static const char *power_limit_feat = "power limit feature";
+static const char *power_thresh_feat = "power threshold feature";
+static const char *power_meas_feat = "power measurement feature";
+static const char *err_recovery_feat = "error recovery feature";
+static const char *num_queues_feat = "number of queues feature";
+static const char *host_behavior_feat = "host behavior support feature";
+static const char *lba_range_feat = "lba range type feature";
+static const char *int_coalesce_feat = "interrupt coalescing feature";
+static const char *int_vec_conf_feat = "interrupt vector configuration feature";
+static const char *write_atom_normal_feat = "write atomicity normal feature";
+static const char *async_event_conf_feat = "async event configuration feature";
+static const char *keep_alive_timer_feat = "keep alive timer feature";
+
+static int feat_get_nsid(struct libnvme_transport_handle *hdl, __u32 nsid,
+			 const __u8 fid, __u32 cdw11, __u8 sel, __u8 uidx,
+			 const char *feat)
+{
+	__u64 result;
+	int err;
+	__u32 len = 0;
+	nvme_print_flags_t flags = NORMAL;
+
+	__cleanup_libnvme_free void *buf = NULL;
+
+	if (!NVME_CHECK(sel, GET_FEATURES_SEL, SUPPORTED))
+		libnvme_get_feature_length(fid, cdw11, NVME_DATA_TFR_CTRL_TO_HOST, &len);
+
+	if (len) {
+		buf = libnvme_alloc(len);
+		if (!buf)
+			return -ENOMEM;
+	}
+
+	err = nvme_get_features(hdl, nsid, fid, sel, cdw11, uidx, buf, len,
+				&result);
+	if (err) {
+		nvme_show_err(err, "Get %s", feat);
+		return err;
+	}
+
+	flags = nvme_args.output_flags;
+
+	if (nvme_args.verbose)
+		flags |= VERBOSE;
+
+	nvme_show_feature(fid, sel, result, buf, len, flags);
+
+	return err;
+}
+
+static int feat_get(struct libnvme_transport_handle *hdl, const __u8 fid,
+		    __u32 cdw11, __u8 sel, __u8 uidx, const char *feat)
+{
+	return feat_get_nsid(hdl, 0, fid, cdw11, sel, uidx, feat);
+}
+
+static int power_mgmt_set(struct libnvme_transport_handle *hdl, const __u8 fid,
+			  __u8 ps, __u8 wh, bool sv)
+{
+	__u32 cdw11 = NVME_SET(ps, FEAT_PWRMGMT_PS) | NVME_SET(wh, FEAT_PWRMGMT_WH);
+	__u64 result;
+	int err;
+
+	err = nvme_set_features(hdl, 0, fid, sv, cdw11, 0, 0, 0, 0, NULL, 0,
+			&result);
+
+	if (err) {
+		nvme_show_err(err, "Set %s", power_mgmt_feat);
+		return err;
+	}
+
+	nvme_show_result("Set %s: 0x%04x (%s)", power_mgmt_feat, cdw11,
+			 sv ? "Save" : "Not save");
+	nvme_feature_show_fields(fid, cdw11, NULL);
+
+	return err;
+}
+
+static int feat_power_mgmt(int argc, char **argv, struct command *acmd, struct plugin *plugin)
+{
+	const char *ps = "power state";
+	const char *wh = "workload hint";
+	const __u8 fid = NVME_FEAT_FID_POWER_MGMT;
+
+	__cleanup_nvme_global_ctx struct libnvme_global_ctx *ctx = NULL;
+	__cleanup_nvme_transport_handle struct libnvme_transport_handle *hdl = NULL;
+	int err;
+
+	struct config {
+		__u8 ps;
+		__u8 wh;
+		struct feat_args feat;
+	};
+
+	struct config cfg = { 0 };
+
+	__cleanup_free struct argconfig_commandline_options *feat =
+		feat_options(&cfg.feat, true);
+
+	OPT_ARGS(opts) = {
+		OPT_BYTE("ps", 'p', &cfg.ps, ps),
+		OPT_BYTE("wh", 'w', &cfg.wh, wh),
+		OPT_INCLUDE(feat, "Feature options"),
+		OPT_END()
+	};
+
+	if (!feat)
+		return -ENOMEM;
+
+	err = parse_and_open(&ctx, &hdl, argc, argv, POWER_MGMT_DESC, opts);
+	if (err)
+		return err;
+
+	if (argconfig_given(opts, &cfg.ps))
+		err = power_mgmt_set(hdl, fid, cfg.ps, cfg.wh,
+				     cfg.feat.save);
+	else
+		err = feat_get(hdl, fid, 0, cfg.feat.sel, 0, power_mgmt_feat);
+
+	return err;
+}
+
+static int perfc_set(struct libnvme_transport_handle *hdl, __u8 fid, __u32 cdw11,
+		     struct perfc_config *cfg, bool sv)
+{
+	__u64 result;
+	int err;
+
+	__cleanup_fd int ffd = STDIN_FILENO;
+
+	struct nvme_perf_characteristics data = {
+		.attr_buf = { 0 },
+	};
+
+	switch (cfg->attri) {
+	case NVME_FEAT_PERFC_ATTRI_STD:
+		data.std_perf->r4karl = cfg->r4karl;
+		break;
+	case NVME_FEAT_PERFC_ATTRI_VS_MIN ... NVME_FEAT_PERFC_ATTRI_VS_MAX:
+		if (cfg->attrl > sizeof(data.vs_perf->vs)) {
+			nvme_show_error("attribute length %u exceeds %zu bytes",
+					cfg->attrl, sizeof(data.vs_perf->vs));
+			return -EINVAL;
+		}
+		libnvme_uuid_from_string(cfg->paid, data.vs_perf->paid);
+		data.vs_perf->attrl = cpu_to_le16(cfg->attrl);
+		if (cfg->attrl && strlen(cfg->vs_data)) {
+			ffd = open(cfg->vs_data, O_RDONLY);
+			if (ffd < 0) {
+				nvme_show_error("Failed to open file %s: %s", cfg->vs_data,
+						libnvme_strerror(errno));
+				return -EINVAL;
+			}
+			err = read(ffd, data.vs_perf->vs, cfg->attrl);
+			if (err < 0) {
+				nvme_show_error("failed to read data buffer from input file: %s",
+						libnvme_strerror(errno));
+				return -errno;
+			}
+		}
+		break;
+	default:
+		break;
+	}
+
+	err = nvme_set_features(hdl, 0, fid, sv, cdw11, 0, 0, 0, 0, &data,
+			sizeof(data), &result);
+	if (err) {
+		nvme_show_err(err, "Set %s", perfc_feat);
+		return err;
+	}
+
+	nvme_show_result("Set %s: 0x%04x (%s)", perfc_feat, cdw11,
+			 sv ? "Save" : "Not save");
+	nvme_feature_show_fields(fid, cdw11, (unsigned char *)&data);
+
+	return err;
+}
+
+static int feat_perfc(int argc, char **argv, struct command *acmd, struct plugin *plugin)
+{
+	const char *namespace_id_optional = "optional namespace attached to controller";
+	const char *attri = "attribute index";
+	const char *rvspa = "revert vendor specific performance attribute";
+	const char *r4karl = "random 4 kib average read latency";
+	const char *paid = "performance attribute identifier";
+	const char *attrl = "attribute length";
+	const char *vs_data = "vendor specific data";
+
+	__cleanup_nvme_global_ctx struct libnvme_global_ctx *ctx = NULL;
+	__cleanup_nvme_transport_handle struct libnvme_transport_handle *hdl = NULL;
+	int err;
+	__u8 fid = NVME_FEAT_FID_PERF_CHARACTERISTICS;
+	__u32 cdw11;
+
+	struct perfc_config cfg = { 0 };
+
+	__cleanup_free struct argconfig_commandline_options *feat =
+		feat_options(&cfg.feat, true);
+
+	OPT_ARGS(opts) = {
+		OPT_UINT("namespace-id", 'n', &cfg.namespace_id,
+			 namespace_id_optional, nvme_nsid_values),
+		OPT_BYTE("attri",        'a', &cfg.attri,        attri),
+		OPT_FLAG("rvspa",        'r', &cfg.rvspa,        rvspa),
+		OPT_BYTE("r4karl",       'R', &cfg.r4karl,       r4karl),
+		OPT_STR("paid",          'p', &cfg.paid,         paid),
+		OPT_SHRT("attrl",        'A', &cfg.attrl,        attrl),
+		OPT_FILE("vs-data",      'V', &cfg.vs_data,      vs_data),
+		OPT_INCLUDE(feat, "Feature options"),
+		OPT_END()
+	};
+
+	if (!feat)
+		return -ENOMEM;
+
+	err = parse_and_open(&ctx, &hdl, argc, argv, PERFC_DESC, opts);
+	if (err)
+		return err;
+
+	cdw11 = NVME_SET(cfg.attri, FEAT_PERFC_ATTRI) | NVME_SET(cfg.rvspa, FEAT_PERFC_RVSPA);
+
+	if (argconfig_given(opts, &cfg.rvspa) ||
+	    argconfig_given(opts, &cfg.r4karl) ||
+	    argconfig_given(opts, &cfg.paid))
+		err = perfc_set(hdl, fid, cdw11, &cfg,
+				cfg.feat.save);
+	else
+		err = feat_get(hdl, fid, cdw11, cfg.feat.sel, 0, perfc_feat);
+
+	return err;
+}
+
+static int hctm_set(struct libnvme_transport_handle *hdl, const __u8 fid,
+		    __u16 tmt1, __u16 tmt2, bool sv)
+{
+	__u32 cdw11 = NVME_SET(tmt1, FEAT_HCTM_TMT1)
+		| NVME_SET(tmt2, FEAT_HCTM_TMT2);
+	__u64 result;
+	int err;
+
+	err = nvme_set_features(hdl, 0, fid, sv, cdw11, 0, 0, 0, 0, NULL, 0,
+			&result);
+	if (err) {
+		nvme_show_err(err, "Set %s", hctm_feat);
+		return err;
+	}
+
+	nvme_show_result("Set %s: 0x%04x (%s)", hctm_feat, cdw11,
+			 sv ? "Save" : "Not save");
+	nvme_feature_show_fields(fid, cdw11, NULL);
+
+	return err;
+}
+
+static int feat_hctm(int argc, char **argv, struct command *acmd, struct plugin *plugin)
+{
+	const __u8 fid = NVME_FEAT_FID_HCTM;
+
+	__cleanup_nvme_global_ctx struct libnvme_global_ctx *ctx = NULL;
+	__cleanup_nvme_transport_handle struct libnvme_transport_handle *hdl = NULL;
+	int err;
+
+	struct config {
+		__u16 tmt1;
+		__u16 tmt2;
+		struct feat_args feat;
+	};
+
+	struct config cfg = { 0 };
+
+	__cleanup_free struct argconfig_commandline_options *feat =
+		feat_options(&cfg.feat, true);
+
+	OPT_ARGS(opts) = {
+		OPT_SHRT("tmt1", 't', &cfg.tmt1, TMT(1)),
+		OPT_SHRT("tmt2", 'T', &cfg.tmt2, TMT(2)),
+		OPT_INCLUDE(feat, "Feature options"),
+		OPT_END()
+	};
+
+	if (!feat)
+		return -ENOMEM;
+
+	err = parse_and_open(&ctx, &hdl, argc, argv, HCTM_DESC, opts);
+	if (err)
+		return err;
+
+	if (argconfig_given(opts, &cfg.tmt1) ||
+	    argconfig_given(opts, &cfg.tmt2))
+		err = hctm_set(hdl, fid, cfg.tmt1, cfg.tmt2,
+			       cfg.feat.save);
+	else
+		err = feat_get(hdl, fid, 0, cfg.feat.sel, 0, hctm_feat);
+
+	return err;
+}
+
+static int timestamp_set(struct libnvme_transport_handle *hdl, const __u8 fid,
+			 __u64 tstmp, bool sv)
+{
+	__u64 result;
+	int err;
+	struct nvme_timestamp ts = { 0 };
+	__le64 timestamp = cpu_to_le64(tstmp);
+
+	memcpy(ts.timestamp, &timestamp, sizeof(ts.timestamp));
+
+	err = nvme_set_features(hdl, 0, fid, sv, 0, 0, 0, 0, 0, &ts, sizeof(ts),
+			&result);
+	if (err) {
+		nvme_show_err(err, "Set %s", timestamp_feat);
+		return err;
+	}
+
+	nvme_show_result("Set %s: (%s)", timestamp_feat,
+			 sv ? "Save" : "Not save");
+	nvme_feature_show_fields(fid, 0, (unsigned char *)&ts);
+
+	return err;
+}
+
+static int feat_timestamp(int argc, char **argv, struct command *acmd, struct plugin *plugin)
+{
+	const __u8 fid = NVME_FEAT_FID_TIMESTAMP;
+	const char *tstmp = "timestamp";
+
+	__cleanup_nvme_global_ctx struct libnvme_global_ctx *ctx = NULL;
+	__cleanup_nvme_transport_handle struct libnvme_transport_handle *hdl = NULL;
+	int err;
+
+	struct config {
+		__u64 tstmp;
+		struct feat_args feat;
+	};
+
+	struct config cfg = { 0 };
+
+	__cleanup_free struct argconfig_commandline_options *feat =
+		feat_options(&cfg.feat, true);
+
+	OPT_ARGS(opts) = {
+		OPT_LONG("tstmp", 't', &cfg.tstmp, tstmp),
+		OPT_INCLUDE(feat, "Feature options"),
+		OPT_END()
+	};
+
+	if (!feat)
+		return -ENOMEM;
+
+	err = parse_and_open(&ctx, &hdl, argc, argv, TIMESTAMP_DESC, opts);
+	if (err)
+		return err;
+
+	if (argconfig_given(opts, &cfg.tstmp))
+		err = timestamp_set(hdl, fid, cfg.tstmp,
+				    cfg.feat.save);
+	else
+		err = feat_get(hdl, fid, 0, cfg.feat.sel, 0, timestamp_feat);
+
+	return err;
+}
+
+static int temp_thresh_set(struct libnvme_transport_handle *hdl, const __u8 fid,
+			   struct argconfig_commandline_options *opts,
+			   struct temp_thresh_config *cfg)
+{
+	enum nvme_get_features_sel sel = NVME_GET_FEATURES_SEL_CURRENT;
+	struct libnvme_passthru_cmd cmd;
+	__u16 tmpth;
+	__u8 tmpsel;
+	__u8 thsel;
+	__u8 tmpthh;
+	int err;
+	bool sv;
+
+	sv = cfg->feat.save;
+	if (sv)
+		sel = NVME_GET_FEATURES_SEL_SAVED;
+
+	nvme_init_get_features_temp_thresh(&cmd, sel, cfg->tmpsel, cfg->thsel);
+	err = libnvme_exec_admin_passthru(hdl, &cmd);
+	if (!err) {
+		nvme_feature_decode_temp_threshold(cmd.result, &tmpth,
+						   &tmpsel, &thsel, &tmpthh);
+		if (!argconfig_given(opts, &cfg->tmpth))
+			cfg->tmpth = tmpth;
+		if (!argconfig_given(opts, &cfg->tmpthh))
+			cfg->tmpthh = tmpthh;
+	}
+
+	nvme_init_set_features_temp_thresh(&cmd, sv, cfg->tmpth, cfg->tmpsel,
+					   cfg->thsel, cfg->tmpthh);
+	err = libnvme_exec_admin_passthru(hdl, &cmd);
+	if (err) {
+		nvme_show_err(err, "Set %s", temp_thresh_feat);
+		return err;
+	}
+
+	nvme_show_result("Set %s: (%s)", temp_thresh_feat,
+			 sv ? "Save" : "Not save");
+	nvme_feature_show_fields(fid, NVME_SET(cfg->tmpth, FEAT_TT_TMPTH) |
+				 NVME_SET(cfg->tmpsel, FEAT_TT_TMPSEL) |
+				 NVME_SET(cfg->thsel, FEAT_TT_THSEL) |
+				 NVME_SET(cfg->tmpthh, FEAT_TT_TMPTHH), NULL);
+
+	return err;
+}
+
+static int feat_temp_thresh(int argc, char **argv, struct command *acmd, struct plugin *plugin)
+{
+	const __u8 fid = NVME_FEAT_FID_TEMP_THRESH;
+	const char *tmpth = "temperature threshold";
+	const char *tmpsel = "threshold temperature select";
+	const char *thsel = "threshold type select";
+	const char *tmpthh = "temperature threshold hysteresis";
+
+	__cleanup_nvme_global_ctx struct libnvme_global_ctx *ctx = NULL;
+	__cleanup_nvme_transport_handle struct libnvme_transport_handle *hdl = NULL;
+	int err;
+
+	struct temp_thresh_config cfg = { 0 };
+
+	__cleanup_free struct argconfig_commandline_options *feat =
+		feat_options(&cfg.feat, true);
+
+	OPT_ARGS(opts) = {
+		OPT_SHRT("tmpth",  'T', &cfg.tmpth,  tmpth),
+		OPT_BYTE("tmpsel", 'm', &cfg.tmpsel, tmpsel),
+		OPT_BYTE("thsel",  0,   &cfg.thsel,  thsel),
+		OPT_BYTE("tmpthh", 'M', &cfg.tmpthh, tmpthh),
+		OPT_INCLUDE(feat, "Feature options"),
+		OPT_END()
+	};
+
+	if (!feat)
+		return -ENOMEM;
+
+	err = parse_and_open(&ctx, &hdl, argc, argv, TEMP_THRESH_DESC, opts);
+	if (err)
+		return err;
+
+	if (argconfig_given(opts, &cfg.tmpth) ||
+	    argconfig_given(opts, &cfg.tmpthh))
+		err = temp_thresh_set(hdl, fid, opts, &cfg);
+	else
+		err = feat_get(hdl, fid, NVME_SET(cfg.tmpsel, FEAT_TT_TMPSEL) |
+			       NVME_SET(cfg.thsel, FEAT_TT_THSEL),
+			       cfg.feat.sel, 0, temp_thresh_feat);
+
+	return err;
+}
+
+static int arbitration_set(struct libnvme_transport_handle *hdl, const __u8 fid,
+			   struct argconfig_commandline_options *opts,
+			   struct arbitration_config *cfg)
+{
+	enum nvme_get_features_sel sel = NVME_GET_FEATURES_SEL_CURRENT;
+	struct libnvme_passthru_cmd cmd;
+	__u8 ab, lpw, mpw, hpw;
+	bool sv;
+	int err;
+
+	sv = cfg->feat.save;
+	if (sv)
+		sel = NVME_GET_FEATURES_SEL_SAVED;
+
+	nvme_init_get_features_arbitration(&cmd, sel);
+	err = libnvme_exec_admin_passthru(hdl, &cmd);
+	if (!err) {
+		nvme_feature_decode_arbitration(cmd.result, &ab,
+						&lpw, &mpw, &hpw);
+		if (!argconfig_given(opts, &cfg->ab))
+			cfg->ab = ab;
+		if (!argconfig_given(opts, &cfg->lpw))
+			cfg->lpw = lpw;
+		if (!argconfig_given(opts, &cfg->mpw))
+			cfg->mpw = mpw;
+		if (!argconfig_given(opts, &cfg->hpw))
+			cfg->hpw = hpw;
+	}
+
+	nvme_init_set_features_arbitration(&cmd, sv, cfg->ab, cfg->lpw,
+					   cfg->mpw, cfg->hpw);
+	err = libnvme_exec_admin_passthru(hdl, &cmd);
+	if (err) {
+		nvme_show_err(err, "Set %s", arbitration_feat);
+		return err;
+	}
+
+	nvme_show_result("Set %s: (%s)", arbitration_feat,
+			 sv ? "Save" : "Not save");
+	nvme_feature_show_fields(fid,
+				 NVME_SET(cfg->ab, FEAT_ARBITRATION_BURST) |
+				 NVME_SET(cfg->lpw, FEAT_ARBITRATION_LPW) |
+				 NVME_SET(cfg->mpw, FEAT_ARBITRATION_MPW) |
+				 NVME_SET(cfg->hpw, FEAT_ARBITRATION_HPW),
+				 NULL);
+
+	return err;
+}
+
+static int feat_arbitration(int argc, char **argv, struct command *acmd, struct plugin *plugin)
+{
+	const __u8 fid = NVME_FEAT_FID_ARBITRATION;
+	const char *ab = "arbitration burst";
+	const char *lpw = "low priority weight";
+	const char *mpw = "medium priority weight";
+	const char *hpw = "high priority weight";
+
+	__cleanup_nvme_global_ctx struct libnvme_global_ctx *ctx = NULL;
+	__cleanup_nvme_transport_handle struct libnvme_transport_handle *hdl = NULL;
+	int err;
+
+	struct arbitration_config cfg = { 0 };
+
+	__cleanup_free struct argconfig_commandline_options *feat =
+		feat_options(&cfg.feat, true);
+
+	OPT_ARGS(opts) = {
+		OPT_BYTE("ab",  'a', &cfg.ab,  ab),
+		OPT_BYTE("lpw", 'l', &cfg.lpw, lpw),
+		OPT_BYTE("mpw", 'm', &cfg.mpw, mpw),
+		OPT_BYTE("hpw", 0,   &cfg.hpw, hpw),
+		OPT_INCLUDE(feat, "Feature options"),
+		OPT_END()
+	};
+
+	if (!feat)
+		return -ENOMEM;
+
+	err = parse_and_open(&ctx, &hdl, argc, argv, ARBITRATION_DESC, opts);
+	if (err)
+		return err;
+
+	if (argconfig_given(opts, &cfg.feat.sel) ||
+	    !(argconfig_given(opts, &cfg.ab) ||
+	      argconfig_given(opts, &cfg.lpw) ||
+	      argconfig_given(opts, &cfg.mpw) ||
+	      argconfig_given(opts, &cfg.hpw)))
+		return feat_get(hdl, fid, 0, cfg.feat.sel, 0,
+				"arbitration feature");
+
+	return arbitration_set(hdl, fid, opts, &cfg);
+}
+
+static int volatile_wc_set(struct libnvme_transport_handle *hdl, const __u8 fid,
+			   bool wce, bool sv)
+{
+	__u32 cdw11 = NVME_SET(wce, FEAT_VWC_WCE);
+	__u64 result;
+	int err;
+
+	err = nvme_set_features(hdl, 0, fid, sv, cdw11, 0, 0, 0, 0, NULL, 0,
+			&result);
+	if (err) {
+		nvme_show_err(err, "Set %s", volatile_wc_feat);
+		return err;
+	}
+
+	nvme_show_result("Set %s: 0x%04x (%s)", volatile_wc_feat, cdw11,
+			 sv ? "Save" : "Not save");
+	nvme_feature_show_fields(fid, cdw11, NULL);
+
+	return err;
+}
+
+static int feat_volatile_wc(int argc, char **argv, struct command *acmd, struct plugin *plugin)
+{
+	const __u8 fid = NVME_FEAT_FID_VOLATILE_WC;
+	const char *wce = "volatile write cache enable";
+
+	__cleanup_nvme_global_ctx struct libnvme_global_ctx *ctx = NULL;
+	__cleanup_nvme_transport_handle struct libnvme_transport_handle *hdl = NULL;
+	int err;
+
+	struct config {
+		bool wce;
+		struct feat_args feat;
+	};
+
+	struct config cfg = { 0 };
+
+	__cleanup_free struct argconfig_commandline_options *feat =
+		feat_options(&cfg.feat, true);
+
+	OPT_ARGS(opts) = {
+		OPT_FLAG("wce", 'w', &cfg.wce, wce),
+		OPT_INCLUDE(feat, "Feature options"),
+		OPT_END()
+	};
+
+	if (!feat)
+		return -ENOMEM;
+
+	err = parse_and_open(&ctx, &hdl, argc, argv, VOLATILE_WC_DESC, opts);
+	if (err)
+		return err;
+
+	if (argconfig_given(opts, &cfg.wce))
+		err = volatile_wc_set(hdl, fid, cfg.wce,
+				      cfg.feat.save);
+	else
+		err = feat_get(hdl, fid, 0, cfg.feat.sel, 0, volatile_wc_feat);
+
+	return err;
+}
+
+static int power_limit_set(struct libnvme_transport_handle *hdl, const __u8 fid,
+			   __u8 plv, __u8 pls, __u8 uidx, bool sv)
+{
+	__u32 cdw13 = NVME_SET(plv, FEAT_POWER_LIMIT_PLV) |
+		      NVME_SET(pls, FEAT_POWER_LIMIT_PLS);
+	__u64 result;
+	int err;
+
+	err = nvme_set_features(hdl, 0, fid, sv, 0, 0, cdw13, uidx, 0, NULL, 0,
+				&result);
+	if (err) {
+		nvme_show_err(err, "Set %s", power_limit_feat);
+		return err;
+	}
+
+	nvme_show_result("Set %s: 0x%04x (%s)", power_limit_feat, cdw13,
+			 sv ? "Save" : "Not save");
+	nvme_feature_show_fields(fid, cdw13, NULL);
+
+	return err;
+}
+
+static int feat_power_limit(int argc, char **argv, struct command *acmd,
+			    struct plugin *plugin)
+{
+	const char *plv = "power limit value";
+	const char *pls = "power limit scale";
+	const __u8 fid = NVME_FEAT_FID_POWER_LIMIT;
+
+	__cleanup_nvme_global_ctx struct libnvme_global_ctx *ctx = NULL;
+
+	__cleanup_nvme_transport_handle struct libnvme_transport_handle *hdl =
+	    NULL;
+	int err;
+
+	struct config {
+		__u8 plv;
+		__u8 pls;
+		__u8 uidx;
+		struct feat_args feat;
+	};
+
+	struct config cfg = { 0 };
+
+	__cleanup_free struct argconfig_commandline_options *feat =
+		feat_options(&cfg.feat, true);
+
+	OPT_ARGS(opts) = {
+		OPT_BYTE("plv",        'p', &cfg.plv,  plv),
+		OPT_BYTE("pls",        'l', &cfg.pls,  pls),
+		OPT_BYTE("uuid-index", 'u', &cfg.uidx, uuid_index),
+		OPT_INCLUDE(feat, "Feature options"),
+		OPT_END()
+	};
+
+	if (!feat)
+		return -ENOMEM;
+
+	err = parse_and_open(&ctx, &hdl, argc, argv, POWER_LIMIT_DESC, opts);
+	if (err)
+		return err;
+
+	if (argconfig_given(opts, &cfg.plv))
+		err = power_limit_set(hdl, fid, cfg.plv, cfg.pls, cfg.uidx,
+				      cfg.feat.save);
+	else
+		err = feat_get(hdl, fid, 0, cfg.feat.sel, cfg.uidx,
+			       power_limit_feat);
+
+	return err;
+}
+
+static int power_thresh_set(struct libnvme_transport_handle *hdl, const __u8 fid,
+			    __u16 ptv, __u8 pts, __u8 pmts, __u8 ept, __u8 uidx,
+			    bool sv)
+{
+	__u32 cdw11 = NVME_SET(ptv, FEAT_POWER_THRESH_PTV) |
+		      NVME_SET(pmts, FEAT_POWER_THRESH_PMTS) |
+		      NVME_SET(pts, FEAT_POWER_THRESH_PTS) |
+		      NVME_SET(ept, FEAT_POWER_THRESH_EPT);
+	__u64 result;
+	int err;
+
+	err = nvme_set_features(hdl, 0, fid, sv, cdw11, 0, 0, uidx, 0, NULL, 0,
+				&result);
+	if (err) {
+		nvme_show_err(err, "Set %s", power_thresh_feat);
+		return err;
+	}
+
+	nvme_show_result("Set %s: 0x%04x (%s)", power_thresh_feat,
+			 cdw11, sv ? "Save" : "Not save");
+	nvme_feature_show_fields(fid, cdw11, NULL);
+
+	return err;
+}
+
+static int feat_power_thresh(int argc, char **argv, struct command *acmd,
+			     struct plugin *plugin)
+{
+	const char *ptv = "power threshold value";
+	const char *pts = "power threshold scale";
+	const char *pmts = "power measurement type select";
+	const char *ept = "enable power threshold";
+	const __u8 fid = NVME_FEAT_FID_POWER_THRESH;
+
+	__cleanup_nvme_global_ctx struct libnvme_global_ctx *ctx = NULL;
+
+	__cleanup_nvme_transport_handle struct libnvme_transport_handle *hdl =
+	    NULL;
+	int err;
+
+	struct config {
+		__u16 ptv;
+		__u8 pts;
+		__u8 pmts;
+		__u8 ept;
+		__u8 uidx;
+		struct feat_args feat;
+	};
+
+	struct config cfg = { 0 };
+
+	__cleanup_free struct argconfig_commandline_options *feat =
+		feat_options(&cfg.feat, true);
+
+	OPT_ARGS(opts) = {
+		OPT_SHRT("ptv",        'p', &cfg.ptv,  ptv),
+		OPT_BYTE("pts",        't', &cfg.pts,  pts),
+		OPT_BYTE("pmts",       'm', &cfg.pmts, pmts),
+		OPT_BYTE("ept",        'e', &cfg.ept,  ept),
+		OPT_BYTE("uuid-index", 'u', &cfg.uidx, uuid_index),
+		OPT_INCLUDE(feat, "Feature options"),
+		OPT_END()
+	};
+
+	if (!feat)
+		return -ENOMEM;
+
+	err = parse_and_open(&ctx, &hdl, argc, argv, POWER_THRESH_DESC, opts);
+	if (err)
+		return err;
+
+	if (argconfig_given(opts, &cfg.ptv) ||
+	    argconfig_given(opts, &cfg.pts) ||
+	    argconfig_given(opts, &cfg.pmts) ||
+	    argconfig_given(opts, &cfg.ept))
+		err = power_thresh_set(hdl, fid, cfg.ptv, cfg.pts, cfg.pmts,
+				       cfg.ept, cfg.uidx,
+				       cfg.feat.save);
+	else
+		err = feat_get(hdl, fid, 0, cfg.feat.sel, cfg.uidx,
+			       power_thresh_feat);
+
+	return err;
+}
+
+static int power_meas_set(struct libnvme_transport_handle *hdl, const __u8 fid,
+			  __u8 action, __u8 pmts, __u16 smt, __u8 uidx, bool sv)
+{
+	__u32 cdw11 = NVME_SET(action, FEAT_POWER_MEAS_ACT) |
+		      NVME_SET(pmts, FEAT_POWER_MEAS_PMTS) |
+		      NVME_SET(smt, FEAT_POWER_MEAS_SMT);
+	__u64 result;
+	int err;
+
+	err = nvme_set_features(hdl, 0, fid, sv, cdw11, 0, 0, uidx, 0, NULL, 0,
+			&result);
+	if (err) {
+		nvme_show_err(err, "Set %s", power_meas_feat);
+		return err;
+	}
+
+	nvme_show_result("Set %s: 0x%04x (%s)", power_meas_feat, cdw11,
+			 sv ? "Save" : "Not save");
+	nvme_feature_show_fields(fid, cdw11, NULL);
+
+	return err;
+}
+
+static int feat_power_meas(int argc, char **argv, struct command *cmd,
+			   struct plugin *plugin)
+{
+	const char *action = "action [0-1]: stop|start";
+	const char *pmts = "power measurement type select";
+	const char *smt = "stop measurement time";
+	const __u8 fid = NVME_FEAT_FID_POWER_MEASUREMENT;
+
+	__cleanup_nvme_global_ctx struct libnvme_global_ctx *ctx = NULL;
+
+	__cleanup_nvme_transport_handle struct libnvme_transport_handle *hdl =
+	    NULL;
+	int err;
+
+	struct config {
+		__u8 act;
+		__u8 pmts;
+		__u16 smt;
+		__u8 uidx;
+		struct feat_args feat;
+	};
+
+	struct config cfg = { 0 };
+
+	__cleanup_free struct argconfig_commandline_options *feat =
+		feat_options(&cfg.feat, true);
+
+	OPT_ARGS(opts) = {
+		OPT_BYTE("act",        0,   &cfg.act,  action),
+		OPT_BYTE("pmts",       0,   &cfg.pmts, pmts),
+		OPT_SHRT("smt",        0,   &cfg.smt,  smt),
+		OPT_BYTE("uuid-index", 'u', &cfg.uidx, uuid_index),
+		OPT_INCLUDE(feat, "Feature options"),
+		OPT_END()
+	};
+
+	if (!feat)
+		return -ENOMEM;
+
+	err = parse_and_open(&ctx, &hdl, argc, argv, POWER_MEAS_DESC, opts);
+	if (err)
+		return err;
+
+	if (argconfig_given(opts, &cfg.act) ||
+	    argconfig_given(opts, &cfg.pmts) ||
+	    argconfig_given(opts, &cfg.smt))
+		err = power_meas_set(hdl, fid, cfg.act, cfg.pmts, cfg.smt,
+				     cfg.uidx,
+				     cfg.feat.save);
+	else
+		err = feat_get(hdl, fid, 0, cfg.feat.sel, cfg.uidx,
+			       power_meas_feat);
+
+	return err;
+}
+
+static int err_recovery_set(struct libnvme_transport_handle *hdl, const __u8 fid,
+			    __u32 nsid, __u16 tler, bool dulbe, bool sv)
+{
+	__u32 cdw11 = NVME_SET(tler, FEAT_ERROR_RECOVERY_TLER) |
+		      NVME_SET(dulbe, FEAT_ERROR_RECOVERY_DULBE);
+	__u64 result;
+	int err;
+
+	err = nvme_set_features(hdl, nsid, fid, sv, cdw11, 0, 0, 0, 0, NULL, 0,
+				&result);
+	if (err) {
+		nvme_show_err(err, "Set %s", err_recovery_feat);
+		return err;
+	}
+
+	nvme_show_result("Set %s: 0x%04x (%s)", err_recovery_feat, cdw11,
+			 sv ? "Save" : "Not save");
+	nvme_feature_show_fields(fid, cdw11, NULL);
+
+	return err;
+}
+
+static int feat_err_recovery(int argc, char **argv, struct command *acmd,
+			     struct plugin *plugin)
+{
+	__cleanup_nvme_transport_handle struct libnvme_transport_handle *hdl =
+	    NULL;
+	__cleanup_nvme_global_ctx struct libnvme_global_ctx *ctx = NULL;
+
+	const char *dulbe =
+	    "deallocated or unwritten logical block error enable";
+	const char *tler = "time limited error recovery";
+	const __u8 fid = NVME_FEAT_FID_ERR_RECOVERY;
+
+	int err;
+
+	struct config {
+		__u32 nsid;
+		__u16 tler;
+		bool dulbe;
+		struct feat_args feat;
+	};
+
+	struct config cfg = { 0 };
+
+	__cleanup_free struct argconfig_commandline_options *feat =
+		feat_options(&cfg.feat, true);
+
+	OPT_ARGS(opts) = {
+		OPT_UINT("nsid", 'n', &cfg.nsid, namespace_id_desired,
+			 nvme_nsid_values),
+		OPT_SHRT("tler",  't', &cfg.tler,  tler),
+		OPT_FLAG("dulbe", 'd', &cfg.dulbe, dulbe),
+		OPT_INCLUDE(feat, "Feature options"),
+		OPT_END()
+	};
+
+	if (!feat)
+		return -ENOMEM;
+
+	err = parse_and_open(&ctx, &hdl, argc, argv, ERR_RECOVERY_DESC, opts);
+	if (err)
+		return err;
+
+	if (!cfg.nsid) {
+		err = libnvme_get_nsid(hdl, &cfg.nsid);
+		if (err < 0) {
+			nvme_show_error("get-nsid: %s", libnvme_strerror(-err));
+			return err;
+		}
+	}
+
+	if (argconfig_given(opts, &cfg.tler) ||
+	    argconfig_given(opts, &cfg.dulbe))
+		err = err_recovery_set(hdl, fid, cfg.nsid, cfg.tler, cfg.dulbe,
+				       cfg.feat.save);
+	else
+		err = feat_get_nsid(hdl, cfg.nsid, fid, 0, cfg.feat.sel, 0,
+				    err_recovery_feat);
+
+	return err;
+}
+
+static int num_queues_set(struct libnvme_transport_handle *hdl, const __u8 fid,
+			  __u16 nsqr, __u16 ncqr, bool sv, bool nsqr_given,
+			  bool ncqr_given)
+{
+	enum nvme_get_features_sel sel = NVME_GET_FEATURES_SEL_CURRENT;
+	__u32 cdw11 = NVME_SET(nsqr, FEAT_NRQS_NSQR) |
+		      NVME_SET(ncqr, FEAT_NRQS_NCQR);
+	struct libnvme_passthru_cmd cmd;
+	__u64 result;
+	int err;
+
+	if (sv)
+		sel = NVME_GET_FEATURES_SEL_SAVED;
+
+	nvme_init_get_features_num_queues(&cmd, sel);
+	err = libnvme_exec_admin_passthru(hdl, &cmd);
+	if (!err) {
+		nvme_feature_decode_number_of_queues(cmd.result, &nsqr, &ncqr);
+		if (!nsqr_given)
+			cdw11 |= NVME_SET(nsqr, FEAT_NRQS_NSQR);
+		if (!ncqr_given)
+			cdw11 |= NVME_SET(ncqr, FEAT_NRQS_NCQR);
+	}
+
+	err = nvme_set_features(hdl, 0, fid, sv, cdw11, 0, 0, 0, 0, NULL, 0,
+				&result);
+	if (err) {
+		nvme_show_err(err, "Set %s", num_queues_feat);
+		return err;
+	}
+
+	nvme_show_result("Set %s: 0x%04x (%s)", num_queues_feat, cdw11,
+			 sv ? "Save" : "Not save");
+	nvme_feature_show_fields(fid, cdw11, NULL);
+
+	return err;
+}
+
+static int feat_num_queues(int argc, char **argv, struct command *acmd,
+			     struct plugin *plugin)
+{
+	__cleanup_nvme_transport_handle struct libnvme_transport_handle *hdl =
+	    NULL;
+	__cleanup_nvme_global_ctx struct libnvme_global_ctx *ctx = NULL;
+
+	const char *ncqr = "number of I/O completion queues requested";
+	const char *nsqr = "number of I/O submission queues requested";
+	const __u8 fid = NVME_FEAT_FID_NUM_QUEUES;
+	int err;
+
+	struct config {
+		__u16 nsqr;
+		__u16 ncqr;
+		struct feat_args feat;
+	};
+
+	struct config cfg = { 0 };
+
+	__cleanup_free struct argconfig_commandline_options *feat =
+		feat_options(&cfg.feat, true);
+
+	OPT_ARGS(opts) = {
+		OPT_SHRT("nsqr", 'n', &cfg.nsqr, nsqr),
+		OPT_SHRT("ncqr", 'c', &cfg.ncqr, ncqr),
+		OPT_INCLUDE(feat, "Feature options"),
+		OPT_END()
+	};
+
+	if (!feat)
+		return -ENOMEM;
+
+	err = parse_and_open(&ctx, &hdl, argc, argv, NUM_QUEUES_DESC, opts);
+	if (err)
+		return err;
+
+	if (argconfig_given(opts, &cfg.nsqr) ||
+	    argconfig_given(opts, &cfg.ncqr))
+		err = num_queues_set(hdl, fid, cfg.nsqr, cfg.ncqr,
+				     cfg.feat.save,
+				     argconfig_given(opts, &cfg.nsqr),
+				     argconfig_given(opts, &cfg.ncqr));
+	else
+		err = feat_get(hdl, fid, 0, cfg.feat.sel, 0, num_queues_feat);
+
+	return err;
+}
+
+static int host_behavior_set(struct libnvme_transport_handle *hdl, __u8 fid,
+			     struct argconfig_commandline_options *opts,
+			     struct host_behavior_config *cfg, bool sv)
+{
+	enum nvme_get_features_sel gsel = NVME_GET_FEATURES_SEL_CURRENT;
+	struct libnvme_passthru_cmd cmd;
+	struct nvme_feat_host_behavior data = { 0 };
+	int err;
+
+	if (sv)
+		gsel = NVME_GET_FEATURES_SEL_SAVED;
+
+	nvme_init_get_features_host_behavior(&cmd, gsel, &data);
+	err = libnvme_exec_admin_passthru(hdl, &cmd);
+	if (err) {
+		nvme_show_err(err, "Get %s", host_behavior_feat);
+		return err;
+	}
+
+	if (argconfig_given(opts, &cfg->acre))
+		data.acre = cfg->acre;
+	if (argconfig_given(opts, &cfg->etdas))
+		data.etdas = cfg->etdas;
+	if (argconfig_given(opts, &cfg->lbafee))
+		data.lbafee = cfg->lbafee;
+	if (argconfig_given(opts, &cfg->hdisns))
+		data.hdisns = cfg->hdisns;
+	if (argconfig_given(opts, &cfg->cdfe))
+		data.cdfe = cpu_to_le16(cfg->cdfe);
+
+	nvme_init_set_features_host_behavior(&cmd, sv, &data);
+	err = libnvme_exec_admin_passthru(hdl, &cmd);
+	if (err) {
+		nvme_show_err(err, "Set %s", host_behavior_feat);
+		return err;
+	}
+
+	nvme_show_result("Set %s: (%s)", host_behavior_feat,
+			 sv ? "Save" : "Not save");
+	nvme_feature_show_fields(fid, 0, (unsigned char *)&data);
+
+	return err;
+}
+
+static int feat_host_behavior_support(int argc, char **argv, struct command *acmd,
+				      struct plugin *plugin)
+{
+	const char *acre_desc = "Advanced Command Retry Enable (0 or 1)";
+	const char *etdas_desc = "Extended Telemetry Data Area 4 Supported (0 or 1)";
+	const char *lbafee_desc = "LBA Format Extension Enable (0 or 1)";
+	const char *hdisns_desc = "Host Dispersed Namespace Support (0 or 1)";
+	const char *cdfe_desc = "Copy Descriptor Formats Enable bitmask";
+	const __u8 fid = NVME_FEAT_FID_HOST_BEHAVIOR;
+
+	__cleanup_nvme_global_ctx struct libnvme_global_ctx *ctx = NULL;
+	__cleanup_nvme_transport_handle struct libnvme_transport_handle *hdl = NULL;
+	int err;
+
+	struct host_behavior_config cfg = { 0 };
+
+	__cleanup_free struct argconfig_commandline_options *feat =
+		feat_options(&cfg.feat, true);
+
+	OPT_ARGS(opts) = {
+		OPT_BYTE("acre",   'a', &cfg.acre,   acre_desc),
+		OPT_BYTE("etdas",  'e', &cfg.etdas,  etdas_desc),
+		OPT_BYTE("lbafee", 'l', &cfg.lbafee, lbafee_desc),
+		OPT_BYTE("hdisns", 0,   &cfg.hdisns, hdisns_desc),
+		OPT_SHRT("cdfe",   'c', &cfg.cdfe,   cdfe_desc),
+		OPT_INCLUDE(feat, "Feature options"),
+		OPT_END()
+	};
+
+	if (!feat)
+		return -ENOMEM;
+
+	err = parse_and_open(&ctx, &hdl, argc, argv, HOST_BEHAVIOR_DESC, opts);
+	if (err)
+		return err;
+
+	if (argconfig_given(opts, &cfg.acre) ||
+	    argconfig_given(opts, &cfg.etdas) ||
+	    argconfig_given(opts, &cfg.lbafee) ||
+	    argconfig_given(opts, &cfg.hdisns) ||
+	    argconfig_given(opts, &cfg.cdfe))
+		err = host_behavior_set(hdl, fid, opts, &cfg,
+					cfg.feat.save);
+	else
+		err = feat_get(hdl, fid, 0, cfg.feat.sel, 0,
+			       host_behavior_feat);
+
+	return err;
+}
+
+static int lba_range_type_set(struct libnvme_transport_handle *hdl, __u8 fid,
+			      struct argconfig_commandline_options *opts,
+			      struct lba_range_type_config *cfg, bool sv)
+{
+	enum nvme_get_features_sel gsel = NVME_GET_FEATURES_SEL_CURRENT;
+	__u8 lbaros[NVME_FEAT_LBA_RANGE_MAX] = { 0 };
+	__u8 hlbars[NVME_FEAT_LBA_RANGE_MAX] = { 0 };
+	__u64 slbas[NVME_FEAT_LBA_RANGE_MAX] = { 0 };
+	__u8 types[NVME_FEAT_LBA_RANGE_MAX] = { 0 };
+	__u64 nlbs[NVME_FEAT_LBA_RANGE_MAX] = { 0 };
+	struct nvme_lba_range_type data = { 0 };
+	struct libnvme_passthru_cmd cmd;
+	uint8_t num = cfg->num + 1, nt, nl, nh, ns, nn;
+	int err, i;
+#ifdef NVME_HAVE_INT128
+	uint128_t guids[NVME_FEAT_LBA_RANGE_MAX] = { 0 };
+	uint8_t ng;
+	int j;
+#endif /* NVME_HAVE_INT128 */
+
+	if (cfg->num >= NVME_FEAT_LBA_RANGE_MAX) {
+		nvme_show_error("invalid number of LBA ranges: %u (0's based)",
+				cfg->num);
+		return -EINVAL;
+	}
+
+	if (sv)
+		gsel = NVME_GET_FEATURES_SEL_SAVED;
+
+	nvme_init_get_features_lba_range(&cmd, cfg->nsid, gsel, &data);
+	err = libnvme_exec_admin_passthru(hdl, &cmd);
+	if (err) {
+		nvme_show_err(err, "Get %s", lba_range_feat);
+		return err;
+	}
+
+	nt = shr_parse_csv_u8(cfg->types, types, ARRAY_SIZE(types));
+	if (nt != num) {
+		nvme_show_error("No valid type definition provided");
+		return -EINVAL;
+	}
+
+	nl = shr_parse_csv_u8(cfg->lbaros, lbaros, ARRAY_SIZE(lbaros));
+	if (nl != num) {
+		nvme_show_error("No valid lbaro definition provided");
+		return -EINVAL;
+	}
+
+	nh = shr_parse_csv_u8(cfg->hlbars, hlbars, ARRAY_SIZE(hlbars));
+	if (nh != num) {
+		nvme_show_error("No valid hlbar definition provided");
+		return -EINVAL;
+	}
+
+	ns = shr_parse_csv_u64(cfg->slbas, slbas, ARRAY_SIZE(slbas));
+	if (ns != num) {
+		nvme_show_error("No valid slba definition provided");
+		return -EINVAL;
+	}
+
+	nn = shr_parse_csv_u64(cfg->nlbs, nlbs, ARRAY_SIZE(nlbs));
+	if (nn != num) {
+		nvme_show_error("No valid nlb definition provided");
+		return -EINVAL;
+	}
+
+#ifdef NVME_HAVE_INT128
+	if (argconfig_given(opts, &cfg->guids)) {
+		ng = shr_parse_csv_u128(cfg->guids, guids, ARRAY_SIZE(guids));
+		if (ng != num) {
+			nvme_show_error("No valid guid definition provided");
+			return -EINVAL;
+		}
+	}
+#else /* NVME_HAVE_INT128 */
+	if (argconfig_given(opts, &cfg->guids)) {
+		nvme_show_error("guid unsupported without __int128 available");
+		return -EINVAL;
+	}
+#endif /* NVME_HAVE_INT128 */
+
+	for (i = 0; i < num; i++) {
+		data.entry[i].type = (__u8)types[i];
+		data.entry[i].attributes =
+		    NVME_SET(!!lbaros[i], LBART_ATTRB_LBARO) |
+		    NVME_SET(!!hlbars[i], LBART_ATTRB_HLBAR);
+		data.entry[i].slba = cpu_to_le64(slbas[i]);
+		data.entry[i].nlb = cpu_to_le64(nlbs[i]);
+#ifdef NVME_HAVE_INT128
+		for (j = 0; j < sizeof(data.entry[i].guid); j++)
+			data.entry[i].guid[j] = guids[i] >> CHAR_BIT * j;
+#endif /* NVME_HAVE_INT128 */
+	}
+
+	nvme_init_set_features_lba_range(&cmd, cfg->nsid, sv, num, &data);
+	err = libnvme_exec_admin_passthru(hdl, &cmd);
+	if (err) {
+		nvme_show_err(err, "Set %s", lba_range_feat);
+		return err;
+	}
+
+	nvme_show_result("Set %s: (%s)", host_behavior_feat,
+			 sv ? "Save" : "Not save");
+	nvme_feature_show_fields(fid, 0, (unsigned char *)&data);
+
+	return err;
+}
+
+static int feat_lba_range_type(int argc, char **argv, struct command *acmd,
+				      struct plugin *plugin)
+{
+	__cleanup_nvme_transport_handle struct libnvme_transport_handle *hdl =
+	    NULL;
+	__cleanup_nvme_global_ctx struct libnvme_global_ctx *ctx = NULL;
+	const char *nlbs_desc = "zeroes based logical blocks number list";
+	const char *lbaros_desc = "LBA range overwriteable list";
+	const char *num_desc = "zeroes based LBA ranges number";
+	const char *guids_desc = "unique identifier list";
+	const char *hlbars_desc = "hide LBA range list";
+	const char *types_desc = "LBA range type list";
+	const char *slbas_desc = "starting LBA list";
+	const __u8 fid = NVME_FEAT_FID_LBA_RANGE;
+	struct lba_range_type_config cfg = { 0 };
+	int err;
+
+	/* -s is --slbas and -h is help, --save and --hlbars are long only */
+	__cleanup_free struct argconfig_commandline_options *feat =
+		feat_options(&cfg.feat, false);
+
+	OPT_ARGS(opts) = {
+		OPT_UINT("nsid", 'n', &cfg.nsid, namespace_id_desired,
+			 nvme_nsid_values),
+		OPT_BYTE("num",    'N', &cfg.num,    num_desc),
+		OPT_LIST("types",  't', &cfg.types,  types_desc),
+		OPT_LIST("lbaros", 'l', &cfg.lbaros, lbaros_desc),
+		OPT_LIST("hlbars", 0,   &cfg.hlbars, hlbars_desc),
+		OPT_LIST("slbas",  's', &cfg.slbas,  slbas_desc),
+		OPT_LIST("nlbs",   'b', &cfg.nlbs,   nlbs_desc),
+		OPT_LIST("guids",  'g', &cfg.guids,  guids_desc),
+		OPT_INCLUDE(feat, "Feature options"),
+		OPT_END()
+	};
+
+	if (!feat)
+		return -ENOMEM;
+
+	err = parse_and_open(&ctx, &hdl, argc, argv, LBA_RANGE_DESC, opts);
+	if (err)
+		return err;
+
+	if (!cfg.nsid) {
+		err = libnvme_get_nsid(hdl, &cfg.nsid);
+		if (err < 0) {
+			nvme_show_error("get-nsid: %s", libnvme_strerror(-err));
+			return err;
+		}
+	}
+
+	if (argconfig_given(opts, &cfg.num))
+		err = lba_range_type_set(hdl, fid, opts, &cfg,
+					 cfg.feat.save);
+	else
+		err = feat_get_nsid(hdl, cfg.nsid, fid, 0, cfg.feat.sel, 0,
+				    lba_range_feat);
+
+	return err;
+}
+
+static int int_coalesce_set(struct libnvme_transport_handle *hdl,
+			    const __u8 fid, struct int_coalesce_config *cfg,
+			    bool sv)
+{
+	__u32 cdw11 = NVME_SET(cfg->thr, FEAT_IRQC_THR) |
+		      NVME_SET(cfg->time, FEAT_IRQC_TIME);
+	__u64 result;
+	int err;
+
+	err = nvme_set_features(hdl, 0, fid, sv, cdw11, 0, 0, 0, 0, NULL, 0,
+				&result);
+	if (err) {
+		nvme_show_err(err, "Set %s", int_coalesce_feat);
+		return err;
+	}
+
+	nvme_show_result("Set %s: 0x%08x (%s)", int_coalesce_feat, cdw11,
+			 sv ? "Save" : "Not save");
+	nvme_feature_show_fields(fid, cdw11, NULL);
+
+	return err;
+}
+
+static int feat_int_coalesce(int argc, char **argv, struct command *acmd,
+			     struct plugin *plugin)
+{
+	__cleanup_nvme_transport_handle struct libnvme_transport_handle *hdl =
+	    NULL;
+	__cleanup_nvme_global_ctx struct libnvme_global_ctx *ctx = NULL;
+	const __u8 fid = NVME_FEAT_FID_IRQ_COALESCE;
+	const char *thr = "aggregation threshold";
+	const char *time = "aggregation time";
+	struct int_coalesce_config cfg = { 0 };
+	int err;
+
+	__cleanup_free struct argconfig_commandline_options *feat =
+		feat_options(&cfg.feat, true);
+
+	OPT_ARGS(opts) = {
+		OPT_BYTE("thr",  't', &cfg.thr,  thr),
+		OPT_BYTE("time", 'T', &cfg.time, time),
+		OPT_INCLUDE(feat, "Feature options"),
+		OPT_END()
+	};
+
+	if (!feat)
+		return -ENOMEM;
+
+	err = parse_and_open(&ctx, &hdl, argc, argv, INT_COALESCE_DESC, opts);
+	if (err)
+		return err;
+
+	if (argconfig_given(opts, &cfg.thr) ||
+	    argconfig_given(opts, &cfg.time))
+		err = int_coalesce_set(hdl, fid, &cfg,
+				       cfg.feat.save);
+	else
+		err = feat_get(hdl, fid, 0, cfg.feat.sel, 0, int_coalesce_feat);
+
+	return err;
+}
+
+static int int_vec_conf_set(struct libnvme_transport_handle *hdl,
+			    const __u8 fid, struct int_vec_conf *cfg, bool sv)
+{
+	__u32 cdw11 = NVME_SET(cfg->iv, FEAT_ICFG_IV) |
+		      NVME_SET(cfg->cd, FEAT_ICFG_CD);
+	__u64 result;
+	int err;
+
+	err = nvme_set_features(hdl, 0, fid, sv, cdw11, 0, 0, 0, 0, NULL, 0,
+			&result);
+	if (err) {
+		nvme_show_err(err, "Set %s", int_vec_conf_feat);
+		return err;
+	}
+
+	nvme_show_result("Set %s: 0x%08x (%s)", int_vec_conf_feat, cdw11,
+			 sv ? "Save" : "Not save");
+	nvme_feature_show_fields(fid, cdw11, NULL);
+
+	return err;
+}
+
+static int feat_int_vec_conf(int argc, char **argv, struct command *acmd,
+			     struct plugin *plugin)
+{
+	__cleanup_nvme_transport_handle struct libnvme_transport_handle *hdl =
+	    NULL;
+	__cleanup_nvme_global_ctx struct libnvme_global_ctx *ctx = NULL;
+	const __u8 fid = NVME_FEAT_FID_IRQ_CONFIG;
+	const char *cd = "coalescing disable";
+	const char *iv = "interrupt vector";
+	struct int_vec_conf cfg = { 0 };
+	int err;
+
+	__cleanup_free struct argconfig_commandline_options *feat =
+		feat_options(&cfg.feat, true);
+
+	OPT_ARGS(opts) = {
+		OPT_SHRT("iv", 'i', &cfg.iv, iv),
+		OPT_FLAG("cd", 'c', &cfg.cd, cd),
+		OPT_INCLUDE(feat, "Feature options"),
+		OPT_END()
+	};
+
+	if (!feat)
+		return -ENOMEM;
+
+	err = parse_and_open(&ctx, &hdl, argc, argv, INT_VEC_CONF_DESC, opts);
+	if (err)
+		return err;
+
+	if (argconfig_given(opts, &cfg.iv) ||
+	    argconfig_given(opts, &cfg.cd))
+		err = int_vec_conf_set(hdl, fid, &cfg,
+				       cfg.feat.save);
+	else
+		err = feat_get(hdl, fid, 0, cfg.feat.sel, 0, int_vec_conf_feat);
+
+	return err;
+}
+
+static int write_atom_normal_set(struct libnvme_transport_handle *hdl,
+				 const __u8 fid,
+				 struct write_atom_normal_config *cfg, bool sv)
+{
+	__u32 cdw11 = NVME_SET(cfg->dn, FEAT_WA_DN);
+	__u64 result;
+	int err;
+
+	err = nvme_set_features(hdl, 0, fid, sv, cdw11, 0, 0, 0, 0, NULL, 0,
+				&result);
+	if (err) {
+		nvme_show_err(err, "Set %s", write_atom_normal_feat);
+		return err;
+	}
+
+	nvme_show_result("Set %s: 0x%08x (%s)", write_atom_normal_feat, cdw11,
+			 sv ? "Save" : "Not save");
+	nvme_feature_show_fields(fid, cdw11, NULL);
+
+	return err;
+}
+
+static int feat_write_atom_normal(int argc, char **argv, struct command *acmd,
+				  struct plugin *plugin)
+{
+	__cleanup_nvme_transport_handle struct libnvme_transport_handle *hdl =
+	    NULL;
+	__cleanup_nvme_global_ctx struct libnvme_global_ctx *ctx = NULL;
+	struct write_atom_normal_config cfg = { 0 };
+	const __u8 fid = NVME_FEAT_FID_WRITE_ATOMIC;
+	const char *dn = "disable normal";
+	int err;
+
+	__cleanup_free struct argconfig_commandline_options *feat =
+		feat_options(&cfg.feat, true);
+
+	OPT_ARGS(opts) = {
+		OPT_FLAG("dn", 'd', &cfg.dn, dn),
+		OPT_INCLUDE(feat, "Feature options"),
+		OPT_END()
+	};
+
+	if (!feat)
+		return -ENOMEM;
+
+	err = parse_and_open(&ctx, &hdl, argc, argv, WRITE_ATOM_NORMAL_DESC,
+			     opts);
+	if (err)
+		return err;
+
+	if (argconfig_given(opts, &cfg.dn))
+		err = write_atom_normal_set(hdl, fid, &cfg,
+					    cfg.feat.save);
+	else
+		err = feat_get(hdl, fid, 0, cfg.feat.sel, 0,
+			       write_atom_normal_feat);
+
+	return err;
+}
+
+static int async_event_conf_set(struct libnvme_transport_handle *hdl,
+				const __u8 fid, __u32 result, bool sv)
+{
+	__u64 res;
+	int err;
+
+	err = nvme_set_features(hdl, 0, fid, sv, result, 0, 0, 0, 0, NULL, 0,
+			&res);
+	if (err) {
+		nvme_show_err(err, "Set %s", async_event_conf_feat);
+		return err;
+	}
+
+	nvme_show_result("Set %s: 0x%08x (%s)", async_event_conf_feat, result,
+			 sv ? "Save" : "Not save");
+	nvme_feature_show_fields(fid, result, NULL);
+
+	return err;
+}
+
+static int feat_async_event_conf(int argc, char **argv, struct command *acmd,
+				 struct plugin *plugin)
+{
+	__cleanup_nvme_transport_handle struct libnvme_transport_handle *hdl =
+	    NULL;
+	__cleanup_nvme_global_ctx struct libnvme_global_ctx *ctx = NULL;
+	const __u8 fid = NVME_FEAT_FID_ASYNC_EVENT;
+	const char *result_desc = "event mask";
+	int err;
+
+	struct config {
+		__u32 result;
+		struct feat_args feat;
+	};
+
+	struct config cfg = { 0 };
+
+	__cleanup_free struct argconfig_commandline_options *feat =
+		feat_options(&cfg.feat, true);
+
+	OPT_ARGS(opts) = {
+		OPT_UINT("result", 'r', &cfg.result, result_desc),
+		OPT_INCLUDE(feat, "Feature options"),
+		OPT_END()
+	};
+
+	if (!feat)
+		return -ENOMEM;
+
+	err = parse_and_open(&ctx, &hdl, argc, argv, ASYNC_EVENT_CONF_DESC,
+			     opts);
+	if (err)
+		return err;
+
+	if (argconfig_given(opts, &cfg.result))
+		err = async_event_conf_set(hdl, fid, cfg.result,
+					   cfg.feat.save);
+	else
+		err = feat_get(hdl, fid, 0, cfg.feat.sel, 0,
+			       async_event_conf_feat);
+
+	return err;
+}
+
+static int keep_alive_timer_set(struct libnvme_transport_handle *hdl,
+				const __u8 fid,
+				struct keep_alive_timer_config *cfg, bool sv)
+{
+	__u64 result;
+	int err;
+
+	err = nvme_set_features(hdl, 0, fid, sv, cfg->kato, 0, 0, 0, 0, NULL, 0,
+			&result);
+	if (err) {
+		nvme_show_err(err, "Set %s", keep_alive_timer_feat);
+		return err;
+	}
+
+	nvme_show_result("Set %s: 0x%08x (%s)", keep_alive_timer_feat,
+			 cfg->kato, sv ? "Save" : "Not save");
+	nvme_feature_show_fields(fid, cfg->kato, NULL);
+
+	return err;
+}
+
+static int feat_keep_alive_timer(int argc, char **argv, struct command *acmd,
+				 struct plugin *plugin)
+{
+	__cleanup_nvme_transport_handle struct libnvme_transport_handle *hdl =
+	    NULL;
+	__cleanup_nvme_global_ctx struct libnvme_global_ctx *ctx = NULL;
+	struct keep_alive_timer_config cfg = { 0 };
+	const char *kato = "keep alive timeout";
+	const __u8 fid = NVME_FEAT_FID_KATO;
+	int err;
+
+	__cleanup_free struct argconfig_commandline_options *feat =
+		feat_options(&cfg.feat, true);
+
+	OPT_ARGS(opts) = {
+		OPT_UINT("kato", 'k', &cfg.kato, kato),
+		OPT_INCLUDE(feat, "Feature options"),
+		OPT_END()
+	};
+
+	if (!feat)
+		return -ENOMEM;
+
+	err = parse_and_open(&ctx, &hdl, argc, argv, KEEP_ALIVE_TIMER_DESC,
+			     opts);
+	if (err)
+		return err;
+
+	if (argconfig_given(opts, &cfg.kato))
+		err = keep_alive_timer_set(hdl, fid, &cfg,
+					   cfg.feat.save);
+	else
+		err = feat_get(hdl, fid, 0, cfg.feat.sel, 0,
+			       keep_alive_timer_feat);
+
+	return err;
+}
+
+static struct command feat_arbitration_cmd = {
+	.name = "arbitration",
+	.help = ARBITRATION_DESC,
+	.fn = feat_arbitration,
+};
+
+static struct command feat_power_mgmt_cmd = {
+	.name = "power-mgmt",
+	.help = POWER_MGMT_DESC,
+	.fn = feat_power_mgmt,
+};
+
+static struct command feat_temp_thresh_cmd = {
+	.name = "temp-thresh",
+	.help = TEMP_THRESH_DESC,
+	.fn = feat_temp_thresh,
+};
+
+static struct command feat_volatile_wc_cmd = {
+	.name = "volatile-wc",
+	.help = VOLATILE_WC_DESC,
+	.fn = feat_volatile_wc,
+};
+
+static struct command feat_num_queues_cmd = {
+	.name = "num-queues",
+	.help = NUM_QUEUES_DESC,
+	.fn = feat_num_queues,
+};
+
+static struct command feat_timestamp_cmd = {
+	.name = "timestamp",
+	.help = TIMESTAMP_DESC,
+	.fn = feat_timestamp,
+};
+
+static struct command feat_hctm_cmd = {
+	.name = "hctm",
+	.help = HCTM_DESC,
+	.fn = feat_hctm,
+};
+
+static struct command feat_host_behavior_support_cmd = {
+	.name = "host-behavior-support",
+	.help = HOST_BEHAVIOR_DESC,
+	.fn = feat_host_behavior_support,
+};
+
+static struct command feat_perfc_cmd = {
+	.name = "perf-characteristics",
+	.help = PERFC_DESC,
+	.fn = feat_perfc,
+};
+
+static struct command feat_power_limit_cmd = {
+	.name = "power-limit",
+	.help = POWER_LIMIT_DESC,
+	.fn = feat_power_limit,
+};
+
+static struct command feat_power_thresh_cmd = {
+	.name = "power-thresh",
+	.help = POWER_THRESH_DESC,
+	.fn = feat_power_thresh,
+};
+
+static struct command feat_power_meas_cmd = {
+	.name = "power-meas",
+	.help = POWER_MEAS_DESC,
+	.fn = feat_power_meas,
+};
+
+static struct command feat_err_recovery_cmd = {
+	.name = "err-recovery",
+	.help = ERR_RECOVERY_DESC,
+	.fn = feat_err_recovery,
+};
+
+static struct command feat_lba_range_type_cmd = {
+	.name = "lba-range-type",
+	.help = LBA_RANGE_DESC,
+	.fn = feat_lba_range_type,
+};
+
+static struct command feat_int_coalesce_cmd = {
+	.name = "int-coalesce",
+	.help = INT_COALESCE_DESC,
+	.fn = feat_int_coalesce,
+};
+
+static struct command feat_int_vec_conf_cmd = {
+	.name = "int-vector-config",
+	.help = INT_VEC_CONF_DESC,
+	.fn = feat_int_vec_conf,
+};
+
+static struct command feat_write_atom_normal_cmd = {
+	.name = "write-atom-normal",
+	.help = WRITE_ATOM_NORMAL_DESC,
+	.fn = feat_write_atom_normal,
+};
+
+static struct command feat_async_event_conf_cmd = {
+	.name = "async-event-conf",
+	.help = ASYNC_EVENT_CONF_DESC,
+	.fn = feat_async_event_conf,
+};
+
+static struct command feat_keep_alive_timer_cmd = {
+	.name = "keep-alive-timer",
+	.help = KEEP_ALIVE_TIMER_DESC,
+	.fn = feat_keep_alive_timer,
+};
+
+static struct command *commands[] = {
+	&feat_arbitration_cmd,
+	&feat_power_mgmt_cmd,
+	&feat_temp_thresh_cmd,
+	&feat_volatile_wc_cmd,
+	&feat_num_queues_cmd,
+	&feat_timestamp_cmd,
+	&feat_hctm_cmd,
+	&feat_host_behavior_support_cmd,
+	&feat_perfc_cmd,
+	&feat_power_limit_cmd,
+	&feat_power_thresh_cmd,
+	&feat_power_meas_cmd,
+	&feat_err_recovery_cmd,
+	&feat_lba_range_type_cmd,
+	&feat_int_coalesce_cmd,
+	&feat_int_vec_conf_cmd,
+	&feat_write_atom_normal_cmd,
+	&feat_async_event_conf_cmd,
+	&feat_keep_alive_timer_cmd,
+	NULL,
+};
+
+static struct plugin plugin = {
+	.name = "feat",
+	.desc = "NVMe feature extensions",
+	.version = FEAT_PLUGIN_VERSION,
+	.core = true,
+	.group = "Features",
+};
+
+static void __shr_constructor register_plugin(void)
+{
+	plugin_add_group(&plugin, NULL, commands);
+	register_extension(&plugin);
+}

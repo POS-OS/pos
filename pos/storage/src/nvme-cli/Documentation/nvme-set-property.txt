@@ -1,0 +1,41 @@
+nvme-set-property(1)
+====================
+
+NAME
+----
+nvme-set-property - Writes and shows the defined NVMe controller property 
+for NVMe over Fabric
+
+SYNOPSIS
+--------
+[verse]
+'nvme' [<global-options>] 'set-property' <device>
+			[--offset=<offset> | -O <offset>]
+			[--value=<val> | -V <val>]
+
+DESCRIPTION
+-----------
+Writes and shows the defined NVMe controller property for NVMe over Fabric.
+
+OPTIONS
+-------
+-O <offset>::
+--offset=<offset>::
+	The offset of the property, or the name of a register, e.g.
+	0x14 or cc. The properties of a fabrics controller are cap (0x0),
+	vs (0x8), cc (0x14), csts (0x1c), nssr (0x20), nssd (0x64) and
+	crto (0x68), the transport may define more.
+
+-V <val>::
+--value=<val>::
+	The value of the property to be set.
+
+include::global-options.txt[]
+
+EXAMPLES
+--------
+No examples (yet).
+
+NVME
+----
+Part of the nvme-user suite

@@ -1,0 +1,14 @@
+.TH "libnvme_ctrl_next_ns" 9 "libnvme_ctrl_next_ns" "September 2026" "libnvme API manual" LINUX
+.SH NAME
+libnvme_ctrl_next_ns \- Next namespace iterator
+.SH SYNOPSIS
+.B "struct libnvme_ns *" libnvme_ctrl_next_ns
+.BI "(struct libnvme_ctrl *c "  ","
+.BI "struct libnvme_ns *n "  ");"
+.SH ARGUMENTS
+.IP "c" 12
+Controller instance
+.IP "n" 12
+Previous struct libnvme_ns iterator
+.SH "RETURN"
+Next struct libnvme_ns object of an \fIc\fP iterator

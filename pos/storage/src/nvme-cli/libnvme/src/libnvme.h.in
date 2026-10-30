@@ -1,0 +1,31 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
+/*
+ * This file is part of libnvme.
+ * Copyright (c) 2020 Western Digital Corporation or its affiliates.
+ *
+ * Authors: Keith Busch <keith.busch@wdc.com>
+ * 	    Chaitanya Kulkarni <chaitanya.kulkarni@wdc.com>
+ */
+#pragma once
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#include <nvme/generated/accessors.h>
+#include <nvme/generated/attr-accessors.h>
+#include <nvme/ioctl.h>
+#include <nvme/lib-types.h>
+#include <nvme/lib.h>
+#include <nvme/mem.h>
+#include <nvme/nvme-cmds.h>
+#include <nvme/nvme-types.h>
+#include <nvme/scan.h>
+#include <nvme/tree.h>
+#include <nvme/types.h>
+#include <nvme/util.h>
+@FABRICS_INCLUDE@
+
+#ifdef __cplusplus
+}
+#endif

@@ -1,0 +1,1387 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
+/**
+ * This file is part of libnvme.
+ * Copyright (c) 2026 Dell Technologies Inc. or its subsidiaries.
+ * Authors: Martin Belanger <martin.belanger@dell.com>
+ *
+ * Tests for the public connection-config API (<nvme/config.h>).  Linked
+ * against the real shared library, so it also proves every symbol is
+ * exported by the version script.
+ */
+
+#include <shared/assert-util.h>
+#include <errno.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include <sys/stat.h>
+#include <unistd.h>
+
+#include <ccan/array_size/array_size.h>
+
+#include <shared/string-util.h>
+
+#include <nvme/lib.h>
+#include <nvme/config.h>
+#include <nvme/fabrics.h>
+#include <nvme/nvme-types-fabrics.h>
+#include <nvme/tid.h>
+
+static void write_file(const char *dir, const char *name, const char *text)
+{
+	char path[512];
+	FILE *fp;
+
+	snprintf(path, sizeof(path), "%s/%s", dir, name);
+	fp = fopen(path, "w");
+	shr_assert(fp);
+	shr_assert(fputs(text, fp) >= 0);
+	fclose(fp);
+}
+
+static void rm_file(const char *dir, const char *name)
+{
+	char path[512];
+
+	snprintf(path, sizeof(path), "%s/%s", dir, name);
+	unlink(path);
+}
+
+/*
+ * The shared fixture: a main file with per-type defaults, one DC and one
+ * subsystem, plus a second-persona drop-in.
+ */
+static const char main_text[] =
+	"[Discovery Controller Defaults]\n"
+	"ctrl-loss-tmo = 600\n"
+	"keep-alive-tmo = 30\n"
+	"[I/O Controller Defaults]\n"
+	"ctrl-loss-tmo = 600\n"
+	"keep-alive-tmo = 5\n"
+	"[Discovery Controller]\n"
+	"controller = transport=tcp;traddr=10.0.0.5;trsvcid=8009\n"
+	"[Subsystem]\n"
+	"nqn = nqn.2014-08.org.nvmexpress:main-vol\n"
+	"tls = true\n"
+	"data-digest = no\n"
+	"controller = transport=tcp;traddr=10.0.0.9;trsvcid=4420\n";
+
+static const char prod_text[] =
+	"[Host]\n"
+	"hostnqn = nqn.2014-08.org.nvmexpress:prod-host\n"
+	"hostid = 46ba5037-7ce5-41fa-9452-48477bf00080\n"
+	"hostsymname = prod\n"
+	"[Subsystem]\n"
+	"nqn = nqn.2014-08.org.nvmexpress:prod-vol\n"
+	"reconnect-delay =\n"
+	"controller = transport=tcp;traddr=10.0.0.7;trsvcid=4420;ctrl-loss-tmo=1800\n";
+
+struct fixture {
+	char dir[32];
+	char main_path[288];
+	char dropin_dir[288];
+};
+
+static void fixture_create(struct fixture *fx)
+{
+	snprintf(fx->dir, sizeof(fx->dir), "/tmp/nvme-config-api-XXXXXX");
+	shr_assert(mkdtemp(fx->dir));
+	snprintf(fx->main_path, sizeof(fx->main_path), "%s/nvme-fabrics.conf",
+		 fx->dir);
+	snprintf(fx->dropin_dir, sizeof(fx->dropin_dir),
+		 "%s/nvme-fabrics.conf.d", fx->dir);
+	shr_assert(mkdir(fx->dropin_dir, 0755) == 0);
+	write_file(fx->dir, "nvme-fabrics.conf", main_text);
+	write_file(fx->dropin_dir, "10-prod.conf", prod_text);
+}
+
+static void fixture_destroy(struct fixture *fx)
+{
+	rm_file(fx->dropin_dir, "10-prod.conf");
+	rmdir(fx->dropin_dir);
+	rm_file(fx->dir, "nvme-fabrics.conf");
+	rmdir(fx->dir);
+}
+
+struct conn_list {
+	const struct libnvmf_config_conn *conn[8];
+	size_t n;
+};
+
+static void collect(const struct libnvmf_config_conn *conn, void *user_data)
+{
+	struct conn_list *list = user_data;
+
+	shr_assert(list->n < 8);
+	list->conn[list->n++] = conn;
+}
+
+static bool test_read(struct libnvme_global_ctx *ctx, const struct fixture *fx)
+{
+	const struct libnvmf_config_conn *dc, *mv, *pv;
+	struct conn_list list = { 0 };
+	const struct libnvmf_params *params;
+	struct libnvmf_config *config;
+	bool pass = true;
+
+	printf("test_read:\n");
+
+	if (libnvmf_config_read(ctx, fx->main_path, &config)) {
+		printf(" - read failed [FAIL]\n");
+		return false;
+	}
+
+	libnvmf_config_conn_for_each(config, collect, &list);
+	if (list.n != 3) {
+		printf(" - expected 3 connections, got %zu [FAIL]\n", list.n);
+		libnvmf_config_free(config);
+		return false;
+	}
+	printf(" - 3 connections resolved [PASS]\n");
+
+	/* Main file first (DC, then subsystem), then the drop-in. */
+	dc = list.conn[0];
+	mv = list.conn[1];
+	pv = list.conn[2];
+
+	if (!libnvmf_config_conn_is_dc(dc) || libnvmf_config_conn_is_dc(mv) ||
+	    libnvmf_config_conn_is_dc(pv)) {
+		printf(" - connection roles [FAIL]\n");
+		pass = false;
+	} else {
+		printf(" - roles: DC + two subsystems [PASS]\n");
+	}
+
+	if (strcmp(libnvmf_config_conn_get_transport(dc), "tcp") ||
+	    strcmp(libnvmf_config_conn_get_traddr(dc), "10.0.0.5") ||
+	    strcmp(libnvmf_config_conn_get_subsysnqn(dc),
+		   NVME_DISC_SUBSYS_NAME)) {
+		printf(" - DC addressing + well-known NQN [FAIL]\n");
+		pass = false;
+	} else {
+		printf(" - DC addressing + well-known NQN [PASS]\n");
+	}
+
+	if (strcmp(libnvmf_config_conn_get_subsysnqn(pv), "nqn.2014-08.org.nvmexpress:prod-vol") ||
+	    strcmp(libnvmf_config_conn_get_hostnqn(pv), "nqn.2014-08.org.nvmexpress:prod-host") ||
+	    strcmp(libnvmf_config_conn_get_hostid(pv),
+		   "46ba5037-7ce5-41fa-9452-48477bf00080")) {
+		printf(" - drop-in persona identity [FAIL]\n");
+		pass = false;
+	} else {
+		printf(" - drop-in persona identity raw [PASS]\n");
+	}
+
+	if (libnvmf_config_conn_get_hostnqn(mv) ||
+	    libnvmf_config_conn_get_hostsymname(mv)) {
+		printf(" - main persona left to system default [FAIL]\n");
+		pass = false;
+	} else {
+		printf(" - main persona left to system default [PASS]\n");
+	}
+
+	if (!libnvmf_config_conn_get_hostsymname(pv) ||
+	    strcmp(libnvmf_config_conn_get_hostsymname(pv), "prod")) {
+		printf(" - hostsymname [FAIL]\n");
+		pass = false;
+	} else {
+		printf(" - hostsymname carried on the drop-in persona [PASS]\n");
+	}
+
+	params = libnvmf_config_conn_get_params(mv);
+	if (!params || strcmp(libnvmf_params_get(params, "ctrl-loss-tmo"), "600") ||
+	    strcmp(libnvmf_params_get(params, "keep-alive-tmo"), "5") ||
+	    strcmp(libnvmf_params_get(params, "tls"), "true") ||
+	    libnvmf_params_get(params, "reconnect-delay")) {
+		printf(" - main subsystem cascade [FAIL]\n");
+		pass = false;
+	} else {
+		printf(" - main cascade: defaults + section [PASS]\n");
+	}
+
+	params = libnvmf_config_conn_get_params(pv);
+	if (!params ||
+	    strcmp(libnvmf_params_get(params, "ctrl-loss-tmo"), "1800") ||
+	    strcmp(libnvmf_params_get(params, "keep-alive-tmo"), "5")) {
+		printf(" - per-path override [FAIL]\n");
+		pass = false;
+	} else {
+		printf(" - per-path override beats the type default [PASS]\n");
+	}
+
+	if (!strstr(libnvmf_config_conn_get_source(dc), "nvme-fabrics.conf") ||
+	    !strstr(libnvmf_config_conn_get_source(pv), "10-prod.conf")) {
+		printf(" - source provenance [FAIL]\n");
+		pass = false;
+	} else {
+		printf(" - source names the originating file [PASS]\n");
+	}
+
+	libnvmf_config_free(config);
+
+	return pass;
+}
+
+static bool test_resolve_discovered(struct libnvme_global_ctx *ctx,
+				    const struct fixture *fx)
+{
+	const struct libnvmf_params *params;
+	struct conn_list list = { 0 };
+	struct libnvmf_config *config;
+	bool pass = true;
+
+	printf("test_resolve_discovered:\n");
+
+	shr_assert(!libnvmf_config_read(ctx, fx->main_path, &config));
+	libnvmf_config_conn_for_each(config, collect, &list);
+	shr_assert(list.n == 3 && libnvmf_config_conn_is_dc(list.conn[0]));
+
+	/* A DLP IOC discovered via the configured DC: that DC's file scope. */
+	params = libnvmf_config_resolve_discovered(config, list.conn[0], false);
+	if (!params || strcmp(libnvmf_params_get(params, "keep-alive-tmo"), "5") ||
+	    strcmp(libnvmf_params_get(params, "ctrl-loss-tmo"), "600") ||
+	    libnvmf_params_get(params, "tls")) {
+		printf(" - DLP IOC scope via DC [FAIL]\n");
+		pass = false;
+	} else {
+		printf(" - DLP IOC draws the DC's file scope [PASS]\n");
+	}
+
+	/* A referral DC discovered via the configured DC. */
+	params = libnvmf_config_resolve_discovered(config, list.conn[0], true);
+	if (!params ||
+	    strcmp(libnvmf_params_get(params, "keep-alive-tmo"), "30")) {
+		printf(" - referral DC scope via DC [FAIL]\n");
+		pass = false;
+	} else {
+		printf(" - referral DC draws the DC-defaults scope [PASS]\n");
+	}
+
+	/* No configured origin (an mDNS-found DC): the top-level scope. */
+	params = libnvmf_config_resolve_discovered(config, NULL, true);
+	if (!params ||
+	    strcmp(libnvmf_params_get(params, "keep-alive-tmo"), "30") ||
+	    strcmp(libnvmf_params_get(params, "ctrl-loss-tmo"), "600")) {
+		printf(" - top-level scope [FAIL]\n");
+		pass = false;
+	} else {
+		printf(" - no origin falls back to the top-level scope [PASS]\n");
+	}
+
+	/* An IOC is not a discovery origin. */
+	if (libnvmf_config_resolve_discovered(config, list.conn[1], false)) {
+		printf(" - IOC as origin rejected [FAIL]\n");
+		pass = false;
+	} else {
+		printf(" - an IOC connection is not a discovery origin [PASS]\n");
+	}
+
+	libnvmf_config_free(config);
+
+	return pass;
+}
+
+/*
+ * Sections that supply the KX-HMAC-CHAP secrets of discovered controllers.
+ * sub1 has no controller= line, sub2 has one. The drop-in is another
+ * persona with its own secret for sub1.
+ */
+static const char keys_text[] =
+	"[I/O Controller Defaults]\n"
+	"ctrl-loss-tmo = 600\n"
+	"kxchap-secret = DHHC-1:00:default:\n"
+	"[Discovery Controller]\n"
+	"controller = transport=tcp;traddr=10.0.0.5;trsvcid=8009\n"
+	"[Subsystem]\n"
+	"nqn = nqn.2014-08.org.nvmexpress:sub1\n"
+	"kxchap-secret = DHHC-1:00:sub1-host:\n"
+	"kxchap-ctrl-secret = DHHC-1:00:sub1-ctrl:\n"
+	"[Subsystem]\n"
+	"nqn = nqn.2014-08.org.nvmexpress:sub2\n"
+	"kxchap-ctrl-secret = DHHC-1:00:sub2-ctrl:\n"
+	"controller = transport=tcp;traddr=10.0.0.9;trsvcid=4420\n"
+	"[Subsystem]\n"
+	"nqn = nqn.2014-08.org.nvmexpress:sub3\n"
+	"kxchap-secret =\n"
+	"[Subsystem]\n"
+	"nqn = nqn.2014-08.org.nvmexpress:sub4\n"
+	"tls = true\n"
+	"[Discovery Controller]\n"
+	"nqn = nqn.2014-08.org.nvmexpress:cdc\n"
+	"kxchap-secret = DHHC-1:00:cdc-host:\n"
+	"kxchap-ctrl-secret = DHHC-1:00:cdc-ctrl:\n"
+	"[Discovery Controller]\n"
+	"nqn = " NVME_DISC_SUBSYS_NAME "\n"
+	"kxchap-secret = DHHC-1:00:wk-host:\n";
+
+static const char keys_dropin_text[] =
+	"[Host]\n"
+	"hostnqn = nqn.2014-08.org.nvmexpress:other-host\n"
+	"hostid = 2b6f1a0e-4d39-4c5a-9a0e-0b8a3f2c1d00\n"
+	"[Discovery Controller]\n"
+	"controller = transport=tcp;traddr=10.0.0.6;trsvcid=8009\n"
+	"[Subsystem]\n"
+	"nqn = nqn.2014-08.org.nvmexpress:sub1\n"
+	"kxchap-secret = DHHC-1:00:other-host:\n";
+
+/* The parameters of a discovered controller, NULL on error. */
+static const struct libnvmf_params *discovered(
+		const struct libnvmf_config *config, const char *hostnqn,
+		bool is_dc, const char *nqn)
+{
+	const struct libnvmf_params *params;
+
+	if (libnvmf_config_get_discovered_params(config, hostnqn, is_dc, nqn,
+						 &params))
+		return NULL;
+
+	return params;
+}
+
+static bool expect_keys(const char *what, const struct libnvmf_params *params,
+			const char *hostkey, const char *ctrlkey)
+{
+	const char *h = libnvmf_params_get(params, "kxchap-secret");
+	const char *c = libnvmf_params_get(params, "kxchap-ctrl-secret");
+
+	if (!params || !shr_streq0(h, hostkey) || !shr_streq0(c, ctrlkey)) {
+		printf(" - %s: secret %s, ctrl secret %s [FAIL]\n",
+		       what, h ? h : "(unset)", c ? c : "(unset)");
+		return false;
+	}
+	printf(" - %s [PASS]\n", what);
+
+	return true;
+}
+
+static bool test_get_discovered_params(struct libnvme_global_ctx *ctx,
+				       const struct fixture *fx)
+{
+	const char *top, *other, *sub1 = "nqn.2014-08.org.nvmexpress:sub1";
+	const char *cdc = "nqn.2014-08.org.nvmexpress:cdc";
+	const struct libnvmf_params *params;
+	struct conn_list list = { 0 };
+	struct libnvmf_config *config;
+	char path[352], dropin_dir[356];
+	bool pass = true;
+
+	printf("test_get_discovered_params:\n");
+
+	write_file(fx->dir, "keys.conf", keys_text);
+	snprintf(path, sizeof(path), "%s/keys.conf", fx->dir);
+	snprintf(dropin_dir, sizeof(dropin_dir), "%s.d", path);
+	shr_assert(mkdir(dropin_dir, 0755) == 0);
+	write_file(dropin_dir, "10-other.conf", keys_dropin_text);
+
+	shr_assert(!libnvmf_config_read(ctx, path, &config));
+	libnvmf_config_conn_for_each(config, collect, &list);
+	shr_assert(list.n == 3);
+	shr_assert(libnvmf_config_conn_is_dc(list.conn[0]) &&
+		   libnvmf_config_conn_is_dc(list.conn[2]));
+
+	/* The persona of a DC connection, as nvme-discoverd passes it. */
+	top = libnvmf_config_conn_get_hostnqn(list.conn[0]);
+	other = libnvmf_config_conn_get_hostnqn(list.conn[2]);
+	shr_assert(!top && other);
+
+	params = discovered(config, top, false, sub1);
+	pass &= expect_keys("a section without controller= matches", params,
+			    "DHHC-1:00:sub1-host:", "DHHC-1:00:sub1-ctrl:");
+	if (!shr_streq0(libnvmf_params_get(params, "ctrl-loss-tmo"), "600")) {
+		printf(" - the file scope defaults are kept [FAIL]\n");
+		pass = false;
+	}
+
+	pass &= expect_keys("a section with controller= matches, scope secret",
+		discovered(config, top, false,
+			"nqn.2014-08.org.nvmexpress:sub2"),
+		"DHHC-1:00:default:", "DHHC-1:00:sub2-ctrl:");
+	pass &= expect_keys("a reset secret stays reset",
+		discovered(config, top, false,
+			"nqn.2014-08.org.nvmexpress:sub3"),
+		"", NULL);
+	pass &= expect_keys("a section without a secret does not match",
+		discovered(config, top, false,
+			"nqn.2014-08.org.nvmexpress:sub4"),
+		"DHHC-1:00:default:", NULL);
+	pass &= expect_keys("no section: the file scope",
+		discovered(config, top, false,
+			"nqn.2014-08.org.nvmexpress:unknown"),
+		"DHHC-1:00:default:", NULL);
+	pass &= expect_keys("no NQN: the file scope",
+		discovered(config, top, false,
+			NULL),
+		"DHHC-1:00:default:", NULL);
+	pass &= expect_keys("a [Subsystem] does not match a DC",
+		discovered(config, top, true, sub1),
+		NULL, NULL);
+
+	pass &= expect_keys("a DC with a unique NQN",
+		discovered(config, top, true, cdc),
+		"DHHC-1:00:cdc-host:", "DHHC-1:00:cdc-ctrl:");
+	pass &= expect_keys("the well-known NQN never matches",
+		discovered(config, top, true,
+			NVME_DISC_SUBSYS_NAME),
+		NULL, NULL);
+
+	pass &= expect_keys("another persona uses the section of its file",
+		discovered(config, other, false,
+			sub1),
+		"DHHC-1:00:other-host:", NULL);
+	pass &= expect_keys("another persona's section does not match",
+		discovered(config, other, false,
+			"nqn.2014-08.org.nvmexpress:sub2"),
+		"DHHC-1:00:default:", NULL);
+
+	if (libnvmf_config_get_discovered_params(config,
+			"nqn.2014-08.org.nvmexpress:no-such-host", false,
+			sub1, &params) != -ENOENT) {
+		printf(" - an unknown persona [FAIL]\n");
+		pass = false;
+	} else {
+		printf(" - an unknown persona has none [PASS]\n");
+	}
+
+	libnvmf_config_free(config);
+	rm_file(dropin_dir, "10-other.conf");
+	rmdir(dropin_dir);
+	rm_file(fx->dir, "keys.conf");
+
+	return pass;
+}
+
+/* Two sections with the same NQN: their secrets are combined. */
+static const char dup_text[] =
+	"[Subsystem]\n"
+	"nqn = nqn.2014-08.org.nvmexpress:dup\n"
+	"kxchap-secret = DHHC-1:00:dup-host:\n"
+	"controller = transport=tcp;traddr=10.0.0.9;trsvcid=4420\n"
+	"[Subsystem]\n"
+	"nqn = nqn.2014-08.org.nvmexpress:dup\n"
+	"kxchap-secret = DHHC-1:00:dup-host:\n"
+	"kxchap-ctrl-secret = DHHC-1:00:dup-ctrl:\n"
+	"controller = transport=tcp;traddr=10.0.0.10;trsvcid=4420\n"
+	"[Discovery Controller]\n"
+	"controller = transport=tcp;traddr=10.0.0.5;trsvcid=8009\n"
+	"[Discovery Controller]\n"
+	"controller = transport=tcp;traddr=10.0.0.6;trsvcid=8009\n";
+
+static const char dup_conflict_text[] =
+	"[Subsystem]\n"
+	"nqn = nqn.2014-08.org.nvmexpress:dup\n"
+	"kxchap-secret = DHHC-1:00:dup-host:\n"
+	"[Subsystem]\n"
+	"nqn = nqn.2014-08.org.nvmexpress:dup\n"
+	"kxchap-secret = DHHC-1:00:other:\n";
+
+static bool test_duplicate_nqn(struct libnvme_global_ctx *ctx,
+			       const struct fixture *fx)
+{
+	struct libnvmf_config *config;
+	char path[352];
+	bool pass = true;
+
+	printf("test_duplicate_nqn:\n");
+
+	snprintf(path, sizeof(path), "%s/dup.conf", fx->dir);
+
+	write_file(fx->dir, "dup.conf", dup_text);
+	if (libnvmf_config_read(ctx, path, &config)) {
+		printf(" - same NQN, same secrets is accepted [FAIL]\n");
+		pass = false;
+	} else {
+		pass &= expect_keys("same NQN, same secrets: combined",
+			discovered(config, NULL,
+				false, "nqn.2014-08.org.nvmexpress:dup"),
+			"DHHC-1:00:dup-host:", "DHHC-1:00:dup-ctrl:");
+		libnvmf_config_free(config);
+	}
+
+	write_file(fx->dir, "dup.conf", dup_conflict_text);
+	if (libnvmf_config_read(ctx, path, &config) != -EINVAL) {
+		printf(" - same NQN, different secrets [FAIL]\n");
+		pass = false;
+	} else {
+		printf(" - same NQN, different secrets is rejected [PASS]\n");
+	}
+	rm_file(fx->dir, "dup.conf");
+
+	return pass;
+}
+
+/* Only unidirectional authentication with the well-known discovery NQN */
+static const char wk_ctrl_secret_text[] =
+	"[Discovery Controller]\n"
+	"kxchap-secret = DHHC-1:00:wk-host:\n"
+	"kxchap-ctrl-secret = DHHC-1:00:wk-ctrl:\n"
+	"controller = transport=tcp;traddr=10.0.0.5;trsvcid=8009\n"
+	"[Discovery Controller]\n"
+	"nqn = " NVME_DISC_SUBSYS_NAME "\n"
+	"kxchap-ctrl-secret = DHHC-1:00:wk-ctrl:\n"
+	"[Discovery Controller]\n"
+	"nqn = " NVME_DISC_SUBSYS_NAME "\n"
+	"kxchap-secret = DHHC-1:00:wk-host:\n"
+	"kxchap-ctrl-secret =\n"
+	"[Discovery Controller]\n"
+	"nqn = nqn.2014-08.org.nvmexpress:cdc\n"
+	"kxchap-ctrl-secret = DHHC-1:00:cdc-ctrl:\n";
+
+static bool test_wellknown_ctrl_secret(struct libnvme_global_ctx *ctx,
+				       const struct fixture *fx)
+{
+	struct libnvmf_config *config = NULL;
+	char path[352], log[1024] = "";
+	unsigned int warnings = 0;
+	const char *p;
+	bool pass = true;
+	FILE *fp;
+	int ret;
+
+	printf("test_wellknown_ctrl_secret:\n");
+
+	snprintf(path, sizeof(path), "%s/wk.conf", fx->dir);
+	write_file(fx->dir, "wk.conf", wk_ctrl_secret_text);
+
+	/* The log goes to the file descriptor, not to the FILE buffer */
+	fp = tmpfile();
+	shr_assert(fp);
+	libnvme_set_logging_file(ctx, fp);
+	ret = libnvmf_config_read(ctx, path, &config);
+	libnvme_set_logging_file(ctx, NULL);
+	rewind(fp);
+	log[fread(log, 1, sizeof(log) - 1, fp)] = '\0';
+	fclose(fp);
+
+	if (ret) {
+		printf(" - well-known DC with a ctrl secret loads [FAIL]\n");
+		pass = false;
+	} else {
+		printf(" - well-known DC with a ctrl secret loads [PASS]\n");
+	}
+
+	for (p = log; (p = strstr(p, "kxchap-ctrl-secret is not")); p++)
+		warnings++;
+	if (warnings != 2 || !strstr(log, "line 1:") ||
+	    !strstr(log, "line 5:")) {
+		printf(" - warned for lines 1 and 5 only [FAIL]\n%s", log);
+		pass = false;
+	} else {
+		printf(" - warned for lines 1 and 5 only [PASS]\n");
+	}
+
+	libnvmf_config_free(config);
+	rm_file(fx->dir, "wk.conf");
+
+	return pass;
+}
+
+static const char host_only_text[] =
+	"[Host]\n"
+	"hostnqn = nqn.2014-08.org.nvmexpress:solo-host\n"
+	"hostid = 8b6b8b6b-0000-4000-8000-00000000dead\n"
+	"hostsymname = solo\n";
+
+static bool test_top_level_host(struct libnvme_global_ctx *ctx,
+				const struct fixture *fx)
+{
+	struct conn_list list = { 0 };
+	struct libnvmf_config *config;
+	char path[352];
+	bool pass = true;
+
+	printf("test_top_level_host:\n");
+
+	/*
+	 * The fixture's main file carries no [Host]; only the drop-in does.
+	 * A drop-in's persona belongs to that drop-in's own connections and
+	 * must not be reported as the configuration's identity.
+	 */
+	shr_assert(!libnvmf_config_read(ctx, fx->main_path, &config));
+	if (libnvmf_config_get_hostnqn(config) ||
+	    libnvmf_config_get_hostid(config) ||
+	    libnvmf_config_get_hostsymname(config)) {
+		printf(" - a drop-in persona must not be reported [FAIL]\n");
+		pass = false;
+	} else {
+		printf(" - drop-in persona is not the top-level one [PASS]\n");
+	}
+	libnvmf_config_free(config);
+
+	/*
+	 * A [Host] and nothing else: no connections, but an identity. This is
+	 * the host that connects only what it discovers.
+	 */
+	write_file(fx->dir, "host-only.conf", host_only_text);
+	snprintf(path, sizeof(path), "%s/host-only.conf", fx->dir);
+	shr_assert(!libnvmf_config_read(ctx, path, &config));
+
+	libnvmf_config_conn_for_each(config, collect, &list);
+	if (list.n) {
+		printf(" - expected no connections, got %zu [FAIL]\n", list.n);
+		pass = false;
+	}
+
+	if (!libnvmf_config_get_hostnqn(config) ||
+	    strcmp(libnvmf_config_get_hostnqn(config),
+		   "nqn.2014-08.org.nvmexpress:solo-host") ||
+	    !libnvmf_config_get_hostid(config) ||
+	    strcmp(libnvmf_config_get_hostid(config),
+		   "8b6b8b6b-0000-4000-8000-00000000dead") ||
+	    !libnvmf_config_get_hostsymname(config) ||
+	    strcmp(libnvmf_config_get_hostsymname(config), "solo")) {
+		printf(" - identity of a connection-less config [FAIL]\n");
+		pass = false;
+	} else {
+		printf(" - identity without connections [PASS]\n");
+	}
+	libnvmf_config_free(config);
+	rm_file(fx->dir, "host-only.conf");
+
+	return pass;
+}
+
+static bool test_persona_validation(struct libnvme_global_ctx *ctx,
+				    const struct fixture *fx)
+{
+	struct libnvmf_config *config;
+	char path[352];
+	bool pass = true;
+
+	printf("test_persona_validation:\n");
+
+	/* A drop-in persona with a hostnqn but no hostid. */
+	write_file(fx->dropin_dir, "20-no-hostid.conf",
+		   "[Host]\n"
+		   "hostnqn = nqn.2014-08.org.nvmexpress:no-hostid\n");
+	if (libnvmf_config_read(ctx, fx->main_path, &config) != -EINVAL) {
+		printf(" - drop-in hostnqn without hostid [FAIL]\n");
+		pass = false;
+	} else {
+		printf(" - drop-in hostnqn without hostid rejected [PASS]\n");
+	}
+	rm_file(fx->dropin_dir, "20-no-hostid.conf");
+
+	/* The same shape on a top-level file's own [Host] section. */
+	write_file(fx->dir, "top-no-hostid.conf",
+		   "[Host]\n"
+		   "hostnqn = nqn.2014-08.org.nvmexpress:top-no-hostid\n");
+	snprintf(path, sizeof(path), "%s/top-no-hostid.conf", fx->dir);
+	if (libnvmf_config_read(ctx, path, &config) != -EINVAL) {
+		printf(" - top-level hostnqn without hostid [FAIL]\n");
+		pass = false;
+	} else {
+		printf(" - top-level hostnqn without hostid rejected [PASS]\n");
+	}
+	rm_file(fx->dir, "top-no-hostid.conf");
+
+	/* A uuid:-form hostnqn is not derived into a hostid either. */
+	write_file(fx->dropin_dir, "20-uuid-no-hostid.conf",
+		   "[Host]\n"
+		   "hostnqn = nqn.2014-08.org.nvmexpress:"
+		   "uuid:8b6b8b6b-0000-4000-8000-00000000dead\n");
+	if (libnvmf_config_read(ctx, fx->main_path, &config) != -EINVAL) {
+		printf(" - uuid: hostnqn without hostid [FAIL]\n");
+		pass = false;
+	} else {
+		printf(" - uuid: hostnqn without hostid rejected too [PASS]\n");
+	}
+	rm_file(fx->dropin_dir, "20-uuid-no-hostid.conf");
+
+	/* Regression: hostnqn and hostid together is still unaffected. */
+	if (libnvmf_config_read(ctx, fx->main_path, &config)) {
+		printf(" - hostnqn+hostid persona still valid [FAIL]\n");
+		pass = false;
+	} else {
+		printf(" - hostnqn+hostid persona still valid [PASS]\n");
+		libnvmf_config_free(config);
+	}
+
+	return pass;
+}
+
+static bool test_validate(struct libnvme_global_ctx *ctx,
+			  const struct fixture *fx)
+{
+	struct libnvmf_config *config;
+	char missing[320];
+	bool pass = true;
+
+	printf("test_validate:\n");
+
+	if (libnvmf_config_validate(ctx, fx->main_path)) {
+		printf(" - valid tree [FAIL]\n");
+		pass = false;
+	} else {
+		printf(" - valid tree validates clean [PASS]\n");
+	}
+
+	/* An absent configuration is a valid (empty) configuration. */
+	snprintf(missing, sizeof(missing), "%s/no-such.conf", fx->dir);
+	if (libnvmf_config_validate(ctx, missing)) {
+		printf(" - absent config [FAIL]\n");
+		pass = false;
+	} else {
+		printf(" - absent config is valid and empty [PASS]\n");
+	}
+
+	/* A Tier 1 problem in any file fails the tree as a unit. */
+	write_file(fx->dropin_dir, "99-bad.conf", "not a key value line\n");
+	if (libnvmf_config_validate(ctx, fx->main_path) >= 0) {
+		printf(" - Tier 1 error detected [FAIL]\n");
+		pass = false;
+	} else {
+		printf(" - Tier 1 error fails the tree as a unit [PASS]\n");
+	}
+	if (!libnvmf_config_read(ctx, fx->main_path, &config)) {
+		printf(" - read refuses a broken tree [FAIL]\n");
+		pass = false;
+		libnvmf_config_free(config);
+	} else {
+		printf(" - read refuses a broken tree [PASS]\n");
+	}
+	rm_file(fx->dropin_dir, "99-bad.conf");
+
+	return pass;
+}
+
+struct arg_list {
+	char args[16][96];
+	size_t n;
+};
+
+static void collect_arg(const char *arg, void *user_data)
+{
+	struct arg_list *list = user_data;
+
+	shr_assert(list->n < 16);
+	snprintf(list->args[list->n++], sizeof(list->args[0]), "%s", arg);
+}
+
+static bool args_match(const struct arg_list *list,
+		       const char * const *expect, size_t n)
+{
+	size_t i;
+
+	if (list->n != n)
+		return false;
+	for (i = 0; i < n; i++) {
+		if (strcmp(list->args[i], expect[i]))
+			return false;
+	}
+
+	return true;
+}
+
+/*
+ * A connection's addressing is raw strings, not a TID (see config.h) -- an
+ * emitter caller resolves (traddr here is already numeric) and builds the
+ * TID itself, exactly like this.
+ */
+static struct libnvmf_tid *build_tid(const struct libnvmf_config_conn *conn)
+{
+	struct libnvmf_tid *tid;
+
+	libnvmf_tid_from_fields(
+			libnvmf_config_conn_get_transport(conn),
+			libnvmf_config_conn_get_traddr(conn),
+			libnvmf_config_conn_get_trsvcid(conn),
+			libnvmf_config_conn_get_subsysnqn(conn),
+			libnvmf_config_conn_get_host_traddr(conn),
+			libnvmf_config_conn_get_host_iface(conn),
+			libnvmf_config_conn_get_hostnqn(conn),
+			libnvmf_config_conn_get_hostid(conn), &tid);
+	return tid;
+}
+
+static bool test_emit(struct libnvme_global_ctx *ctx, const struct fixture *fx)
+{
+	static const char * const mv_expect[] = {
+		"--transport=tcp",
+		"--traddr=10.0.0.9",
+		"--trsvcid=4420",
+		"--nqn=nqn.2014-08.org.nvmexpress:main-vol",
+		"--ctrl-loss-tmo=600",
+		"--keep-alive-tmo=5",
+		"--tls",
+	};
+	static const char * const pv_expect[] = {
+		"--transport=tcp",
+		"--traddr=10.0.0.7",
+		"--trsvcid=4420",
+		"--nqn=nqn.2014-08.org.nvmexpress:prod-vol",
+		"--hostnqn=nqn.2014-08.org.nvmexpress:prod-host",
+		"--hostid=46ba5037-7ce5-41fa-9452-48477bf00080",
+		"--ctrl-loss-tmo=1800",
+		"--keep-alive-tmo=5",
+	};
+	const struct libnvmf_config_conn *mv, *pv;
+	struct conn_list conns = { 0 };
+	struct arg_list args = { 0 };
+	struct libnvmf_config *config;
+	struct libnvmf_tid *mv_tid, *pv_tid;
+	bool pass = true;
+
+	printf("test_emit:\n");
+
+	shr_assert(!libnvmf_config_read(ctx, fx->main_path, &config));
+	libnvmf_config_conn_for_each(config, collect, &conns);
+	shr_assert(conns.n == 3);
+	mv = conns.conn[1];
+	pv = conns.conn[2];
+
+	mv_tid = build_tid(mv);
+	pv_tid = build_tid(pv);
+	shr_assert(mv_tid && pv_tid);
+
+	/* TID fields in fixed order, then params; true bool = bare flag. */
+	if (libnvmf_connect_args_emit(mv_tid,
+				      libnvmf_config_conn_get_params(mv),
+				      collect_arg, &args) ||
+	    !args_match(&args, mv_expect, ARRAY_SIZE(mv_expect))) {
+		printf(" - main subsystem args [FAIL]\n");
+		pass = false;
+	} else {
+		printf(" - TID first, params after; bool flags bare [PASS]\n");
+	}
+
+	/* Persona identity emitted; per-path override wins; reset skipped. */
+	memset(&args, 0, sizeof(args));
+	if (libnvmf_connect_args_emit(pv_tid,
+				      libnvmf_config_conn_get_params(pv),
+				      collect_arg, &args) ||
+	    !args_match(&args, pv_expect, ARRAY_SIZE(pv_expect))) {
+		printf(" - drop-in subsystem args [FAIL]\n");
+		pass = false;
+	} else {
+		printf(" - persona identity kept, reset skipped [PASS]\n");
+	}
+
+	/* Each half is optional. */
+	memset(&args, 0, sizeof(args));
+	if (libnvmf_connect_args_emit(NULL,
+				      libnvmf_config_conn_get_params(pv),
+				      collect_arg, &args) ||
+	    !args_match(&args, &pv_expect[6], 2)) {
+		printf(" - params-only emission [FAIL]\n");
+		pass = false;
+	} else {
+		printf(" - params-only emission (NULL TID) [PASS]\n");
+	}
+
+	memset(&args, 0, sizeof(args));
+	if (libnvmf_connect_args_emit(mv_tid, NULL, collect_arg, &args) ||
+	    !args_match(&args, mv_expect, 4)) {
+		printf(" - TID-only emission [FAIL]\n");
+		pass = false;
+	} else {
+		printf(" - TID-only emission (NULL params) [PASS]\n");
+	}
+
+	/* A discovery controller setting is not emitted. */
+	{
+		struct libnvmf_params *dc = libnvmf_params_new();
+
+		memset(&args, 0, sizeof(args));
+		shr_assert(dc &&
+			   !libnvmf_params_set(dc, "persistent", "force") &&
+			   !libnvmf_params_set(dc, "keep-alive-tmo", "5"));
+		if (libnvmf_connect_args_emit(NULL, dc, collect_arg, &args) ||
+		    !args_match(&args, &mv_expect[5], 1)) {
+			printf(" - persistent not emitted [FAIL]\n");
+			pass = false;
+		} else {
+			printf(" - persistent not emitted [PASS]\n");
+		}
+		libnvmf_params_free(dc);
+	}
+
+	if (libnvmf_connect_args_emit(NULL, NULL, NULL, NULL) != -EINVAL) {
+		printf(" - NULL callback [FAIL]\n");
+		pass = false;
+	} else {
+		printf(" - NULL callback rejected [PASS]\n");
+	}
+
+	libnvmf_tid_free(mv_tid);
+	libnvmf_tid_free(pv_tid);
+	libnvmf_config_free(config);
+
+	return pass;
+}
+
+/* Built ad hoc, not from the fixture files, to cover every key class in
+ * one pass: ints, bools, an explicit reset, and the five crypto keys
+ * that share one setter.
+ */
+static bool test_apply_params(struct libnvme_global_ctx *ctx)
+{
+	struct libnvmf_context *fctx;
+	struct libnvmf_params *params;
+	bool pass = true;
+
+	printf("test_apply_params:\n");
+
+	params = libnvmf_params_new();
+	shr_assert(params);
+	/* Hex, matching check_int()'s own base-0 parsing (config-ini.c). */
+	shr_assert(!libnvmf_params_set(params, "nr-io-queues", "0x10"));
+	shr_assert(!libnvmf_params_set(params, "keep-alive-tmo", "30"));
+	shr_assert(!libnvmf_params_set(params, "tls", "true"));
+	shr_assert(!libnvmf_params_set(params, "hdr-digest", "false"));
+	shr_assert(!libnvmf_params_set(params, "persistent", "force"));
+	/* Explicit resets: must be skipped, not applied as "0". */
+	shr_assert(!libnvmf_params_set(params, "tos", ""));
+	shr_assert(!libnvmf_params_set(params, "ctrl-loss-tmo", ""));
+	/* The five crypto keys: one shared setter, must not clobber. */
+	shr_assert(!libnvmf_params_set(params, "keyring", "my-keyring"));
+	shr_assert(!libnvmf_params_set(params, "tls-key", "deadbeef"));
+	shr_assert(!libnvmf_params_set(params, "tls-key-identity",
+				    "NVMe1R02 my-id"));
+	shr_assert(!libnvmf_params_set(params, "kxchap-secret", "DHHC-1:00:host:"));
+	shr_assert(!libnvmf_params_set(params, "kxchap-ctrl-secret",
+				    "DHHC-1:00:ctrl:"));
+
+	shr_assert(!libnvmf_context_create(ctx, NULL, NULL, NULL, NULL, &fctx));
+
+	if (libnvmf_context_apply_params(fctx, params)) {
+		printf(" - apply failed [FAIL]\n");
+		pass = false;
+		goto out;
+	}
+
+	if (libnvmf_context_get_nr_io_queues(fctx) != 0x10 ||
+	    libnvmf_context_get_keep_alive_tmo(fctx) != 30) {
+		printf(" - int fields (hex + decimal) [FAIL]\n");
+		pass = false;
+	} else {
+		printf(" - int fields applied (hex + decimal) [PASS]\n");
+	}
+
+	{
+		const char *p = libnvmf_context_get_persistent(fctx);
+
+		if (!libnvmf_context_get_tls(fctx) ||
+		    libnvmf_context_get_hdr_digest(fctx) ||
+		    !shr_streq0(p, "force")) {
+			printf(" - bool fields [FAIL]\n");
+			pass = false;
+		} else {
+			printf(" - bool fields applied [PASS]\n");
+		}
+	}
+
+	/* A fresh context starts at tos=-1, ctrl-loss-tmo=600 (see
+	 * libnvmf_default_config()); a reset must leave both untouched,
+	 * not overwrite them with 0.
+	 */
+	if (libnvmf_context_get_tos(fctx) != -1 ||
+	    libnvmf_context_get_ctrl_loss_tmo(fctx) != NVMF_DEF_CTRL_LOSS_TMO) {
+		printf(" - reset skipped, library default kept [FAIL]\n");
+		pass = false;
+	} else {
+		printf(" - reset skipped, library default kept [PASS]\n");
+	}
+
+	if (strcmp(libnvmf_context_get_keyring(fctx), "my-keyring") ||
+	    strcmp(libnvmf_context_get_tls_key(fctx), "deadbeef") ||
+	    strcmp(libnvmf_context_get_tls_key_identity(fctx),
+		   "NVMe1R02 my-id") ||
+	    strcmp(libnvmf_context_get_hostkey(fctx), "DHHC-1:00:host:") ||
+	    strcmp(libnvmf_context_get_ctrlkey(fctx), "DHHC-1:00:ctrl:")) {
+		printf(" - crypto fields (shared setter, no clobber) [FAIL]\n");
+		pass = false;
+	} else {
+		printf(" - crypto fields (shared setter, no clobber) [PASS]\n");
+	}
+
+out:
+	if (libnvmf_context_apply_params(NULL, params) != -EINVAL ||
+	    libnvmf_context_apply_params(fctx, NULL) != -EINVAL) {
+		printf(" - NULL rejected [FAIL]\n");
+		pass = false;
+	} else {
+		printf(" - NULL rejected [PASS]\n");
+	}
+
+	libnvmf_context_free(fctx);
+	libnvmf_params_free(params);
+	return pass;
+}
+
+static bool has_arg(const struct arg_list *list, const char *arg)
+{
+	size_t i;
+
+	for (i = 0; i < list->n; i++) {
+		if (!strcmp(list->args[i], arg))
+			return true;
+	}
+
+	return false;
+}
+
+/*
+ * With tls-key-source other than "inline", tls-key is a name for nvme-keysd.
+ * Neither connect path may use it as the key. tls-key-source itself is never
+ * an "nvme connect" option.
+ */
+static bool test_tls_key_source(struct libnvme_global_ctx *ctx)
+{
+	struct libnvmf_context *fctx;
+	struct libnvmf_params *params;
+	struct arg_list args = { 0 };
+	bool pass = true;
+
+	printf("test_tls_key_source:\n");
+
+	params = libnvmf_params_new();
+	shr_assert(params);
+
+	shr_assert(!libnvmf_params_set(params, "tls", "true"));
+	shr_assert(!libnvmf_params_set(params, "tls-key", "cred_vol1-psk"));
+	shr_assert(!libnvmf_params_set(params, "tls-key-source",
+				       "systemd-creds"));
+
+	shr_assert(!libnvmf_context_create(ctx, NULL, NULL, NULL, NULL, &fctx));
+	shr_assert(!libnvmf_context_apply_params(fctx, params));
+	if (libnvmf_context_get_tls_key(fctx) ||
+	    !libnvmf_context_get_tls(fctx)) {
+		printf(" - systemd-creds: apply drops tls-key [FAIL]\n");
+		pass = false;
+	} else {
+		printf(" - systemd-creds: apply drops tls-key [PASS]\n");
+	}
+	libnvmf_context_free(fctx);
+
+	shr_assert(!libnvmf_connect_args_emit(NULL, params, collect_arg,
+					      &args));
+	if (args.n != 1 || !has_arg(&args, "--tls")) {
+		printf(" - systemd-creds: emit has --tls only [FAIL]\n");
+		pass = false;
+	} else {
+		printf(" - systemd-creds: emit has --tls only [PASS]\n");
+	}
+
+	shr_assert(!libnvmf_params_set(params, "tls-key-source", "inline"));
+
+	shr_assert(!libnvmf_context_create(ctx, NULL, NULL, NULL, NULL, &fctx));
+	shr_assert(!libnvmf_context_apply_params(fctx, params));
+	if (!shr_streq0(libnvmf_context_get_tls_key(fctx), "cred_vol1-psk")) {
+		printf(" - inline: apply keeps tls-key [FAIL]\n");
+		pass = false;
+	} else {
+		printf(" - inline: apply keeps tls-key [PASS]\n");
+	}
+	libnvmf_context_free(fctx);
+
+	args.n = 0;
+	shr_assert(!libnvmf_connect_args_emit(NULL, params, collect_arg,
+					      &args));
+	if (args.n != 2 || !has_arg(&args, "--tls") ||
+	    !has_arg(&args, "--tls-key=cred_vol1-psk")) {
+		printf(" - inline: emit has --tls and --tls-key [FAIL]\n");
+		pass = false;
+	} else {
+		printf(" - inline: emit has --tls and --tls-key [PASS]\n");
+	}
+
+	libnvmf_params_free(params);
+
+	return pass;
+}
+
+/*
+ * persistent must distinguish "not configured" (UNSET, the library default
+ * derived elsewhere, e.g. from the discovery log page) from an explicit
+ * "no" -- a plain bool cannot represent that third state.
+ */
+static bool test_persistent_tristate(struct libnvme_global_ctx *ctx)
+{
+	struct libnvmf_context *fctx;
+	struct libnvmf_params *params;
+	bool pass = true;
+
+	printf("test_persistent_tristate:\n");
+
+	shr_assert(!libnvmf_context_create(ctx, NULL, NULL, NULL, NULL, &fctx));
+
+	if (libnvmf_context_get_persistent(fctx) != NULL) {
+		printf(" - fresh context defaults to unset [FAIL]\n");
+		pass = false;
+	} else {
+		printf(" - fresh context defaults to unset [PASS]\n");
+	}
+
+	params = libnvmf_params_new();
+	shr_assert(params);
+	shr_assert(!libnvmf_params_set(params, "persistent", "no"));
+	shr_assert(!libnvmf_context_apply_params(fctx, params));
+
+	{
+		const char *p = libnvmf_context_get_persistent(fctx);
+
+		if (!shr_streq0(p, "no")) {
+			printf(" - explicit \"no\" != unset [FAIL]\n");
+			pass = false;
+		} else {
+			printf(" - explicit \"no\" != unset [PASS]\n");
+		}
+	}
+
+	libnvmf_context_free(fctx);
+	libnvmf_params_free(params);
+
+	return pass;
+}
+
+/*
+ * The public API leaves hostnqn/hostid resolution to the caller (see
+ * libnvmf_config_conn_get_hostnqn()'s kdoc) -- this drives that fallback the
+ * same way a caller (e.g. nvme-cli's build_conn_tid()) does: a connection's
+ * own value wins, else a caller-supplied default. mv leaves its identity to
+ * the system default (see test_read()); pv sets its own. Exercises the real
+ * public-API precedence, not a copy of any one caller's logic.
+ */
+static bool test_hostnqn_precedence(struct libnvme_global_ctx *ctx,
+				    const struct fixture *fx)
+{
+	static const char default_hostnqn[] =
+	"nqn.2014-08.org.nvmexpress:uuid:00000000-0000-0000-0000-000000000000";
+	static const char default_hostid[] =
+	"00000000-0000-0000-0000-000000000000";
+	const struct libnvmf_config_conn *mv, *pv;
+	struct conn_list conns = { 0 };
+	struct libnvmf_config *config;
+	struct libnvmf_tid *mv_tid, *pv_tid;
+	const char *hostnqn, *hostid;
+	bool pass = true;
+
+	printf("test_hostnqn_precedence:\n");
+
+	shr_assert(!libnvmf_config_read(ctx, fx->main_path, &config));
+	libnvmf_config_conn_for_each(config, collect, &conns);
+	shr_assert(conns.n == 3);
+	mv = conns.conn[1];
+	pv = conns.conn[2];
+
+	hostnqn = libnvmf_config_conn_get_hostnqn(mv);
+	shr_assert(!hostnqn);
+	hostnqn = default_hostnqn;
+	hostid = libnvmf_config_conn_get_hostid(mv);
+	shr_assert(!hostid);
+	hostid = default_hostid;
+	shr_assert(!libnvmf_tid_from_fields(
+			libnvmf_config_conn_get_transport(mv),
+			libnvmf_config_conn_get_traddr(mv),
+			libnvmf_config_conn_get_trsvcid(mv),
+			libnvmf_config_conn_get_subsysnqn(mv),
+			libnvmf_config_conn_get_host_traddr(mv),
+			libnvmf_config_conn_get_host_iface(mv),
+			hostnqn, hostid, &mv_tid));
+
+	if (strcmp(libnvmf_tid_get_hostnqn(mv_tid), default_hostnqn) ||
+	    strcmp(libnvmf_tid_get_hostid(mv_tid), default_hostid)) {
+		printf(" - unset identity inherits caller default [FAIL]\n");
+		pass = false;
+	} else {
+		printf(" - unset identity inherits caller default [PASS]\n");
+	}
+
+	hostnqn = libnvmf_config_conn_get_hostnqn(pv);
+	shr_assert(hostnqn);
+	hostid = libnvmf_config_conn_get_hostid(pv);
+	shr_assert(hostid);
+	shr_assert(!libnvmf_tid_from_fields(
+			libnvmf_config_conn_get_transport(pv),
+			libnvmf_config_conn_get_traddr(pv),
+			libnvmf_config_conn_get_trsvcid(pv),
+			libnvmf_config_conn_get_subsysnqn(pv),
+			libnvmf_config_conn_get_host_traddr(pv),
+			libnvmf_config_conn_get_host_iface(pv),
+			hostnqn, hostid, &pv_tid));
+
+	if (strcmp(libnvmf_tid_get_hostnqn(pv_tid),
+		   "nqn.2014-08.org.nvmexpress:prod-host") ||
+	    strcmp(libnvmf_tid_get_hostid(pv_tid),
+		   "46ba5037-7ce5-41fa-9452-48477bf00080")) {
+		printf(" - own identity overrides caller default [FAIL]\n");
+		pass = false;
+	} else {
+		printf(" - own identity overrides caller default [PASS]\n");
+	}
+
+	libnvmf_tid_free(mv_tid);
+	libnvmf_tid_free(pv_tid);
+	libnvmf_config_free(config);
+
+	return pass;
+}
+
+static bool test_set_connection_from_tid(struct libnvme_global_ctx *ctx)
+{
+	struct libnvmf_context *fctx;
+	struct libnvmf_tid *tid;
+	bool pass = true;
+
+	printf("test_set_connection_from_tid:\n");
+
+	shr_assert(!libnvmf_tid_from_fields("tcp", "10.0.0.9", "4420",
+			"nqn.2014-08.org.nvmexpress:subsys",
+			"10.0.0.1", "eth0",
+			"nqn.2014-08.org.nvmexpress:host",
+			"2cd2c43b-a90a-45c1-a8cd-86b33ab273b5", &tid));
+
+	shr_assert(!libnvmf_context_create(ctx, NULL, NULL, NULL, NULL, &fctx));
+
+	if (libnvmf_context_set_connection_from_tid(fctx, tid)) {
+		printf(" - set failed [FAIL]\n");
+		pass = false;
+		goto out;
+	}
+
+	if (strcmp(libnvmf_context_get_transport(fctx), "tcp") ||
+	    strcmp(libnvmf_context_get_traddr(fctx), "10.0.0.9") ||
+	    strcmp(libnvmf_context_get_trsvcid(fctx), "4420") ||
+	    strcmp(libnvmf_context_get_subsysnqn(fctx),
+		   "nqn.2014-08.org.nvmexpress:subsys") ||
+	    strcmp(libnvmf_context_get_host_traddr(fctx), "10.0.0.1") ||
+	    strcmp(libnvmf_context_get_host_iface(fctx), "eth0")) {
+		printf(" - addressing fields [FAIL]\n");
+		pass = false;
+	} else {
+		printf(" - addressing fields applied [PASS]\n");
+	}
+
+	if (strcmp(libnvmf_context_get_hostnqn(fctx),
+		   "nqn.2014-08.org.nvmexpress:host") ||
+	    strcmp(libnvmf_context_get_hostid(fctx),
+		   "2cd2c43b-a90a-45c1-a8cd-86b33ab273b5")) {
+		printf(" - identity fields [FAIL]\n");
+		pass = false;
+	} else {
+		printf(" - identity fields applied [PASS]\n");
+	}
+
+out:
+	if (libnvmf_context_set_connection_from_tid(NULL, tid) != -EINVAL ||
+	    libnvmf_context_set_connection_from_tid(fctx, NULL) != -EINVAL) {
+		printf(" - NULL rejected [FAIL]\n");
+		pass = false;
+	} else {
+		printf(" - NULL rejected [PASS]\n");
+	}
+
+	libnvmf_context_free(fctx);
+	libnvmf_tid_free(tid);
+
+	return pass;
+}
+
+static bool test_edge_cases(struct libnvme_global_ctx *ctx,
+			    const struct fixture *fx)
+{
+	const struct libnvmf_params *params;
+	struct conn_list list = { 0 };
+	struct libnvmf_config *config;
+	char missing[320];
+	bool pass = true;
+
+	printf("test_edge_cases:\n");
+
+	if (!libnvmf_config_read(NULL, fx->main_path, &config) ||
+	    libnvmf_config_validate(NULL, fx->main_path) != -EINVAL) {
+		printf(" - NULL ctx [FAIL]\n");
+		pass = false;
+	} else {
+		printf(" - NULL ctx rejected [PASS]\n");
+	}
+
+	/* Reading an absent configuration yields an empty connection list. */
+	snprintf(missing, sizeof(missing), "%s/no-such.conf", fx->dir);
+	if (libnvmf_config_read(ctx, missing, &config)) {
+		printf(" - absent config read [FAIL]\n");
+		pass = false;
+	} else {
+		libnvmf_config_conn_for_each(config, collect, &list);
+		if (list.n) {
+			printf(" - absent config not empty [FAIL]\n");
+			pass = false;
+		} else {
+			printf(" - absent config reads as empty [PASS]\n");
+		}
+	}
+	libnvmf_config_free(config);
+
+	/* Everything is NULL-tolerant on the way out. */
+	if (libnvmf_config_conn_is_dc(NULL) ||
+	    libnvmf_config_conn_get_transport(NULL) ||
+	    libnvmf_config_conn_get_traddr(NULL) ||
+	    libnvmf_config_conn_get_trsvcid(NULL) ||
+	    libnvmf_config_conn_get_subsysnqn(NULL) ||
+	    libnvmf_config_conn_get_host_traddr(NULL) ||
+	    libnvmf_config_conn_get_host_iface(NULL) ||
+	    libnvmf_config_conn_get_hostnqn(NULL) ||
+	    libnvmf_config_conn_get_hostid(NULL) ||
+	    libnvmf_config_conn_get_params(NULL) ||
+	    libnvmf_config_conn_get_hostsymname(NULL) ||
+	    libnvmf_config_conn_get_source(NULL) ||
+	    libnvmf_config_resolve_discovered(NULL, NULL, true) ||
+	    libnvmf_config_get_hostnqn(NULL) ||
+	    libnvmf_config_get_hostid(NULL) ||
+	    libnvmf_config_get_hostsymname(NULL) ||
+	    libnvmf_params_get(NULL, "tos")) {
+		printf(" - NULL tolerance [FAIL]\n");
+		pass = false;
+	} else {
+		printf(" - NULL-tolerant getters [PASS]\n");
+	}
+	if (libnvmf_config_get_discovered_params(NULL, NULL, true, "nqn",
+						 &params) != -EINVAL) {
+		printf(" - discovered params of a NULL config [FAIL]\n");
+		pass = false;
+	} else {
+		printf(" - discovered params of a NULL config: -EINVAL [PASS]\n");
+	}
+	libnvmf_config_conn_for_each(NULL, collect, NULL);
+	libnvmf_params_for_each(NULL, NULL, NULL);
+	libnvmf_config_free(NULL);
+	libnvmf_context_set_config(NULL, NULL, NULL);
+	printf(" - NULL iteration and free are no-ops [PASS]\n");
+
+	return pass;
+}
+
+int main(void)
+{
+	struct libnvme_global_ctx *ctx;
+	struct fixture fx;
+	bool pass = true;
+
+	ctx = libnvme_create_global_ctx();
+	shr_assert(ctx);
+	fixture_create(&fx);
+
+	pass &= test_read(ctx, &fx);
+	pass &= test_resolve_discovered(ctx, &fx);
+	pass &= test_get_discovered_params(ctx, &fx);
+	pass &= test_duplicate_nqn(ctx, &fx);
+	pass &= test_wellknown_ctrl_secret(ctx, &fx);
+	pass &= test_top_level_host(ctx, &fx);
+	pass &= test_persona_validation(ctx, &fx);
+	pass &= test_validate(ctx, &fx);
+	pass &= test_emit(ctx, &fx);
+	pass &= test_hostnqn_precedence(ctx, &fx);
+	pass &= test_apply_params(ctx);
+	pass &= test_persistent_tristate(ctx);
+	pass &= test_tls_key_source(ctx);
+	pass &= test_set_connection_from_tid(ctx);
+	pass &= test_edge_cases(ctx, &fx);
+
+	fixture_destroy(&fx);
+	libnvme_free_global_ctx(ctx);
+
+	fflush(stdout);
+	exit(pass ? EXIT_SUCCESS : EXIT_FAILURE);
+}

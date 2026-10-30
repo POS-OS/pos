@@ -1,0 +1,72 @@
+nvme-get-reg(1)
+===============
+
+NAME
+----
+nvme-get-reg - Read and show the defined NVMe controller register
+
+SYNOPSIS
+--------
+[verse]
+'nvme' [<global-options>] 'get-reg' <device>
+			[--register=<name>[,<name>...] | -r <name>[,<name>...]]
+			[--offset=<offset> | -O <offset>]
+
+DESCRIPTION
+-----------
+Reads and shows controller registers: of an NVMe over PCIe controller from
+its PCI memory space, of an NVMe over Fabrics controller its properties with
+Property Get commands.
+
+The <device> parameter is mandatory and must be the nvme admin character
+device (ex: /dev/nvme0).
+
+On a fabrics controller, a register which is no property of a fabrics
+controller, or a property the controller doesn't implement, fails the
+command, after the other registers are shown.
+
+OPTIONS
+-------
+-r <name>[,<name>...]::
+--register=<name>[,<name>...]::
+	The registers to show, by name, in register order: one of cap, vs, intms, intmc, cc, csts, nssr, aqa, asq, acq, cmbloc, cmbsz, bpinfo, bprsel, bpmbl, cmbmsc, cmbsts, cmbebs, cmbswtp, nssd, crto, pmrcap, pmrctl, pmrsts, pmrebs, pmrswtp, pmrmscl, pmrmscu.
+	The option may be given more than once.
+
+-O <offset>::
+--offset=<offset>::
+	A register to show, by offset or name, e.g. 0x14 or cc. The offset has
+	to be the one of a register.
+
+The options --cap, --vs, --cc and so on of earlier versions, one for each
+register, still work, but are deprecated: use --register.
+
+include::global-options.txt[]
+
+With -v, the fields of each register are shown decoded. The JSON output has
+the value of each register under its name, with -v an object of the value
+and its decoded fields:
+
+------------
+{
+  "cc": 4587521
+}
+------------
+
+EXAMPLES
+--------
+* Show the Controller Configuration register
++
+------------
+# nvme get-reg /dev/nvme0 --register=cc
+register : 0x14 (Controller Configuration), value: 0x460001
+------------
+
+* Show the Controller Capabilities and Status registers, decoded
++
+------------
+# nvme get-reg /dev/nvme0 -r cap,csts -v
+------------
+
+NVME
+----
+Part of the nvme-user suite.

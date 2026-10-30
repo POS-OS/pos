@@ -1,0 +1,72 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
+/*
+ * This file is part of libnvme.
+ * Copyright (c) 2026 SUSE Software Solutions
+ *
+ * Authors: Daniel Wagner <dwagner@suse.de>
+ */
+
+
+#include <errno.h>
+
+#include <shared/compiler-attributes-util.h>
+
+#include <libnvme.h>
+
+#include "private.h"
+
+int libnvme_open_uring(__shr_unused struct libnvme_transport_handle *hdl)
+{
+	return -ENOTSUP;
+}
+void libnvme_close_uring(__shr_unused struct libnvme_transport_handle *hdl)
+{
+}
+
+int __libnvme_transport_handle_open_uring(struct libnvme_transport_handle *hdl)
+{
+	hdl->uring_state = LIBNVME_IO_URING_STATE_NOT_AVAILABLE;
+
+	return -ENOTSUP;
+}
+
+__shr_public int libnvme_submit_admin_passthru(
+		__shr_unused struct libnvme_transport_handle *hdl,
+		__shr_unused struct libnvme_passthru_cmd *cmd,
+		__shr_unused void *cookie)
+{
+	if (!hdl)
+		return -ENODEV;
+
+	if (hdl->uring_state == LIBNVME_IO_URING_STATE_UNKNOWN)
+		return __libnvme_transport_handle_open_uring(hdl);
+
+	return -ENOTSUP;
+}
+
+__shr_public int libnvme_submit_io_passthru(
+		__shr_unused struct libnvme_transport_handle *hdl,
+		__shr_unused struct libnvme_passthru_cmd *cmd,
+		__shr_unused void *cookie)
+{
+	if (!hdl)
+		return -ENODEV;
+
+	if (hdl->uring_state == LIBNVME_IO_URING_STATE_UNKNOWN)
+		return __libnvme_transport_handle_open_uring(hdl);
+
+	return -ENOTSUP;
+}
+
+__shr_public int libnvme_reap_passthru(
+		__shr_unused struct libnvme_transport_handle *hdl,
+		__shr_unused struct libnvme_passthru_completion *completion)
+{
+	return -ENOTSUP;
+}
+
+__shr_public int libnvme_wait_passthru(
+		__shr_unused struct libnvme_transport_handle *hdl)
+{
+	return -ENOTSUP;
+}

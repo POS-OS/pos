@@ -1,0 +1,80 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
+/*
+ * This file is part of nvme-cli.
+ * Copyright (c) 2026 Dell Technologies Inc. or its subsidiaries.
+ *
+ * Authors: Martin Belanger <martin.belanger@dell.com>
+ */
+#pragma once
+
+#include <stdbool.h>
+
+/*
+ * State file management.
+ *
+ * Layout:
+ *   RUNDIR/nvme/discoverd/
+ *     units/<unit-name>.devid      — kernel device name written by nvme connect
+ *     controllers/<devid>/unit     — transient unit name for this controller
+ *     controllers/<devid>/ino      — inode of /sys/class/nvme/<devid>
+ *     desired                      — last known desired controllers
+ */
+
+#define STATE_RUN_DIR    RUNDIR "/nvme/discoverd"
+#define STATE_UNITS_DIR  STATE_RUN_DIR "/units"
+#define STATE_CTRLS_DIR  STATE_RUN_DIR "/controllers"
+#define STATE_DESIRED    STATE_RUN_DIR "/desired"
+
+#define SYSFS_NVME_DIR   "/sys/class/nvme"
+
+/* Ensure the runtime directories exist. Call once at startup. */
+int state_init(void);
+
+/*
+ * Remove the state of controllers that no longer exist. The kernel reuses
+ * device names, so a device with the same name but another inode is a
+ * different controller. State without an inode is left alone. This never
+ * disconnects anything. Call once at startup.
+ */
+void state_gc(void);
+
+/*
+ * Is the device that the state of @devid records still present? True only
+ * when /sys/class/nvme/@devid exists and has the recorded inode. A device
+ * with the same name but another inode is a different controller.
+ */
+bool state_ctrl_present(const char *devid);
+
+/*
+ * Replace the file of last known desired controllers with @content.
+ * Returns 0 or a negative errno.
+ */
+int state_write_desired(const char *content);
+
+/*
+ * The content of the file of last known desired controllers, or NULL if
+ * there is none. Caller must free.
+ */
+char *state_read_desired(void);
+
+/*
+ * Read the unit name from a controller's state directory.
+ * Returns an allocated string or NULL. Caller must free.
+ */
+char *state_read_unit(const char *devid);
+
+/*
+ * Remove a controller's state directory. Called by discoverd when the
+ * device is removed and the unit was cleaned up by ExecStopPost= (as
+ * belt-and-suspenders in case ExecStopPost= did not run).
+ */
+void state_remove_ctrl(const char *devid);
+
+/*
+ * Remove a unit's .devid file (units/<%N>.devid). The ".service" suffix
+ * is stripped from @unit_name to match the systemd %N specifier used to
+ * name it. Called from the KOBJ_REMOVE handler — ExecStopPost= normally
+ * removes it, but the kernel-removal path tears the controller down
+ * directly.
+ */
+void state_remove_devid(const char *unit_name);

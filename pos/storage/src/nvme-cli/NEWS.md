@@ -1,0 +1,1096 @@
+<!-- SPDX-License-Identifier: GPL-2.0-only -->
+# NEWS
+
+## Changes in 3.2 (unreleased)
+
+### Feature removals and incompatible changes
+
+* The JSON output of `nvme show-regs`, `get-reg` and `get-property` has
+  one shape: the value of each register under its name, e.g.
+  `{"cc": 4587521}`, with `-v` an object of the value and its decoded
+  fields. Before, `get-reg` printed `{"register: 0x14": [{"name": "cc",
+  "value": ...}]}`, `get-property` the value as a hex string, and `-v`
+  wrapped each register in a one element array.
+
+* `nvme show-regs`, `get-reg` and `get-property -v` decode the fields of
+  the registers as the specification names them, the same in the normal
+  and the JSON output, which differed before. The composite fields are
+  split into theirs: CAP.CSS, CAP.AMS, CAP.CRMS and VS. The normal
+  output of `show-regs` names the Version register `vs`, like the JSON
+  output and the options, instead of `version`.
+
+* `nvme set-reg` falls back to a Property Set only for a controller
+  whose registers can't be mapped, a fabrics controller. Before, it set
+  the property after any failed write. It refuses a register the host
+  may not write and a value too large for a 32 bit register, and fails
+  without a register to write instead of doing nothing.
+
+* `nvme help` no longer lists the deprecated commands. They still
+  work, with a warning.
+
+* nvme-cli parses its command line itself instead of with getopt, so
+  it behaves the same with every C library. Long options now need two
+  dashes and their full name: single-dash long options such as
+  `-verbose` and abbreviations such as `--namespace` for
+  `--namespace-id` are no longer accepted. A single dash always starts
+  short options, so `-verbose` is read as `-v -e -r -b -o -s -e`.
+  Options and arguments can still be given in any order.
+
+* Every command rejects an invalid `--output-format` value now, before
+  it opens the device. Before, the commands which don't use the output
+  format accepted any value.
+
+* `nvme <command> --help` (also `-h` and `-?`) prints the help to stdout
+  and exits with status 0. Before, it printed to stderr and exited
+  with 1, like a usage error, which still does.
+
+* Every command checks its operand: a command which takes a device
+  fails without one, and an extra operand is an error. Before, extra
+  operands were silently ignored, e.g. a device given to a command which
+  takes none.
+
+* `--persistent force` fails now. The value of an option which takes an
+  optional value has to be attached to it: `--persistent=force` or
+  `-pforce`. A separate value was never applied: `--persistent force`
+  connected in mode `auto` and dropped `force` without a word, as the
+  man pages of `discover`, `connect-all` and `config create` said.
+  Now it is an extra argument, which is an error.
+
+* Options which take an unsigned number reject negative numbers now.
+  Before, `-1` wrapped around to the largest value. The values which
+  have a special meaning got names instead: every namespace id option
+  accepts `all` for 0xffffffff and `--timeout` (also in
+  `nvme-cli.conf`) accepts `infinite`. Both still accept `-1`. The
+  help lists the names of an option. `lm migration-recv` requires
+  `--sel` now, like the other lm commands.
+
+* `--sel` of `get-feature`, the `feat` commands and the `ocp` and
+  `shannon` commands which get a feature rejects numbers above 3 and
+  accepts the names `current`, `default`, `saved` and `supported`.
+  Before, it sent the reserved values 4 to 7 and truncated larger
+  values. `--output-format-version` (also in `nvme-cli.conf`) rejects
+  versions other than 1 and 2. Before, every version but 2 printed
+  version 1.
+
+* Number options reject text after the number. Before, the rest was
+  ignored: `--timeout=10s` set a timeout of 10 milliseconds.
+
+* Numbers on the command line and in `nvme-cli.conf` are parsed
+  strictly: leading whitespace and a `+` are rejected, a signed option
+  rejects a value out of its range instead of wrapping around, and a
+  floating point option takes a `.` as decimal point in any locale and
+  rejects `nan` and `inf`. Sizes with a suffix (`4Ki`, `1.5G`) reject a
+  value which overflows, take the digits after a `.` in decimal
+  (`1.09k` was rejected as octal, `1.500k` was 1000), and use a `.` in
+  any locale as well. An empty value no longer selects a value name.
+
+* Numbers no longer take a leading zero, on the command line, in
+  `nvme-cli.conf` and in the lists of numbers. Before, a leading zero
+  made a number octal: `--namespace-id=010` was namespace 8 and `08`
+  was rejected. Write `10`, or `0x10` for hexadecimal; `0` itself is
+  fine.
+
+* Errors and warnings which repeat a command line argument or a line of
+  a config file write its control characters as `\xNN`, so it can't
+  send escape sequences to the terminal.
+
+* Global options mean the same for every command now: they are looked
+  up before the options of a command, and no command uses their names
+  any more.
+  - The own `--human-readable` (`-H`) of `fdp configs`,
+    `lm migration-recv`, `shannon get-additional-feature` and
+    `zns id-ns`, and the own `--verbose` (`-V`) of `sndk` and
+    `wdc vs-internal-log`, `sed discover` and `zns report-zones` are
+    gone; the global `--verbose` (`-v`) does their job. `-V` is no
+    longer accepted by these commands.
+  - These options lost their short name, which a global option uses:
+    `config convert --output` and `rpmb read-data`/`write-data
+    --address` (`-o`), `feat arbitration --hpw`, `feat temp-thresh
+    --thsel`, `feat host-behavior-support --hdisns`, `lm set-cdq --hp`,
+    `nbft show --hfi` and `samsung vs-internal-log --hide-progress`
+    (`-H`).
+  - `--human-readable` and `-H`, the old spelling of `--verbose`, print
+    a deprecation warning.
+
+* A usage error prints the error, the synopsis and where to find the
+  help instead of the whole help, which buried the error. A bad value
+  names the option as it was given and the values it takes:
+
+      fw commit: invalid value 'x' for -s: expected a number from 0 to 255
+      Usage: nvme fw commit <device> [OPTIONS]
+      Try 'nvme fw commit --help' for more information.
+
+  The other errors of a command start with its name as well, e.g.
+  `id ns: /dev/nvme0: Permission denied`, and a device which can't be
+  opened prints no help any more. An unknown command and a bad global
+  option point to `nvme --help` instead of printing the general help,
+  which also followed a command that failed with ENOTTY. On a terminal,
+  that name is red and the WARNING of a warning yellow. Set `NO_COLOR`
+  to a non-empty value to turn colors off (https://no-color.org/).
+
+* Options which take one of a few words check the word while parsing
+  the command line, in any case and as a unique prefix like every
+  value name, and the help and the completions list the words:
+  `show-topology --ranking`, `memblaze select-download --select`,
+  `micron select-download --select`, the `--option` of the micron
+  `vs-smbus-option`, `latency-tracking` and
+  `vs-telemetry-controller-option`, the micron `--command` of
+  `latency-tracking` and `latency-stats`, `micron vs-internal-log
+  --type`, `ocp internal-log --telemetry-type`, the `--type` of the
+  `sndk` and `wdc` `vs-internal-log` and `solidigm internal-log
+  --type`. An unknown word is a usage error which lists the words.
+  `ocp internal-log` with an unknown telemetry type failed with status
+  0 before. `samsung vs-internal-log --dump-type` checks its list of
+  dump types the same way, before it opens the device, and may be given
+  more than once; the completions complete the type after the last
+  comma.
+
+* The help of `connect`, `discover`, `connect-all`, `disconnect` and
+  `config create` lists the fabrics options they share under "Fabrics
+  options", and the help of the `feat` commands `--save` and `--sel`
+  under "Feature options".
+
+* The command metadata (`nvme utils dump-command-metadata`) marks
+  deprecated commands with the command which replaces them, deprecated
+  options with the option which replaces them, and renamed options
+  with their old name.
+
+* The old option names `--dhchap-secret`, `--dhchap-ctrl-secret` and
+  `--fast_io_fail_tmo` of the fabrics commands and `--force` of
+  `discover` and `connect-all` print a deprecation warning which names
+  the option to use instead.
+
+* The deprecated `tls-key` command parses its options like every other
+  command: it has a help, and abbreviated options such as `--keyr` are
+  no longer accepted. It, `gen-dhchap-key` and `check-dhchap-key`
+  reject extra operands now instead of dropping them.
+
+* The human-readable stdout output of `id-ctrl`, `id-ns`, and most
+  other identify/log-page/feature commands is now rendered through a
+  computed-width table instead of hand-aligned `printf()` calls.
+  Field names, values, and decoded bit breakdowns are unchanged, but
+  column widths, spacing, and blank lines around them may differ from
+  previous releases. stdout was never a stable, parseable interface;
+  scripts that depend on its exact layout should switch to
+  `--output-format=json` (`-o json`), which this change does not
+  affect.
+
+* The ScaleFlux plugin no longer supports the proprietary ScaleFlux
+  kernel driver used with CSD 2000 drives. nvme-cli does not support
+  proprietary kernel modules. The clean card feature is removed.
+
+* `nvme discover`, `nvme connect-all` and `nvme config create
+  --discovery` now default `--persistent` to `auto` instead of `no`.
+  With this, the discovery controller stays connected after the log
+  page fetch wherever the target reports EPCSD for that discovery log
+  page entry. That lets the host automatically react to discovery AENs
+  received on that discovery connection. Targets without EPCSD enabled
+  remain unaffected. Opt out with `--persistent=no`. `config create
+  --discovery` and converted `discovery.conf` lines now record
+  `persistent = auto`. See `nvme-discover(1)` and `nvme-config-create(1)`.
+
+* nvme-discoverd is now built and installed by default, and it replaces
+  the legacy udev/systemd NVMe-oF autoconnect. The daemon connects the
+  controllers from the NBFT, from the fabrics configuration
+  (`nvme-fabrics.conf(5)`) and from the Discovery Log Pages of the
+  Discovery Controllers it connects to, including FC kickstart. It
+  also keeps them connected and retries failed connections with
+  backoff. See `nvme-discoverd(8)`.
+
+  The `nvme-discoverd` and `nvmf-autoconnect` build options now both
+  default to `auto`. nvme-discoverd is built when libsystemd v253 or
+  later is available. The legacy autoconnect is built only when
+  nvme-discoverd is not. To keep the old behavior, build with
+  `-Dnvme-discoverd=disabled`.
+
+  When nvme-discoverd is built, these legacy files are not installed:
+  `70-nvmf-autoconnect.rules`, `nvmf-connect@.service`,
+  `nvmf-connect.target`, `nvmf-autoconnect.service`,
+  `nvmefc-boot-connections.service`, `nvmf-connect-nbft.service`, the
+  dracut config `70-nvmf-autoconnect.conf` and the NetworkManager
+  dispatcher script `80-nvmf-connect-nbft.sh`. The key provisioning
+  and vendor tuning udev rules are still installed.
+
+  `-Dnvmf-autoconnect=enabled` installs both. The legacy udev rules
+  are active as soon as they are installed. nvme-discoverd runs only
+  when `nvme-discoverd.service` is enabled. While nvme-discoverd is
+  active, `nvmf-autoconnect.service` and the FC kickstart skip their
+  connect step.
+
+* libnvme: the Identify Controller bit field constants for the OAES,
+  BPCAP, MEC, OACS, FRMW, LPA and AVSCC fields now use the field names
+  from the NVM Express Base Specification, Revision 2.4. The old names
+  are removed. Code that uses them must be changed:
+
+  - `NVME_CTRL_OAES_*`: `FA` is now `FAN`, `ANA` is `ANACN`, `PLEA`
+    is `PLEAN`, `LBAS` is `LSIAN`, `EGE` is `EGEAN`, `NS` is `NNSS`,
+    `TTH` is `TTHR`, `ZD` is `ZDCN` and `DL` is `DLPCN`. This also
+    applies to the `_SHIFT` and `_MASK` values. The accessor macros
+    `NVME_CTRL_OAES_PLEALCN()`, `NVME_CTRL_OAES_LBASIAN()`,
+    `NVME_CTRL_OAES_EGEALPCN()` and `NVME_CTRL_OAES_NNVMSS()` are now
+    `NVME_CTRL_OAES_PLEAN()`, `NVME_CTRL_OAES_LSIAN()`,
+    `NVME_CTRL_OAES_EGEAN()` and `NVME_CTRL_OAES_NNSS()`.
+  - `NVME_CTRL_BACAP_*` is now `NVME_CTRL_BPCAP_*`.
+  - `NVME_CTRL_MEC_SMBUSME` is now `NVME_CTRL_MEC_TWPME`. The spec
+    renamed the bit to 2-Wire Port Management Endpoint.
+  - `NVME_CTRL_OACS_*`: `SECURITY` is now `SSRS`, `FORMAT` is
+    `FNVMS`, `FW` is `FWDS`, `NS_MGMT` is `NMS`, `SELF_TEST` is
+    `DSTS`, `DIRECTIVES` is `DIRS`, `NVME_MI` is `NSRS`, `VIRT_MGMT`
+    is `VMS`, `DBBUF_CFG` is `DBCS`, `LBA_STATUS` is `GLSS`,
+    `CMD_FEAT_LD` is `CFLS`, `HMLM` is `HMLMS` and
+    `CTRL_SCOPED_CMD_FEAT_LD` is `CCFLS`. The accessor macros
+    `NVME_CTRL_OACS_NMS_M()` and `NVME_CTRL_OACS_VMS_M()` are now
+    `NVME_CTRL_OACS_NMS()` and `NVME_CTRL_OACS_VMS()`.
+  - `NVME_CTRL_FRMW_*`: `1ST_RO` is now `FFSRO`, `NR_SLOTS` is `NOFS`,
+    `FW_ACT_NO_RESET` is `FAWR` and `MP_UP_DETECTION` is `SMUD`.
+    `NVME_CTRL_FRMW_NOFS` also covers bit 3 of the Number Of Firmware
+    Slots field, which `NVME_CTRL_FRMW_NR_SLOTS` missed.
+  - `NVME_CTRL_LPA_*`: `SMART_PER_NS` is now `SMARTS`, `CMD_EFFECTS`
+    is `CSES`, `EXTENDED` is `LPEDS`, `TELEMETRY` is `TS`,
+    `PERSETENT_EVENT` is `PES`, `LI0_LI5_LI12_LI13` is `MLPS` and
+    `DA4_TELEMETRY` is `DA4S`.
+  - `NVME_CTRL_AVSCC_AVS` is now `NVME_CTRL_AVSCC_VSCF`.
+
+* The `docs-build` option is removed. `-Ddocs` always installs the
+  docs committed in the tree. The new `update-docs` target regenerates
+  them and copies them into the tree. Drop `-Ddocs-build=true` from
+  the meson arguments: meson rejects an unknown option.
+
+### New: FreeBSD support
+
+* nvme-cli and libnvme now build and run on FreeBSD. NVMe PCIe devices
+  are supported through the nvme(4) driver; NVMe-oF fabrics, MI,
+  nvme-discoverd, and `nvme top` are not yet available on this
+  platform.
+
+### nvme-cli
+
+* `nvme top -o json` samples the I/O statistics over `--delay` seconds
+  and prints the rates and the error, retry, failover, reset and
+  reconnect counters of the subsystems, namespaces, paths and
+  controllers as one JSON document, for scripts and monitoring tools.
+  `nvme top` has a man page now, which describes the document.
+
+* `scripts/mcp/nvme-mcp` is an MCP server on top of `nvme top -o json`.
+  It lets an agent watch the multipath I/O of a host: it flags paths
+  which are not optimized, are slow compared with their siblings, get
+  an uneven share of the I/O, or whose error counters go up. Started
+  with `--allow-iopolicy`, it also changes the I/O policy of a
+  subsystem and compares the policies under a running workload. See
+  `scripts/mcp/README.md`.
+
+* `nvme get-reg --register=NAME[,NAME...]` and `nvme set-reg
+  --register=NAME --value=VAL` name the registers, with completion of
+  the names, and `--offset` of `get-reg`, `set-reg`, `get-property` and
+  `set-property` takes a name too, e.g. `--offset=cc`. The options of a
+  register each of earlier versions, like `get-reg --cc` and `set-reg
+  --cc=VAL`, still work, but are deprecated.
+
+* `nvme help <command>` finds the command like `nvme <command>` does,
+  also by a unique prefix, and `nvme help <plugin> <command>` shows the
+  man page of a plugin's command.
+
+* The shell completions offer a device only to commands which take
+  one. The command metadata (`nvme utils dump-command-metadata`) reports
+  the device operand of each command as schema version 2.
+
+* The global options (`--verbose`, `--output-format`, `--dry-run`, ...)
+  are accepted by every command. `config validate`, `config status`,
+  `config convert`, `intel lat-stats-tracking`, `memblaze lat-stats`,
+  `memblaze smart-log-add-x`, `sndk vs-internal-log`,
+  `wdc vs-internal-log` and the `sed` commands did not accept them.
+
+* The command metadata reports the type of the value of each option and
+  the range of numbers an option takes. The shell completions use them:
+  they complete paths for every option which names a file or directory,
+  now also the `--keyfile` of the keys commands, `--nbft-path` and the
+  logs of `ocp internal-log`, and offer the values of `--sel`. They no
+  longer offer 0 to 3 for the `--sel` of the `lm` commands, which means
+  something else there.
+
+* The help and the shell completions of `--output-format` list the
+  formats the command supports. Before, the completions offered
+  `tabular` everywhere, and some commands listed formats they rejected.
+
+* `--dry-run` now also skips `nvme reset`, `nvme subsystem-reset`,
+  `nvme ns-rescan`, the `nvme sed` operations which change the drive,
+  and the fabrics connects and disconnects. Before, only NVMe commands
+  were skipped: these still reset the controller or subsystem,
+  rescanned the namespaces, connected and disconnected controllers, and
+  with `dry-run` set in nvme-cli.conf the sed operations still ran.
+  `nvme connect --dry-run -vv` shows the connect arguments instead.
+  `nvme discover` and `nvme connect-all` stop before connecting the
+  Discovery Controller, as there is nothing to discover without a
+  connection.
+
+* `nvme discover` and `nvme connect-all` now send the keep-alive
+  timeout to a persistent Discovery Controller. Before, the value was
+  set too late. The DC got no keep-alive timeout, so it was never
+  asked for a persistent connection or for AENs.
+
+* New option `nvme connect --discovery`. It tells the kernel that the
+  controller is a Discovery Controller, also when it has a unique NQN.
+
+* `nvme connect`: When connecting to a target over TCP, automatically
+  calculates `--nr-io-queues` if the option is not explicitly specified. The
+  number of I/O queues is derived using the following formula:
+
+    ```c
+    if (num_hw_queues > 1)
+      nr_io_queues = min(num_online_cpus, num_hw_queues);
+    ```
+  Here, `num_hw_queues` represents the number of hardware TX/RX queue
+  pair,  and  combined queues currently configured on the NIC, and
+  `num_online_cpus` represents the number of online CPUs. The number of
+  I/O queues is set to the minimum of these two values when `num_hw_queues`
+  is greater than 1. Otherwise, the default number of I/O queues is used.
+
+  If the user explicitly specifies `--nr-io-queues`, the specified value takes
+  precedence over the automatic calculation.
+
+  This behavior also applies when connecting to a TCP target using a config.INI
+  file.
+
+* `nvme sed revert` now prints an extra `revert LSP` error when the
+  kernel cannot revert the Locking SP. `nvme sed password` checks at
+  run time, not at build time, whether the kernel can set the SID
+  password, and skips that step if it cannot.
+
+* The lm, sandisk, sed, wdc and zns plugins are now built on Windows.
+  Without kernel Opal support, `nvme sed` only supports `discover`.
+
+* The wdc plugin no longer creates its dump directories with a broken
+  mode that only root could write to.
+
+* A device, or a fabrics target, which returns log pages whose lengths
+  and counts don't add up no longer makes nvme-cli read past its
+  buffers, loop for minutes or leak memory. This covers id-ctrl and the
+  FDP, host and AVE discovery, pull model DDC request, power
+  measurement, reachability, dispersed namespace, LBA status, changed
+  namespace list and persistent event logs. Found by fuzzing the device
+  data.
+
+* `nvme log host-discovery`, `ave-discovery` and `pull-model-ddc-req`
+  read the records which follow the header now. Before, they printed
+  zeros instead. `host-discovery --all-host-entries` reads the header
+  of the right page as well.
+
+* `nvme log reachability-groups` and `reachability-associations` decode
+  every descriptor now. Before, only the first one was read from the
+  right place. Their JSON output lists the IDs of a descriptor in an
+  array, `nsid` and `rgid`. Before, all but the last ID were lost.
+
+* `nvme log persistent-event` fails for a log larger than 4 GiB, which
+  it can't read, instead of printing a part of it as the whole log.
+
+* `nvme sanitize-ns` sends the Sanitize Namespace command to the
+  namespace of the device, or to the one the new `--namespace-id`
+  option gives. Before, it sent it with NSID 0, which the controller
+  rejects.
+
+* `nvme set-feature` sends the timestamp of `--value` little endian,
+  and no longer in Command Dword 11. It refuses a value which doesn't
+  fit: 32 bits, 48 for the timestamp. Before, it cut off the rest.
+
+* `nvme device-self-test --wait` aborts the self-test on Ctrl-C again,
+  and no longer waits for a self-test which is done before it reads the
+  progress the first time. Without a self-test code, it fails when it
+  can't read the progress, instead of reporting no running self-test.
+
+* `nvme sanitize --wait` waits for the estimated time on big endian
+  hosts too, and no longer fails on a sanitize without an estimated
+  time, like exit-failure, which is done. `--repeat=0` is refused.
+
+* `nvme format` on a controller without `--namespace-id` tells how to
+  format a namespace or all of them.
+
+* `nvme read`, `write` and `compare` refuse a `--data-size` of more
+  than 65536 logical blocks, which overflowed a buffer, and size the
+  metadata for all blocks of `--data-size` without `--block-count`.
+
+* `nvme copy` sends 0 as the expected reference tag of a range without
+  `--expected-ref-tags`. Before, it was whatever was on the stack.
+
+* `nvme get-lba-status` sends the namespace of the device without
+  `--namespace-id`, instead of NSID 0, and refuses a `--max-dw` whose
+  data length doesn't fit 32 bits.
+
+* `nvme show-regs` and `get-reg` on a fabrics controller show the
+  properties in the right byte order on big endian hosts, and read the
+  NSSD and CRTO properties too. `show-regs` leaves out the properties
+  the controller doesn't implement, also in the JSON output, which
+  printed all registers of a PCIe controller before, as -1 if they
+  weren't properties.
+
+* `nvme get-reg` and `get-property` on a fabrics controller fail for a
+  property the controller doesn't implement, instead of showing it as
+  all ones, or failing only if the status had the DNR bit set.
+  `show-regs` fails for any other error of an optional property.
+
+* `nvme get-reg` refuses an `--offset` which is no register, which read
+  past a buffer from 0x1000 on. On a fabrics controller it fails for a
+  register which is no property, and prints the status of a failed
+  Property Get.
+
+* `nvme show-regs --verbose` prints the CRTO timeouts in milliseconds.
+  Before, it dropped the half seconds.
+
+* `nvme show-regs -o json` prints the 32 bit registers unsigned. Before,
+  a register with bit 31 set showed as a negative number.
+
+### Plugins
+
+* The JSON output of `nvme wdc vs-smart-add-log` prints the counters,
+  averages and percentages of the C1 performance statistics as 64 bit
+  values. Before, a value above 2^31 - 1 came out wrapped.
+
+* `nvme feat num-queues --nsqr=N` without `--ncqr` keeps the current
+  number of completion queues now. Before, it requested a single
+  completion queue and a wrong number of submission queues.
+
+* Fixed root command injection in WDC (`vs-internal-log`,
+  `drive-essentials`, SN730 capture) and SanDisk (telemetry capture):
+  a caller-controlled string reached a shell (`system()`), so a
+  crafted input could run arbitrary commands as root.
+
+* `nvme seagate vs-smart-add-log` prints the SMART logs of a drive
+  once. Before, it printed those of legacy drives twice and those of
+  other drives followed by logs which aren't theirs, and its JSON
+  output could crash.
+
+* The dera, ibm, memblaze, ocp, seagate, solidigm and wdc plugins handle
+  unexpected values from the device and free the memory they used.
+
+* WDC, SanDisk, Micron, Solidigm and Samsung plugins no longer spawn
+  external `tar`, `zip`, `cat`, `lsmod`, `uname` or `dmesg` processes;
+  they use libarchive or direct syscalls instead.
+
+* New optional build dependency: `libarchive` (WDC, SanDisk, Micron,
+  Samsung and Solidigm archiving), `auto` by default. Without it, the
+  affected subcommands fail with a clear error instead of depending
+  on whatever `tar`/`zip` happens to be on `PATH`. See
+  [BUILDING.md](Documentation/BUILDING.md).
+
+* `nvme feat perf-characteristics` no longer crashes after it sets the
+  feature. It refuses an `--attrl` above 4064 bytes, which overflowed a
+  buffer, and sends the attribute length little endian.
+
+* `nvme feat arbitration` sets the feature only with the option of a
+  field. Before, any option but `--sel`, like `-o json`, set it.
+
+* `nvme feat power-meas` gets the feature with `--uuid-index` too.
+
+* `nvme feat timestamp` clears the attributes of the timestamp it sets.
+  Before, they were whatever was on the stack.
+
+* `nvme feat lba-range-type` takes `--guids` as optional on every
+  architecture, refuses a `--num` above 63, which set 64 zeroed ranges,
+  and shows its own description in its help.
+
+* `nvme fw commit` reports a commit which needs a reset to activate
+  the image as a success. `nvme fw download` and `nvme security recv`
+  send the `--ish` flag of an NVMe-MI command.
+
+* `nvme ns create --nsze-si` and `--ncap-si` take the namespace
+  granularity of a format with extended metadata, and the LBA format
+  on big endian hosts, right, and align to a granularity above 4 GiB.
+
+* The `nvme zns` zone management commands and `zone-append` work again:
+  they sent their I/O commands to the admin queue. `zone-mgmt-recv`
+  requires a `--data-len` which is a multiple of 4 for each action, and
+  `zone-append` refuses more than 65536 logical blocks and no longer
+  overflows the metadata buffer.
+
+* `nvme resv report` reports a failed Identify Controller with its
+  status, and fails.
+
+* `nvme io-mgmt recv` requires a `--data-len` which is a multiple of 4,
+  exits with success after writing the data to `--data`, and fails if
+  it can't write all of it.
+
+* `nvme dir send` and `dir receive` default to the namespace of a
+  namespace device, and `dir send` refuses an `--endir` above 1.
+
+### nvme-discoverd
+
+* `meson install` no longer installs `nvme-discoverd.conf`, which
+  overwrote the admin's settings. It installs a commented
+  `nvme-discoverd.conf.sample` instead; copy it to
+  `nvme-discoverd.conf` to change a setting. Without the file, every
+  setting keeps its default.
+
+* Discovery Controllers are now connected with `--discovery` and a
+  keep-alive timeout of 30 s, or the configured `keep-alive-tmo`. No
+  keep-alive timeout is used for `persistent = no`.
+
+* `epcsd-poll-interval-minutes`, `fc-kickstart-interval-minutes` and
+  `dc-giveup-timeout` move from `[Global]` to a new `[Discovery]`
+  section in `nvme-discoverd.conf`. In `[Global]`, they are now
+  ignored with an "unknown key" warning. See `nvme-discoverd(8)`.
+
+* nvme-discoverd can discover Discovery Controllers through mDNS
+  (TP8009), using systemd-resolved. It is off by default. Enable it
+  with `zeroconf = true` in the `[Discovery]` section. The new `mdns`
+  build option (`auto` by default) controls whether mDNS support is
+  built. It requires libsystemd v258 or later.
+
+* nvme-discoverd releases a controller it no longer wants, for example
+  one removed from the configuration or from a DC's log page, or one the
+  exclusion list now matches. It clears the registry owner and leaves the
+  connection up. It no longer connects the IOCs of a DC that another
+  orchestrator connected. After a restart, it reconnects the DCs it found
+  through mDNS. A DC configured with a `persistent` setting now connects.
+
+* nvme-discoverd also compares the host ID, not only the host NQN, when
+  it matches a desired connection with an existing one.
+
+* nvme-discoverd adds the IPv6 scope to link-local addresses. For a
+  Discovery Log Page entry, the scope comes from the Discovery
+  Controller's own address. For an mDNS result, it is the interface.
+  RDMA needs this, because it has no `host_iface` to select the link.
+
+* A connection unit of nvme-discoverd no longer disconnects another
+  controller that reuses its device name. The unit records the sysfs
+  inode of its device at connect time and disconnects only if the inode
+  still matches. At startup, nvme-discoverd removes the state of
+  controllers that are gone.
+
+* At shutdown, a connection unit of nvme-discoverd disconnects only
+  after the file systems mounted with `_netdev` are unmounted. Before,
+  it could disconnect a controller while its file system was still
+  mounted. A file system on an NVMe-oF namespace needs `_netdev` in
+  fstab.
+
+* nvme-discoverd resolves the host names in `nvme-fabrics.conf` in
+  parallel, without blocking. Before, it resolved them one at a time,
+  and a slow DNS server stopped the daemon. A failed lookup is tried
+  again, first after 1 s, then less often, up to every 5 minutes.
+  Before, the connection was skipped until the next reload. While the
+  first lookups run, nvme-discoverd does not release any controller.
+
+* nvme-discoverd handles the events of a Discovery Controller that has
+  no owner, for example one connected with
+  `nvme discover --persistent`. It runs `nvme connect-all` for it, as
+  `70-nvmf-autoconnect.rules` does. The new connections have no owner
+  either. Before, nothing handled these events when the legacy udev
+  rules were not installed.
+
+### libnvme
+
+* Built with liburing, libnvme sends a passthru command through
+  io_uring only where the kernel takes it: admin commands on the char
+  device of a controller, I/O commands on that of a namespace, and
+  nothing on a block device. Before, every command on a namespace
+  block device (`/dev/nvme0n1`) failed with "Invalid argument", and
+  every admin command on a namespace char device (`/dev/ng0n1`) with
+  "Inappropriate ioctl for device".
+
+* A failed read of `/dev/nvme-fabrics` is no longer cached for the
+  life of the global context, so a later connect retries it.
+
+* New `libnvmf_kernel_option_supported()` and
+  `libnvmf_kernel_options_for_each()` report the fabrics options the
+  kernel lists in `/dev/nvme-fabrics`.
+
+* The `libnvme3.pc` pkg-config file now reports the nvme-cli release
+  version, e.g. 3.2. Before, it reported the library ABI version, 1.0.0
+  in every release. A project can now require a release with, for
+  example, `libnvme3 >= 3.2`. The ABI version and the soname
+  (`libnvme3.so.1`) do not change.
+
+* A discovered controller gets the KX-HMAC-CHAP secrets
+  (`kxchap-secret`, `kxchap-ctrl-secret`) of the `[Subsystem]` or
+  `[Discovery Controller]` section in `nvme-fabrics.conf` with the same
+  NQN, in the file of the Discovery Controller that reported it. This
+  applies to `nvme connect-all` and nvme-discoverd. A section with no
+  `controller =` line now has a use: it holds the secrets of a
+  subsystem, wherever discovery finds it. Two sections with the same
+  NQN in one file that set different secrets are rejected. New
+  `libnvmf_config_get_discovered_params()` and
+  `libnvmf_context_set_config()`, and `config_discovered_params()` in
+  the Python bindings.
+
+* The Copy source range entries carry the Expected Logical Block Tags
+  (ELBT), Application Tag (ELBAT) and Application Tag Mask (ELBATM)
+  little endian again, as in 2.x, except the 80 bit ELBT of formats 1h
+  and 3h, which stays big endian. 3.0 and 3.1 sent them big endian,
+  which `nvme copy --expected-ref-tags` and `--expected-app-tags`
+  inherit. The byte order is not spelled out in the specification,
+  see [#4278](https://github.com/linux-nvme/nvme-cli/issues/4278).
+
+### nvme-keysd
+
+* New daemon, nvme-keysd, a technology preview: it will put NVMe/TCP
+  TLS pre-shared keys into the kernel's .nvme keyring before a
+  connection needs them. Built with the new `nvme-keysd` meson option,
+  `disabled` by default. It imports the PSKs of the entries with
+  `tls-key-source = systemd-creds` from encrypted systemd credentials in
+  `/etc/nvme/creds` at boot, and exits. It does not start when no
+  entry has a key source. It needs systemd 257 or later. See
+  `nvme-keysd(8)`.
+
+* New `tls-key-source` key in `nvme-fabrics.conf`. With
+  `tls-key-source = systemd-creds`, `tls-key` is the name of a systemd
+  credential, not the key. `nvme connect-all` and nvme-discoverd then
+  connect with TLS and let the kernel find the PSK in the keyring. The
+  default, `inline`, keeps today's behavior. See `nvme-fabrics.conf(5)`.
+
+## Changes in 3.1 (2026-09-18)
+
+### Feature removals and incompatible changes
+
+* The minimum required Meson version is now 1.0.0, up from 0.62.0.
+  Meson 1.0.0 was released in December 2022, so any reasonably
+  current build environment should already meet it.
+
+* `nvme gen-hostnqn` must now be run as root. The DMI and device tree
+  files it reads are readable by root only. An unprivileged run
+  returned a random identifier instead. See `nvme-gen-hostnqn(1)`.
+
+### libnvme
+
+* `libnvmf_generate_hostid()` now falls back to the local machine ID,
+  after DMI and the device tree and before a random UUID. The machine
+  ID itself is never published. The UUID is derived from it with
+  HMAC-SHA256 and a fixed application identifier.
+
+* A system UUID of all zeros or all ones is now discarded as invalid.
+
+* A UUID-format host NQN read out of firmware-supplied NBFT data now
+  has its UUID lower-cased on entry if the firmware got that wrong.
+  All NQN comparisons remain plain, byte-exact, locale-independent
+  string comparisons, per the Base Specification; only the value is
+  normalized, at the one point it enters libnvme, not the comparison.
+
+* NVMe-oF URI parsing now normalizes the `nvme+<transport>` scheme to
+  lower case regardless of how it was spelled, matching the Boot
+  Specification's requirement for that token. DHCP root-path and NBFT
+  data are not consistent about its case.
+
+* The API name `NVME_CAP_NSSRC()` changed to `NVME_CAP_NSSRS()`.
+  Since the CAP property NVM Subsystem Reset Supported bit symbol name
+  is described as NSSRS by the spec then the API name was not correct.
+
+### Build
+
+* `-Ddocs=man` and `-Ddocs=all` install the man pages shipped in
+  `Documentation/` unless `-Ddocs-build=true` is also given. The
+  section 5 and 8 pages were never written there, so those builds
+  failed to configure. They are regenerated from now on, and a
+  release aborts if any page is missing.
+
+* Building the man pages now requires `xmlto`. It was optional, so a
+  build with `-Ddocs=man -Ddocs-build=true` and no `xmlto` installed
+  succeeded and produced no man pages at all.
+
+## Changes in 3.0 (2026-09-07)
+
+### Feature removals and incompatible changes
+
+* A new INI-format connection configuration parser and writer have
+  been added (`nvme-fabrics.conf` + `nvme-fabrics.conf.d/` drop-ins,
+  replacing `config.json`/`discovery.conf`). See 
+  `libnvme/design/CONFIG.md` for the format. Existing configuration
+  can be explicietly converted by 'nvme config convert' or implicitly
+  by the first call of any fabric command.
+
+* Key management has moved into a new `nvme keys` plugin.
+  `gen-dhchap-key`, `check-dhchap-key`, `gen-tls-key`,
+  `check-tls-key`, and `tls-key` are now `nvme keys gen-kxchap-secret`,
+  `check-kxchap-secret`, `gen-tls-psk`, `check-tls-psk`,
+  `insert-tls-psk`, `import`, `export`, and `revoke`. The old commands
+  still work as deprecated aliases, except `check-tls-key --insert`,
+  which has no equivalent there. Use `nvme keys insert-tls-psk`
+  instead. The `DH-HMAC-CHAP` naming is also renamed to `KX-HMAC-CHAP`
+  throughout, matching TP4201. See `nvme-keys-gen-kxchap-secret(1)` and
+  `nvme-keys-check-kxchap-secret(1)`.
+
+* NVMe Base Specification 2.4 (ECN122) renames the Reservation
+  Report data structures from "Registered Controller" to
+  "Registrant" throughout. `struct nvme_registered_ctrl` and
+  `struct nvme_registered_ctrl_ext` are now `struct nvme_registrant`
+  and `struct nvme_registrant_ext`; the `regctl`/`regctl_ds`/
+  `regctl_eds` fields of `struct nvme_resv_status` are now
+  `regstrnt`/`registrant_ds`/`registrant_eds`. `nvme resv-report`
+  output changes to match: the `regctl`/`regctls`/`regctlext` labels
+  and JSON keys are now `regstrnt`/`registrants`/`registrantext`.
+  Update any code or scripts that reference the old names.
+
+* NVMe Base Specification 2.4 (TP4150) renames the "Namespace
+  Attribute Changed" asynchronous event to "Attached Namespace
+  Attribute Changed", the "Changed Namespace List" log page to
+  "Changed Attached Namespace List", and the "Namespace Attribute
+  Notices" notice to "Attached Namespace Attribute Notices" (to
+  distinguish them from the new Allocated Namespace variants added
+  alongside them). `NVME_AER_NOTICE_NS_CHANGED` is now
+  `NVME_AER_NOTICE_ATTACHED_NS_CHANGED`, `NVME_LOG_LID_CHANGED_NS` is
+  now `NVME_LOG_LID_CHANGED_ATTACHED_NS`, and `NVME_CTRL_OAES_NA*` is
+  now `NVME_CTRL_OAES_NSAN*` (matching the spec's new OAES mnemonic).
+  `nvme discover --log-id=changed-ns` still works as a deprecated
+  alias for the new `changed-attached-ns`.
+
+* NVMe Base Specification 2.4 (TP4193) renames the "Create Exported
+  NVM Subsystem" and "Manage Exported NVM Subsystem" admin commands
+  to "Manage Exported NVM Subsystem Receive" and "...Send"
+  respectively. `nvme_admin_create_export_nvms` is now
+  `nvme_admin_manage_export_nvms_receive`, and
+  `nvme_admin_manage_export_nvms` is now
+  `nvme_admin_manage_export_nvms_send`. The opcode values (0x2a,
+  0x2d) are unchanged.
+
+* NVMe Management Interface Specification 2.2 (TP6039) adds a
+  Controller Health Status Changed Flags field to the Controller
+  Health Data Structure, and renames the NVM Subsystem Health Data
+  Structure's Composite Controller Status field to Composite
+  Controller Status Flags, to distinguish per-bit change flags from
+  the status/state bits they report. In libnvme,
+  `struct nvme_mi_ctrl_health_status` gains a `chscf` field (and
+  `enum nvme_mi_chscf`) carved out of what was previously trailing
+  reserved space, so its size is unchanged; and
+  `struct nvme_mi_nvm_ss_health_status`'s `ccs` field/`enum
+  nvme_mi_ccs` are renamed to `ccsf`/`enum nvme_mi_ccsf` with bit
+  names getting an `F` suffix (e.g. `NVME_MI_CCS_RDY` is now
+  `NVME_MI_CCSF_RDYF`) and a new `TCIDAF` bit.
+
+* `nvme gen-dhchap-key` emits the secret it was given rather than the
+  key transformed from it, so its output differs whenever `--hmac` is
+  non-zero. `--nqn`/`-n` fed only that transform and is now accepted
+  with a warning and ignored. See `nvme-gen-dhchap-key(1)`.
+
+* `nvme gen-dhchap-key` rejects a `--secret` with an odd number of
+  hexadecimal characters. nvme-cli 2.x padded the trailing one with a
+  zero and emitted a secret that was never given: 63 characters ending
+  `...bababa` produced `...ababab0a`.
+
+* `nvme check-tls-key` used to print the TLS PSK identity as the only
+  line on stdout; it now prints `Configured PSK is valid (HMAC <id>,
+  length <len>)` first, the identity second, and whether that identity
+  is already in the keyring third, so a script reading the identity
+  with `head -1` gets the wrong line. Its `--insert`/`--keyfile` are
+  gone; use `nvme keys insert-tls-psk`. See `nvme-check-tls-key(1)`.
+
+* `nvme gen-tls-key` rejects a `--secret` with an odd number of
+  hexadecimal characters, reports `Inserted TLS PSK <serial>` where 2.x
+  said `Inserted TLS key <serial>`, and prints its `--secret`
+  diagnostics -- including `Skipping excess secret bytes` -- to stdout
+  ahead of the key rather than to stderr. See `nvme-gen-tls-key(1)`.
+
+* `nvme check-dhchap-key` reports on the secret rather than on the key:
+  `Key is valid`, `Key is loaded` and `Key is not loaded` are now
+  `Secret is ...`, and the validation errors say secret where they said
+  key. Exit codes are unchanged, but a script matching the old wording
+  needs updating. See `nvme-check-dhchap-key(1)`.
+
+* All `nvme *-log` commands (`smart-log`, `ana-log`, `error-log`,
+  `fw-log`, `telemetry-log`, `self-test-log`, `sanitize-log`, and the
+  rest of the get-log-page family, `get-log` excepted) have moved
+  into a new `nvme log` plugin, dropping the redundant `-log` suffix,
+  e.g. `nvme smart-log` is now `nvme log smart`. The old top-level
+  commands still work as deprecated aliases.
+
+* All `nvme id-*`/`nvm-id-*`/`list-*` Identify commands (`id-ctrl`,
+  `id-ns`, `id-ns-granularity`, `id-ns-lba-format`, `list-ns`,
+  `list-ctrl`, `nvm-id-ctrl`, `nvm-id-ns`, `nvm-id-ns-lba-format`,
+  `primary-ctrl-caps`, `list-secondary`, `cmdset-ind-id-ns`,
+  `ns-descs`, `id-nvmset`, `id-uuid`, `id-iocs`, `id-domain`, and
+  `list-endgrp`) have moved into a new `nvme id` plugin, e.g.
+  `nvme id-ctrl` is now `nvme id ctrl`. The old top-level commands
+  still work as deprecated aliases.
+
+* Namespace management commands (`create-ns`, `delete-ns`,
+  `attach-ns`, `detach-ns`, `get-ns-id`) have moved into a new
+  `nvme ns` plugin, e.g. `nvme create-ns` is now `nvme ns create`.
+  The old top-level commands still work as deprecated aliases.
+
+* `nvme ns create`, `nvme ns delete`, `nvme ns attach`, and
+  `nvme ns detach` (and their deprecated `create-ns`/`delete-ns`/
+  `attach-ns`/`detach-ns` aliases) no longer print a confirmation
+  message on success by default; `nvme ns create` also no longer
+  prints the assigned `nsid`. Both are now gated behind
+  `-v`/`--verbose`. The exit code alone indicates success/failure;
+  the assigned `nsid` can still be found with `nvme ns list` or
+  `nvme id ctrl`. See `nvme-ns-create(1)`.
+
+* Reservation commands (`resv-acquire`, `resv-register`,
+  `resv-release`, `resv-report`) have moved into a new `nvme resv`
+  plugin, e.g. `nvme resv-acquire` is now `nvme resv acquire`. The
+  old top-level commands still work as deprecated aliases.
+
+* NVMe-MI commands (`nvme-mi-recv`, `nvme-mi-send`) have moved into
+  a new `nvme nvme-mi` plugin, e.g. `nvme nvme-mi-recv` is now
+  `nvme nvme-mi recv`. The old top-level commands still work as
+  deprecated aliases.
+
+* I/O Management commands (`io-mgmt-recv`, `io-mgmt-send`) have
+  moved into a new `nvme io-mgmt` plugin, e.g. `nvme io-mgmt-recv`
+  is now `nvme io-mgmt recv`. The old top-level commands still work
+  as deprecated aliases.
+
+* Directive commands (`dir-receive`, `dir-send`) have moved into a
+  new `nvme dir` plugin, e.g. `nvme dir-receive` is now
+  `nvme dir receive`. The old top-level commands still work as
+  deprecated aliases.
+
+* Security Send/Receive commands (`security-send`, `security-recv`)
+  have moved into a new `nvme security` plugin, e.g.
+  `nvme security-send` is now `nvme security send`. The old
+  top-level commands still work as deprecated aliases.
+
+* Firmware commands (`fw-commit`, `fw-download`) have moved into a
+  new `nvme fw` plugin, e.g. `nvme fw-download` is now
+  `nvme fw download`. The old top-level commands still work as
+  deprecated aliases.
+
+* The RPMB command has moved into a new `nvme rpmb` plugin and, since
+  RPMB is not part of the NVMe base specification, has been split
+  into one subcommand per action instead of a `--cmd=<action>` flag:
+  `nvme rpmb --cmd=info` is now `nvme rpmb info`, and likewise
+  `program-key`, `read-counter`, `read-data`, `write-data`,
+  `read-config`, and `write-config`. Unlike the other command moves
+  above, the old `nvme rpmb --cmd=...` form no longer works at all;
+  there is no deprecated alias. See `nvme-rpmb-info(1)` and friends.
+
+* Deprecated commands (currently the old `nvme keys`, `nvme log`,
+  `nvme id`, `nvme ns`, `nvme resv`, `nvme nvme-mi`, `nvme io-mgmt`,
+  `nvme dir`, `nvme security`, and `nvme fw` aliases above) are
+  enabled by default; they can be turned off at build time with
+  `-Ddeprecated-cmds=disabled`.
+  `nvme help` now lists them in a separate "deprecated" section
+  instead of alongside current commands, and running one prints a
+  warning that it will be removed in the next major version.
+
+* The project now builds with `-std=gnu11` instead of `-std=gnu99`,
+  raising the minimum required compiler support from C99 to C11. A
+  toolchain new enough for C11 is now required to build nvme-cli and
+  libnvme.
+
+* `nvme disconnect-all` with no options no longer disconnects every
+  fabric controller. It now only disconnects controllers with no
+  recorded owner in the new ownership registry. A
+  controller owned by another orchestrator is silently skipped. To
+  restore the old disconnect-everything behavior.
+  
+* libnvme itself no longer resolves hostnames. `libnvmf_add_ctrl()`
+  and `libnvmf_connect_ctrl()` now fail immediately on a hostname
+  traddr/host_traddr instead of resolving it internally. The
+  caller is responsible for resolving first.
+  
+* `--dump-config` has been removed from `nvme discover`,
+  `connect-all`, and `connect`.
+
+* In libnvme, the per-command `nvme_<cmd>()` wrapper functions and
+  their `struct nvme_<cmd>_args` argument bundles have been replaced
+  by an `nvme_init_<cmd>()` helper that fills a caller-owned `struct
+  libnvme_passthru_cmd`, submitted separately with
+  `libnvme_exec_admin_passthru()` / `libnvme_exec_io_passthru()` (or
+  the async equivalents). 
+
+* The public NBFT parsing API has moved from the `libnvme_*`
+  namespace to `libnvmf_*`, and every function now takes the global
+  context as its first argument (for example,
+  `libnvmf_read_nbft(ctx, ...)`). Update both the prefix and the
+  call signature.
+
+* The `-Dpdc-enabled` meson build option has been removed. Whether a
+  discovery controller connection is kept persistent is now decided
+  at runtime, via `--persistent`/`nvme-fabrics.conf`, not at build
+  time.
+
+### New: Windows support
+
+* nvme-cli and libnvme now build and run on Windows (MSYS2 UCRT64).
+  Direct PCIe access via ioctl works; NVMe-oF fabrics, MI,
+  nvme-discoverd, and `nvme top` are not yet available on this
+  platform.
+
+### New: nvme top
+
+* `nvme top` is a new interactive, `top`-like dashboard for NVMe
+  devices. It lists subsystems and lets you drill into one to see
+  live namespace, path, and controller stats, including command
+  retry/error counts and multipath failover/reconnect counts. 
+
+### New: ownership registry and exclusion list
+
+* A new ownership registry (`nvme registry`, backed by
+  `/run/nvme/registry/`) records which orchestrator owns each
+  connected controller. This is what lets `disconnect-all` (above)
+  and future orchestrator tooling avoid tearing down a connection
+  another component depends on. See `libnvme/design/REGISTRY.md`.
+
+* A new system-wide exclusion list (`nvme exclusion`, backed by
+  `/etc/nvme/exclusions.conf` and `exclusions.conf.d/` drop-ins)
+  lets an administrator block specific controls from being
+  auto-connected. It's aimed primarily at auto-discovered
+  controllers, which have no config entry to remove
+  in order to suppress an unwanted connection. See
+  `libnvme/design/EXCLUSIONS.md`.
+
+### nvme-cli
+
+* A new global config file, `/etc/nvme/nvme-cli.conf`, sets
+  machine-wide defaults for global options like `--timeout`,
+  `--output-format`, `--no-retries`, and `--no-ioctl-probing`. 
+  See `nvme-cli.conf(5)`.
+
+* `nvme disconnect` now accepts the same identifying options as
+  `nvme connect` (`--nqn`, `--transport`, `--traddr`,
+  `--host-iface`, `--hostnqn`, `--hostid`). A new `-x`/`--exclude` also
+  writes a matching entry to the exclusion list before disconnecting.
+  See `nvme-disconnect(1)`.
+
+* `nvme utils dump-command-metadata` prints the full command and
+  option tree as JSON. It is meant to  drive shell-completion
+  generation.
+
+* `nvme connect` gained `--idempotent` and `--devid-file`.
+  `--idempotent` makes connecting to an already-connected controller
+  succeed instead of erroring. `--devid-file` writes the resulting
+  `nvmeX` device name to the given file on success, so a caller that
+  doesn't know the device name at connect time (for example, a
+  systemd unit spawned before the device exists) can look it up
+  afterward instead of scraping `dmesg` or polling sysfs.
+
+* `nvme config-convert` converts the legacy `config.json` and
+  `discovery.conf` files to the new INI-format `nvme-fabrics.conf`.
+  By default it reads the system paths and writes to
+  `/etc/nvme/nvme-fabrics.conf`. `--config` overrides the
+  `config.json` path, `--output` the destination, and `--force`
+  allows overwriting an existing target. On success each converted
+  legacy file is renamed to `<name>.converted` so running the
+  command again is a safe no-op. See `nvme-config-convert(1)`.
+
+### libnvme
+
+* The library has been renamed from **libnvme** to **libnvme3**,
+  and the previously separate **libnvme-mi** has been merged into
+  it. The shared library SONAME is `libnvme3.so.1`. Headers install
+  under `include/libnvme3/` and man pages under a versioned path,
+  enabling parallel installation alongside libnvme v1 packages. The
+  Python binding is now named `libnvme3`. Packages, build systems,
+  and Python scripts that reference the library, its headers, or the
+  Python module by name must update.
+
+* `nvme-fabrics.conf` entries can now record a `persistent` setting
+  per discovery controller, matching the `--persistent` CLI option.
+
+* New diagnostic accessors report per-path, per-namespace, and
+  per-controller command retry/error counts, multipath failover
+  count, and controller reset/reconnect counts. These are always
+  read live rather than cached, and back `nvme top`.
+
+* The Python bindings' object-oriented surface has been polished:
+  `connected()` and `is_registration_supported()` are now read-only
+  properties (`connected`, `registration_supported`),
+  `registration_ctrl()` is renamed `registration_control()`, and
+  `set_symname()` has been removed. Set `host.hostsymname`
+  directly instead.
+
+* The NBFT parser has been updated for NVMe Boot Specification
+  rev. 1.3, including Security Profile Descriptors, and hardened
+  against malformed or malicious NBFT ACPI tables.
+
+* ioctl version probing is now deferred until the first command on a
+  transport handle, instead of happening eagerly on open. The probe
+  prefers the 64-bit ioctl and falls back to the 32-bit one only if
+  it isn't supported; the result is cached per handle. The new
+  `--no-ioctl-probing` global option skips probing and forces the
+  32-bit ioctl.
+
+* Controller and namespace sysfs attributes are now read lazily, on
+  first access, instead of all at once when the topology tree is
+  scanned. This cuts overhead when scanning large fabric setups.
+
+* Connect and discover now share a common `struct libnvmf_context`
+  internally, replacing the old discovery-only context. Relevant to
+  developers extending the fabrics API, not to CLI end users.
+
+* A new internal `shared/` static library holds code with no
+  natural home in nvme-cli, libnvme, nvme-discoverd, or the Python
+  bindings (INI parsing, base64, CRC32, filesystem/network helpers).
+
+* Read-only Python bindings for the new config format
+  (`config_read()`, `config_validate()`) are available now for early
+  adopters (e.g. nvme-stas) that want to start reading the new
+  format ahead of the CLI's own switch-over.
+
+* The accessor generator that produces libnvme's getter/setter
+  boilerplate (`accessors.c`/`.h`) has been rewritten in Python,
+  with the struct annotations it reads now living in-source in
+  `private.h` instead of a separate spec file. Relevant to
+  developers extending libnvme's public structs, not to CLI end
+  users.
+
+* `<nvme/nvme-cmds.h>` and `<nvme/nvme-types.h>` have each been
+  split into per-spec-section sub-headers (`nvme-cmds-base.h`,
+  `nvme-cmds-fabrics.h`, `nvme-cmds-mi.h`, similarly for
+  nvme-types). The top-level headers still exist and include all
+  sub-headers, so code that includes them is unaffected. Code that
+  already included a sub-header by its old combined-file path must
+  update the include path.
+
+* `nvme_root_t` has been replaced by `struct libnvme_global_ctx *`
+  throughout the public API. Code that stored or passed `nvme_root_t`
+  must update to the new type.
+
+* A new transport handle abstraction (`struct nvme_transport_handle`,
+  `libnvme_transport_handle_*`) decouples command issuing from the
+  underlying transport. A handle may wrap either a direct ioctl file
+  descriptor or an MI endpoint.
+
+* An explicit async passthru API has been added.
+  `libnvme_submit_admin_passthru()` /
+  `libnvme_submit_io_passthru()` submit a command without waiting;
+  `libnvme_wait_passthru()` / `libnvme_reap_passthru()` collect the
+  result later. The synchronous path is
+  `libnvme_exec_admin_passthru()` / `libnvme_exec_io_passthru()`.
+
+* `libnvmf_host_get_ids()` has been promoted from an internal helper
+  to a public API. It resolves the hostnqn and hostid from all
+  available sources and is the recommended way for callers to obtain
+  host identity before connect or discover.
+
+* The implicit hostnqn/hostid lookup inside the fabrics connect and
+  discover code paths has been removed. Callers must now resolve host
+  identity before connecting; use the newly public
+  `libnvmf_host_get_ids()` helper or set values explicitly with
+  `libnvme_global_ctx_set_hostnqn()` /
+  `libnvme_global_ctx_set_hostid()`.
+
+* The `sizeof_args` backward-compatibility macro and the old
+  struct-based command-argument shim have been removed. The macro
+  returned incorrect values on 32-bit architectures; there is no
+  intention to fix it.
+
+* The platform-specific filter helpers (`nvme_filter_*`) are no
+  longer exported from libnvme. Only the `libnvme_scan_*` interfaces
+  remain public. Plugins that called filter helpers directly must be
+  updated to use the scan API.
+
+* `libnvme_ctrl_match_config()` has been removed. It was exported
+  but had no callers outside the library.
+
+* `libnvmf_ctrl_get_fabrics_config()` has been removed. The
+  individual field accessors generated by the new accessor machinery
+  provide equivalent access without exposing the internal nested
+  struct.
+
+* `nvme_mi_ctrl_t` has been removed. MI functionality is now
+  accessed through `struct nvme_transport_handle`, the same
+  abstraction used for direct ioctl access; the transport is chosen
+  at handle construction. `nvme_mi_admin_identify()` and
+  `nvme_mi_admin_identify_partial()` are gone; use
+  `libnvme_ctrl_identify()` with a transport handle opened for MI.
+
+* Several deprecated identifiers have been removed for 3.0: the
+  duplicate `NVME_SC_FEAT_IOCS_COMBINATION_REJECTED` define, the
+  old notification-mask enum names, MI backward-compatibility
+  `#define`s, and `nvme_cmd_get_log_telemetry_host_lsp` (renamed to
+  `nvme_log_telemetry_host_lsp`). Update any code using these names.
+
+* The environment-variable configuration knobs for libnvme have been
+  removed. `LIBNVME_MI_PROBE_ENABLED`, `LIBNVME_TEST_BASE_DIR`, and
+  similar variables no longer have any effect. Replace them with
+  explicit setter calls on the global context:
+  `libnvme_set_probe_enabled()`, `libnvme_set_test_base_dir()`,
+  `libnvme_set_test_sysfs_dir()`, `libnvme_set_force_4k()`, etc.

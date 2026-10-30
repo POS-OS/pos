@@ -1,0 +1,148 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+/*
+ * Copyright (c) 2022 Solidigm.
+ *
+ * Authors: haro.panosyan@solidigm.com
+ *          leonardo.da.cunha@solidigm.com
+ */
+
+#include <unistd.h>
+
+#include <libnvme.h>
+
+#include "cleanup.h"
+#include "global-ctx.h"
+#include "nvme-cmds.h"
+#include "nvme-print.h"
+#include "ocp-nvme.h"
+#include "ocp-utils.h"
+#include "plugin.h"
+
+static int ocp_clear_feature(int argc, char **argv, const char *desc, const __u8 fid)
+{
+	const char *no_uuid =
+		"Skip UUID index search (UUID index not required for OCP 1.0)";
+	bool no_uuid_flag = false;
+	__cleanup_nvme_global_ctx struct libnvme_global_ctx *ctx = NULL;
+	__cleanup_nvme_transport_handle struct libnvme_transport_handle *hdl = NULL;
+	__u64 result = 0;
+	__u32 clear = 1U << 31;
+	__u8 uuid_index = 0;
+	bool uuid = true;
+	int err;
+
+	OPT_ARGS(opts) = {
+		OPT_FLAG("no-uuid", 'n', &no_uuid_flag, no_uuid),
+		OPT_END()
+	};
+
+	err = parse_and_open(&ctx, &hdl, argc, argv, desc, opts);
+	if (err)
+		return err;
+
+	if (no_uuid_flag)
+		uuid = false;
+
+	if (uuid) {
+		/* OCP 2.0 requires UUID index support */
+		err = ocp_get_uuid_index(hdl, &uuid_index);
+		if (err || !uuid_index) {
+			nvme_show_error("ERROR: No OCP UUID index found");
+			return err;
+		}
+	}
+
+	err = nvme_set_features(hdl, 0, fid, 0, clear, 0, 0, uuid_index, 0, NULL, 0,
+			&result);
+
+	if (err == 0)
+		nvme_show_verbose_result("Success : %s", desc);
+	else if (err > 0)
+		nvme_show_status(err);
+	else
+		nvme_show_error("Fail : %s", desc);
+
+	return err;
+}
+
+int get_ocp_error_counters(int argc, char **argv, struct command *acmd,
+			   struct plugin *plugin)
+{
+	bool no_uuid_flag = false;
+	const char *desc = "Issue Get Feature command (FID: 0xC3) Clear PCIe Correctable Error Counters";
+	const char *sel = "[0-3]: current/default/saved/supported/";
+	const char *nsid = "Byte[04-07]: Namespace Identifier Valid/Invalid/Inactive";
+	const char *no_uuid = "Do not try to automatically detect UUID index";
+
+	__cleanup_nvme_global_ctx struct libnvme_global_ctx *ctx = NULL;
+	__cleanup_nvme_transport_handle struct libnvme_transport_handle *hdl = NULL;
+	__u64 result;
+	int err;
+	bool uuid;
+	__u8 uuid_index = 0;
+
+	struct config {
+		__u8 sel;
+		__u32 nsid;
+	};
+
+	struct config cfg = {
+		.sel = 0,
+		.nsid = 0,
+	};
+
+	OPT_ARGS(opts) = {
+		OPT_BYTE("sel",          's', &cfg.sel,      sel,
+			 nvme_sel_values, .max = NVME_SEL_MAX),
+		OPT_UINT("namespace-id", 'n', &cfg.nsid, nsid,
+			 nvme_nsid_values),
+		OPT_FLAG("no-uuid",      'u', &no_uuid_flag, no_uuid),
+		OPT_END()
+	};
+
+	err = parse_and_open(&ctx, &hdl, argc, argv, desc, opts);
+	if (err)
+		return err;
+
+	uuid = !no_uuid_flag;
+
+	if (uuid) {
+		/* OCP 2.0 requires UUID index support */
+		err = ocp_get_uuid_index(hdl, &uuid_index);
+		if (err || !uuid_index) {
+			nvme_show_error("ERROR: No OCP UUID index found");
+			return err;
+		}
+	}
+
+	err = nvme_get_features(hdl, cfg.nsid, OCP_FID_CPCIE, cfg.sel, 0,
+			uuid_index, NULL, 0, &result);
+	if (!err) {
+		printf("get-feature:0xC3 %s value: %#016"PRIx64"\n",
+		nvme_select_to_string(cfg.sel), (uint64_t)result);
+
+		if (cfg.sel == NVME_GET_FEATURES_SEL_SUPPORTED)
+			nvme_show_select_result(0xC3, result);
+	} else {
+		nvme_show_error("Could not get feature: 0xC3");
+	}
+
+	return err;
+}
+
+int ocp_clear_fw_update_history(int argc, char **argv, struct command *acmd,
+				struct plugin *plugin)
+{
+	const char *desc = "OCP Clear Firmware Update History";
+
+	return ocp_clear_feature(argc, argv, desc, OCP_FID_CFUH);
+}
+
+int ocp_clear_pcie_correctable_errors(int argc, char **argv,
+				      struct command *command,
+				      struct plugin *plugin)
+{
+	const char *desc = "OCP Clear PCIe Correctable Error Counters";
+
+	return ocp_clear_feature(argc, argv, desc, OCP_FID_CPCIE);
+}
