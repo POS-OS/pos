@@ -1,0 +1,125 @@
+/*
+ * iSCSI sysfs
+ *
+ * Copyright (C) 2006 Mike Christie
+ * Copyright (C) 2006 Red Hat, Inc. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published
+ * by the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+ * General Public License for more details.
+ */
+#ifndef ISCSI_SYSFS_H
+#define ISCSI_SYSFS_H
+
+#include <stdbool.h>
+#include <sys/types.h>
+
+#include "sysfs.h"
+#include "types.h"
+#include "iscsi_proto.h"
+#include "config.h"
+
+struct session_info;
+struct host_info;
+struct iscsi_session;
+struct iscsi_conn;
+struct iscsi_session_operational_config;
+struct iscsi_conn_operational_config;
+struct iscsi_auth_config;
+struct flashnode_rec;
+
+#define SCSI_MAX_STATE_VALUE 32
+#define ISCSID_RESP_POLL_TIMEOUT 60000
+
+extern void free_transports(void);
+extern char *iscsi_sysfs_get_iscsi_kernel_version(void);
+extern int iscsi_sysfs_get_sessioninfo_by_id(struct session_info *info,
+					     char *sys_session);
+extern int iscsi_sysfs_session_has_leadconn(uint32_t sid);
+
+typedef int (iscsi_sysfs_session_op_fn)(void *, struct session_info *);
+typedef int (iscsi_sysfs_host_op_fn)(void *, struct host_info *);
+typedef int (iscsi_sysfs_flashnode_op_fn)(void *, struct flashnode_rec *,
+					  uint32_t, uint32_t);
+typedef int (iscsi_sysfs_iface_op_fn)(void *, struct iface_rec *);
+
+extern int iscsi_sysfs_for_each_iface_on_host(void *data, uint32_t host_no,
+					      int *nr_found,
+					      iscsi_sysfs_iface_op_fn *fn);
+extern int iscsi_sysfs_for_each_session(void *data, int *nr_found,
+					iscsi_sysfs_session_op_fn *fn,
+					int in_parallel);
+extern int iscsi_sysfs_count_sessions(void);
+extern int iscsi_sysfs_for_each_host(void *data, int *nr_found,
+				     iscsi_sysfs_host_op_fn *fn);
+extern uint32_t iscsi_sysfs_get_host_no_from_sid(uint32_t sid, int *err);
+extern uint32_t iscsi_sysfs_get_host_no_from_hwinfo(struct iface_rec *iface,
+						    int *rc);
+extern uint32_t iscsi_sysfs_get_host_no_from_hwaddress(char *hwaddress, int *rc);
+extern int iscsi_sysfs_get_hostinfo_by_host_no(struct host_info *hinfo);
+extern int iscsi_sysfs_for_each_flashnode(void *data, uint32_t host_no,
+					  int *nr_found,
+					  iscsi_sysfs_flashnode_op_fn *fn);
+extern int iscsi_sysfs_get_flashnode_info(struct flashnode_rec *fnode,
+					  uint32_t host_no,
+					  uint32_t flashnode_id);
+extern int iscsi_sysfs_update_flashnode_param(uint32_t host_no,
+					      uint32_t flashnode_id,
+					      char *name, char *val);
+extern int iscsi_sysfs_create_flashnode(uint32_t host_no, char *ipver);
+extern int iscsi_sysfs_del_flashnode(uint32_t host_no, uint32_t flashnode_id);
+extern int iscsi_sysfs_login_flashnode(uint32_t host_no, uint32_t flashnode_id);
+extern int iscsi_sysfs_logout_flashnode(uint32_t host_no,
+					uint32_t flashnode_id);
+extern int iscsi_sysfs_get_sid_from_path(char *session);
+extern char *iscsi_sysfs_get_blockdev_from_lun(int hostno, int target, int sid);
+
+static inline int is_valid_operational_value(int value)
+{
+	return value != -1;
+}
+
+extern void iscsi_sysfs_get_auth_conf(int sid, struct iscsi_auth_config *conf);
+extern void iscsi_sysfs_get_negotiated_session_conf(int sid,
+				struct iscsi_session_operational_config *conf);
+extern void iscsi_sysfs_get_negotiated_conn_conf(int sid,
+				struct iscsi_conn_operational_config *conf);
+/* iscsi_sysfs_scan_host() flags */
+#define ISCSI_SCAN_NONE		0x0	/* nothing to do */
+#define ISCSI_SCAN_NEW_LUNS	0x1	/* scan for luns we have not seen yet */
+#define ISCSI_SCAN_ONLINE_DEVS	0x2	/* bring the session's devices online */
+#define ISCSI_SCAN_RESCAN_DEVS	0x4	/* rescan devices for size changes */
+
+extern pid_t iscsi_sysfs_scan_host(int hostno, int sid, int async,
+				   unsigned int scan_flags);
+extern int iscsi_sysfs_get_session_state(char *state, int sid);
+extern int iscsi_sysfs_get_host_state(char *state, int host_no);
+extern int iscsi_sysfs_get_device_state(char *state, int host_no, int target,
+					int lun);
+extern int iscsi_sysfs_get_exp_statsn(int sid);
+extern void iscsi_sysfs_set_queue_depth(void *data, int hostno, int target,
+					int lun);
+extern void iscsi_sysfs_set_device_online(void *data, int hostno, int target,
+					  int lun);
+extern void iscsi_sysfs_rescan_device(void *data, int hostno, int target,
+				      int lun);
+extern int iscsi_sysfs_for_each_device(void *data, int host_no, uint32_t sid,
+				void (* fn)(void *, int host_no, int target,
+					    int lun));
+extern struct iscsi_transport *iscsi_sysfs_get_transport_by_hba(uint32_t host_no);
+extern struct iscsi_transport *iscsi_sysfs_get_transport_by_session(char *sys_session);
+extern struct iscsi_transport *iscsi_sysfs_get_transport_by_sid(uint32_t sid);
+extern struct iscsi_transport *iscsi_sysfs_get_transport_by_name(char *transport_name);
+extern int iscsi_sysfs_is_transport_loaded(char *transport_name);
+extern int iscsi_sysfs_session_supports_nop(int sid);
+extern int iscsi_sysfs_session_user_created(int sid);
+
+extern struct list_head transports;
+
+#endif

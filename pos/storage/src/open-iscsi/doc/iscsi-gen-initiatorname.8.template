@@ -1,0 +1,51 @@
+.TH ISCSI_GEN_INITIATORNAME 8 "APR 2022" "" "Linux Administrator's Manual"
+.SH NAME
+iscsi-gen-initiatorname \- smart iSCSI initiator name generation tool
+.SH SYNOPSIS
+.BI iscsi-gen-initiatorname
+[OPTIONS]
+.SH "DESCRIPTION"
+.B iscsi-gen-initiatorname
+generates an iSCSI Initiator Name in the
+.I initiatorname.iscsi
+file. It is an error to try to overwrite an existing Initiator Name,
+unless the \fB-f\fP (\fIforce\fR) option is supplied.
+.P
+The Initiator Name will be taken from the kernel command line,
+if present (from the \fIrd.initiatorname\fR parameter), else from
+the iBFT subsystem (if present in \fIsysfs\fR), else it will be
+generated using the \fBiscsi-iname\fR command.
+.P
+It is an error if both the kernel command-line Initiator Name
+and the iBFT Initiator Name are both set, and they are different.
+it is also an error to try to write over an Initiator Name file
+if it read-only, or to create one if its directory is not writable.
+.P
+You
+.B must
+be
+.I root
+to run this command.
+.SH OPTIONS
+.TP
+.BI [-h]
+Display a help message and exit.
+.TP
+.BI [-f]
+Force overwrite of existing initiator name, if present.
+.TP
+.BI [-p] \fIIQN-PREFIX\fP
+Use \fIIQN-PREFIX\fP as the prefix to the IQN generated,
+instead of the default of \fB@IQN_PREFIX@\fP.
+.SH FILES
+.TP
+@HOMEDIR@/initiatorname.iscsi
+The file containing the initiator name. Do not edit manually.
+.SH "SEE ALSO"
+.BR iscsi-iname (8)
+.SH AUTHORS
+Open-iSCSI project <http://www.open-iscsi.com/>
+.br
+Hannes Reinecke <hare@suse.de>
+.br
+Lee Duncan <lduncan@suse.com>

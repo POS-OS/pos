@@ -1,0 +1,1286 @@
+-> open-iscsi-2.1.12 - open-iscsi-2.1.13 (Sep 2026)
+
+Autumn Mahoney (1):
+      fix typo in user-facing error message in verify_mode_params() (#548)
+
+Cav4ever (1):
+      usr: Fix -Wdiscarded-qualifiers warning in iqn_name_valid (#537)
+
+Chris Leech (9):
+      Fixes for CVEs CVE-2026-18724 - CVE-2026-18728 (#544)
+      iscsi_net_util: fix broken VLAN support in find_vlan_dev (#545)
+      usr: network code ioctl handling improvements
+      iscsiuio: validate DHCPv6 IA_NA option lengths to prevent OOB reads
+      iscsiuio: strengthen DHCPv6 option parsing loop bound check
+      iscsiuio: strengthen IPv6 payload length validation in uip_process()
+      login: fix infinite redirect loops with configurable limits
+      usr: verify IPC peer credentials before sending data
+      iscsiuio: fix incorrect comparison of IPv6 subnet mask
+
+Jesse Taube (1):
+      iscsiuio: Fix -Waddress-of-packed-member (#534)
+
+Lee Duncan (2):
+      usr: fix "-Wdiscarded-qualifiers" warning in auth.c (#539)
+      Fix reopen log freq change (#542)
+
+Natanael Copa (2):
+      iscsiadm: handle getopt errors directly (#551)
+      gitignore: ignore generated build artifacts (#550)
+
+mikechristie (1):
+      Fix iscsi_conn_iface_has_ip error handling (#531)
+
+-> open-iscsi-2.1.11 - open-iscsi-2.1.12 (Jul 2026)
+
+Cav4ever (1):
+      avoid possible double free of found in idbm_rec_update_param (#528)
+
+Gulam Mohamed (1):
+      Modify log function to print session id (#498)
+
+Iliya Peregoudov (1):
+      Add tcp.congestion_control configuration option (#520)
+
+Jesse Taube (2):
+      iscsi-gen-initiatorname use @IQN_PREFIX@ as default
+      iscsi-init.service: Use iscsi-gen-initiatorname
+
+Lee Duncan (5):
+      Fix issue with IPv6 adapter interfaces (#508)
+      Small cleanups for firmware discovery. (#522)
+      Fix unused variable warning in usr/io.c (#524)
+      Make iface.example a doc file. (#526)
+      Fix security issues recently discovered by Keith at Linneman Labs (#535)
+
+Ma Xinjian (2):
+      Makefile: fix "No rule to make target 'iscsiuio/Makefile.in" issue (#506)
+      fwparam_ppc.c: Fix the calloc-transposed-args issue (#504)
+
+Mike Andrews (1):
+      Fix incorrect parsing of node.discovery_type "static" and "fw" (#518)
+
+NitinYewale (1):
+      doc: fixup iscsiadm man page option for -r (#501)
+
+PerA (1):
+      Fix typo in initiator.c (#507)
+
+Praveen Kannoju (1):
+      iscsi: validate interface IP against target address family (#527)
+
+Shminderjit Singh (1):
+      iscsi: delay reconnect until interface has valid IP. (#511)
+
+Tianon Gravi (1):
+      Fix minor typo ("authenticaton") (#500)
+
+wuguanghao3 (1):
+      iscsi_net_util: avoid copying NULL pointers with strlcpy() (#515)
+
+
+-> open-iscsi-2.1.10 - open-iscsi-2.1.11 (Feb 2025)
+
+Gulam Mohamed (1):
+      iscsid: Rate limit session reopen log messages (#492)
+
+Lee Duncan (7):
+      Preparing for version 2.1.10 (#455)
+      Fix bug where abort_tmo read failures were ignored. (#467)
+      Fix gcc issues (#480)
+      Change a discovery function to void return type (#481)
+      Fix firmware targets startup to always be "onboot" (#482)
+      More testing cleanup, and fix dprint test usage (#491)
+      Improve iscsiadm command line parsing messages (#494)
+
+Mindy Preston (1):
+      grammar nitpicks (#464)
+
+Zhang Xiang (1):
+      Bugfix read specific sysfs value "off" of session attribute (#466)
+
+guoguojenna (1):
+      Fix a typo in test/README (#486)
+
+ldzhong (2):
+      Make it visible when memory allocation failure (#457)
+      improve the comments in idbm_lock() (#458)
+
+mikechristie (1):
+      iscsid: Fix hang during login with scan=manual (#485)
+
+yanyan2015 (1):
+      Fix memory leak in iscsi_check_session_use_count (#465)
+
+yukariatlas (1):
+      IPv6 support for iBFT iSCSI boot (#493)
+
+yuncang123 (1):
+      fix 4 issues which are finded when building with clang 17 (#478)
+
+
+-> open-iscsi-2.1.9 - open-iscsi-2.1.10
+
+Chris Leech (1):
+      remove unicode symbol from iscsid.conf (#423)
+
+Christian Steinert (1):
+      Adds missing characters in README. (#440)
+
+Daniel Moulton (1):
+      Incorrect documentation for `iscsiadm -m session` print level (#432)
+
+Fabrice Fontaine (1):
+      usr/idbm.c: fix musl build (#426)
+
+Graham Inggs (1):
+      discoveryd: fix additional format overflow warnings (#425)
+
+Lee Duncan (9):
+      iscsiuio build: use correct new version (#422)
+      Iscsiuio fixes v2 (#427)
+      iscsiuio: manage threads better at shutdown (#428)
+      iscsiuio: update version to 0.7.8.8 (#429)
+      Stop using deprecated inet_aton and inet_ntoa (#435)
+      Fix authmethod check by printing a warning message when CHAP used and authmethod=None (#443)
+      Modify how workqueue priority is set (#445)
+      iscsiadm: allow hostnames in node-mode commands (#451)
+      Better handle multiple iscsiadm commands (#453)
+
+cooper.wu (1):
+      fix: add usr/iscsid_req.h missinig underline (#431) (#436)
+
+mikechristie (1):
+      iscsid: Rescan devices on relogin (#444)
+
+
+-> open-iscsi-2.1.8 - open-iscsi-2.1.9
+
+Chris Leech (5):
+      discoveryd: fix format overflow warning (#413)
+      sync iscsi_if.h with kernel (#411)
+      When writing DB record without a tpgt, take tpgt from existing record (#409)
+      iscsi-iname: make default IQN prefix configurable (#410)
+      remove OFFLOAD_BOOT_SUPPORTED ifdef (#412)
+
+Eric Mackay (1):
+      Make UID the default auth type for IPCs (#404)
+
+Fabrice Fontaine (1):
+      SHA3 is not supported by libressl (#396)
+
+Lee Duncan (12):
+      Preparing for version 2.1.8. (#370)
+      meson: remove unused 'source_date_epoch' option (#372)
+      iscsid/iscsiuio: fix OOM adjustment (#377)
+      Small netlink fixes, and one debug print fix (#391)
+      iscsid.conf: remove incorrect comment about location (#392)
+      Build: change meson default for DB home (#395)
+      Small cleanup (#399)
+      Remove unused SLP discovery code (#401)
+      Fix libopeniscsiusr licensing (#403)
+      README: add info about disabling NOPs for tape. (#414)
+      Build: make open-isns usage optional. (#407)
+      Remove incorrect "BindTo" line in iscsiuio.service (#415)
+
+Nilesh Javali (3):
+      iscsiuio: validate nic interface associated with qedi
+      iscsiuio: fix corrupted unsorted chunks while freeing memory
+      iscsiuio: update version to 0.7.8.7
+
+Tomas Bzatek (1):
+      Spelling fixes
+
+Wenchao Hao (2):
+      iscsid: clear scanning thread's PR_SET_IO_FLUSHER flag (#382)
+      iscsid: stop connection for recovery if error is not timeout in iscsi_login_eh (#388)
+
+baker915 (1):
+      Fix a typo error in iscsiuio/src/uip/lc-switch.h (#386)
+
+lilinjie (1):
+      fix typo (#389)
+
+
+-> open-iscsi-2.1.7 - open-iscsi-2.1.8
+
+Chris Hofstaedtler (1):
+      make: avoid hard-coding path to sed (#357)
+
+Christian Hesse (1):
+      etc: install system unit with without executable bit (#354)
+
+Eric Mackay (2):
+      Add ability for MGMT IPC to check UID only
+      Use config for iscsistart and iscsiadm fw login
+
+Khem Raj (1):
+      iscsiuio: Use pthread_t for INVALID_THREAD (#363)
+
+Lee Duncan (5):
+      Add a 'distclean' Makefile top-level target
+      Cleanup fwparam makefile (#360)
+      Small bug fixes (#364)
+      Use meson as the main build system (#365)
+      libopeniscsiusr: cleanup recent reallocarray->realloc change (#369)
+
+Max Cheng (1):
+      Added examples in man file for iscsiadm session commands.
+
+Mike Christie (2):
+      iscsid: fix logout pdu send failure handling
+      Update README's error handler/timeout section
+
+Sam James (1):
+      iscsiuio: fix LDADD
+
+TIAN Yuanhao (1):
+      libopeniscsiusr: use realloc instead of reallocarray (#368)
+
+Wenchao Hao (1):
+      iscsiadm: enable specify iface name-value parameters when creating iface
+
+shugaley (1):
+      Fix a possible passing null pointer in usr/iface.c (#356)
+
+
+-> open-iscsi-2.1.6 - open-iscsi-2.1.7
+
+Lee Duncan (48):
+      Remove HEREIS usage from iscsi-gen-initiatorname
+      Fix iscsi-init.service start time
+      test: Rename README to README.orig
+      test: Add new README, update old README and TODO
+      test: Fix bug/spelling error, cleanup messages
+      test: Fix mispelling of MaxBurst
+      test: fix error with verifying mkfs command
+      test: remove the ".setup" file, used for development
+      test: Cleanup README and TODO
+      test: Track time spent calling subprocesses
+      test: Add suggested test setup info to README
+      test: Add missing verbose print, and track more time values
+      test: Track time spent in sleep() more easily/accurately
+      test: fix message mispelling of "umount"
+      test: add item to TODO list
+      test: further improve test suite time display
+      Remove SUSE init.d startup files
+      Cleanup iscsiadm man page
+      Allow name/value args for firmware logins.
+      Update iscsiadm.8 for firmware name/value pairs
+      General Makefile/README cleanup
+      Clean up Makefile build system.
+      Clean up the usage info for iscsid
+      Remove no-longer-used Makefile target for subdir
+      Make DB and ISCSIHOME directories configurable.
+      Build: Cleanup fwparam_ibft and sysdeps subdirs.
+      Add a README for fwparam_ibft subdirectory.
+      Build: cleanup usr Makefile: remove obj files on "clean"
+      Remove unused fwparam_ibft.[ch] files in fwparam_ibft.
+      Build: upate "depend" target to include sysdeps
+      Fix gcc issues with unused params in fwparam
+      Use DESTDIR correctly for HOMEDIR and DBROOT
+      Be smarter about creating iscsiuio.8 man page
+      Build: remove unused Makefile HOMEDIR creation
+      Build: use upper- vs lower-case variable names correctly
+      Build: libopeniscsiusr install should install docs
+      Remove debug messages from libopeniscsiusr/Makefile
+      Build: cleanup libopeniscsiusr/Makefile
+      Build: add libsystemd CFLAGS for building objects
+      Build: remove redundant definition in utils Makefile
+      Build: add RULESDIR to top-level Makefile
+      Create an systemd iBFT rule generator
+      Build: install systemd generator file with svc files
+      Use kernel initiatorname when setting local iname
+      utils: remove errant spaces in script
+      Check for root in iscsi-gen-initiatorname
+      Make fwparam_ibft build more reliable.
+      Fix ibft-rule-generator shell error
+
+Sam James (5):
+      iscsiuio: don't clobber LDFLAGS in configure.ac
+      iscsiuio: respect LDFLAGS fully
+      Makefiles: respect $(CC) fully (don't hardcode GCC); use $(RM)
+      Makefiles: don't hardcode sed, pkg-config
+      libopeniscsiusr: fix version in installed pkgconfig (.pc) file
+
+Wenchao Hao (5):
+      Add conn_xxx() macros to print connection info in more details
+      Make session and connect log readable and helpful to locate problem
+      mgmt: print connection info when write qtask response failed
+      initiator: return ENOMEM if failed to get ev_context in iscsi_send_logout()
+      initiator:print failure reason of iscsi_send_logout() if failed
+
+ryancaicse (1):
+      Fix a missing-unlocking bug
+
+scaleoutSean (1):
+      Fix minor error string typos
+
+
+-> open-iscsi-2.1.5 - open-iscsi-2.1.6
+
+Chris Leech (1):
+      libopeniscsiusr: extend sysfs ignore_error to include EINVAL
+
+Lee Duncan (15):
+      Fix compiler error introduced with recent IPv6 commit.
+      Remove dependences from iscsi-init.service
+      Use "sbindir" for path in systemd service files
+      Updated README a bit
+      Finish ability to have binary location configurable.
+      Fix iscsi-init so that it runs when root writable
+      remove redundant params in Makefile
+      Fixing last parts of sbindir configuration
+      Cosmetic cleanup on recent addition
+      Update the iscsi-gen-initiatorname script: harden and generalize
+      change iscsi-gen-initiatorname option -b => -p
+      Add man page for the iscsi-gen-initiatorname script.
+      Install new man page for iscsi-gen-initiatorname
+      Fix issues discovered by gcc12
+      Fix more issues discovered by gcc12
+
+Mike Christie (4):
+      iscsi sysfs: check state before onlining devs
+      iscsistart: fix login timeout handling
+      iscsid: use infinite timeout if passed in
+      iscsid: add error code for req timeouts
+
+Samy Mahmoudi (1):
+      Improve 'iscsid.conf'
+
+Wenchao Hao (8):
+      iscsiadm: Call log_init() first to fix a segmentation fault
+      iscsi_err: Add iscsid request timed out error messages
+      Fix wrong install_systemd destination path
+      actor: add name to struct actor and init it with function name
+      actor: print thread name in log
+      actor: enhanced: print error log when init a initilized thread
+      initiator_common: make set operational parameter log easy to read
+      iscsid: Check session id before start sync a thread
+
+
+open-iscsi-2.1.4 - open-iscsi-2.1.5
+
+Chris Leech (1):
+      iscsistart: fix null pointer deref before exit
+
+Lee Duncan (8):
+      Add iscsiadm "no wait" option for firmware login.
+      Set default 'startup' to 'onboot' for FW nodes
+      Support the "qede" CNA-card driver.
+      Handle qedi correctly in NPAR mode
+      Change iscsi IP type from defines to enum.
+      Update iface.example for ipv6
+      Update iscsiadm man page
+      Handle IPv6 interfaces correctly.
+
+Manish Rangankar (1):
+      bnx2x.c: Re-initialize bp->version with baseline version.
+
+Mike Christie (1):
+      iscsid: set PR_SET_IO_FLUSHER
+
+gulams (3):
+      Log error message when auth debug status is set
+      Check ISCSI_ERR_ISCSID_NOTCONN in iscsistart login
+      Handle recv() returning 0 in iscsid_response()
+
+
+open-iscsi-2.1.3 - open-iscsi-2.1.4
+
+Abhinav Rajagopalan (1):
+      Fix typo in util.py
+
+Chris Leech (3):
+      libopeniscsiusr: fix error messages
+      libopeniscsiusr: skip over removed sessions
+      libopeniscsiusr: dont error loudly if a session isn't found when working through iscsi_sessions_get()
+
+Fabian Möller (1):
+      iscsid: Add NO_SYSTEMD to CFLAGS
+
+Helmut Grohne (1):
+      Avoid hardcoding pkg-config to fix cross build
+
+John Schaeffer (1):
+      Add etc/systemd/iscsi-init.service to SYSTEMDFILES Makefile variable
+
+Lee Duncan (4):
+      iscsid: Do not allow conflicting pid-file options
+      Fix iscsiadm segfault when exiting
+      Fix iscsistart login issue when target is delayed.
+      Enable iscsi.service asynchronous logins, cleanup services
+
+Matwey V. Kornilov (1):
+      Wants=network-online.target in iscsi.service
+
+Patrick Lawrence (1):
+      Change mkdir permissions to 0770, adjust usmask
+
+Wenchao Hao (4):
+      idbm: Fix memory leak and NULL pointer dereference in idbm_rec_update_param()
+      libopeniscsiusr: Fix memory leak in iscsi_nodes_get()
+      libopeniscsiusr: Fix memory leak in iscsi_sessions_get()
+      iscsiadm: Fix memory leak in iscsiadm
+
+---------------------------------------------------------------------------
+
+open-iscsi-2.1.2 - open-iscsi-2.1.3
+
+Chris Leech (4):
+      iscsiadm buffer overflow regression when discovering many targets at once
+      check for header length underflow during checksum calculation
+      check for u8 overflow when processing TCP options
+      check for TCP urgent pointer past end of frame
+
+Gulam Mohamed (1):
+      iscsid: Poll timeout value to 1 minute for iscsid
+
+Khem Raj (1):
+      libopeniscsiusr: Compare with max int instead of max long
+
+Lee Duncan (4):
+      Add ability to attempt target logins asynchronously
+      Implement login "no_wait" for iscsiadm NODE mode
+      Updated iscsiadm man page.
+      iscsiadm: fix host stats mode coredump
+
+Wenchao Hao (15):
+      Fix memory leak in sysfs_get_str
+      iscsiadm: Optimize the the verification of mode paramters
+      Update .gitignore for cscope and gtags data base
+      iscsi_sysfs: Fix NULL pointer deference in iscsi_sysfs_read_iface
+      iscsi-iname: Verify open() return value before calling read()
+      iscsiuio: Fix invalid parameter when call fstat()
+      open-iscsi: Fix invalid pointer deference in find_initiator()
+      open-iscsi: Fix NULL pointer dereference in mgmt_ipc_read_req()
+      iscsi_net_util: Fix NULL pointer dereference in find_vlan_dev()
+      open-iscsi: Clean user_param list when process exit
+      fwparam_ppc: Fix NULL pointer dereference in find_devtree()
+      sysfs: Verify parameter of sysfs_device_get()
+      fwparam_ppc: Fix illegal memory access in fwparam_ppc.c
+      iscsiuio: Remove unused macro IFNAMSIZ defined in iscsid_ipc.c
+      fwparam_ppc: Fix memory leak in fwparam_ppc.c
+
+Yoshifumi Kinoshita (1):
+      iscsid: fix logging level when starting and shutting down daemon
+
+gulams (1):
+      iscsid: Check Invalid Session id for stop connection
+
+sonukumar159842@gmail.com (1):
+      TODO: Update to todo list.
+
+open-iscsi-2.1.0 - open-iscsi-2.1.2
+
+Christian Glombek (1):
+      Add iscsi-init.service
+
+David Disseldorp (2):
+      use openssl for random data generation
+      drop unused get_random_bytes()
+
+Lee Duncan (10):
+      Fix iscsi.service so it handles restarts better
+      Fix issue where "iscsi-iname -p" core dumps.
+      Add Wants=remote-fs-pre.target for sequencing.
+      Change include of <sys/poll.h> to <poll.h>
+      Fix type mismatch under musl.
+      More changes for musl.
+      Ignore iface.example in iface match checks
+      Fix issue with zero-length arrays at end of struct
+      Fix a compiler complaint about writing one byte
+      Fix compiler complaint about string copy in iscsiuio
+
+Luis.wu (1):
+      Update iscsi-iname.c
+
+Rafael David Tinoco (1):
+      Misspelled socket name might cause confusion to inexperienced user.
+
+Wu Bo (2):
+      iscsi-iname: fix iscsi-iname -p access NULL pointer without given IQN prefix
+      log:modify iSCSI shared memory permissions for logs
+
+fredvx (1):
+      Fix SIGPIPE loop in signal handler
+
+gulams (1):
+      Proper disconnect of TCP connection
+
+wubo009 (3):
+      iscsi: Add break to while loop
+      iscsi: fix fd leak
+      iscsi/libopeniscsiusr:add libopeniscsiuser_node.h to HEADERS
+
+
+open-iscsi-2.1.0 - open-iscsi-2.1.1
+
+# output from "git shortlog --no-merges 2.1.0..HEAD"
+
+Chris Leech (2):
+      configuration support for CHAP algorithms
+      Revert "Out-of-bounds read: Overrunning array of 8 2-byte elements"
+
+Kiyotaka Nakamura (1):
+      Avoid logout of iscsi boot session
+
+Lee Duncan (13):
+      Fixed Changelog message, first line
+      Enabled compiler checking options, fixed issues.
+      Updates to support gcc -fno-common option.
+      Fix 586 compiler issues.
+      Beginning to get python tests set up.
+      First 32 tests working?
+      64 tests now working and passing
+      Update TODO list
+      Add in "-V" for version info
+      Test code rearranged to make discovery work.
+      more things to do
+      Allow sub-tests to be specified.
+      Fix memory leaks in libopeniscsiusr/idbm.c
+
+Patrick McCarty (1):
+      Fix bug with libopeniscsiusr.pc
+
+l00464806 (1):
+      Check whether socket is opened successfully in find_vlan_dev func
+
+
+open-iscsi-2.0.878 - open-iscsi-2.1.0
+
+# output from "git shortlog --no-merges 2.0.878..HEAD"
+
+Chris Leech (29):
+      CHAP SHA-1, SHA-256, SHA3-256 via OpenSSL's libcrypto
+      setup Travis-CI builds and Coverity scans
+      fix Coverity scan
+      Resource leak: returning without freeing netdev
+      Out-of-bounds-write: Overrunning array link_target
+      Resource leak: Variable rec going out of scope leaks the storage it points to
+      Out-of-bounds write: Overrunning array link_target
+      Buffer not null terminated: Calling strncpy with a maximum size argument on destination array might leave the destination string unterminated
+      Out-of-bounds access: Overrunning array value_list
+      Resource leak: Variable startup_cmd going out of scope leaks the storage it point to.
+      Buffer not null terminated: Calling strncpy with a maximum size argument on destination array
+      Uninitialized scalar variable
+      Uninitialized pointer read: Using uninitialized value ifaces.next
+      Uninitialized scalar variable: Using uninitialized value number when calling acl_text_to_number
+      Resource leak: Handle variable sockfd going out of scope leaks the handle.
+      Resource leak: Variable chap_info going out of scope leaks the storage it points to.
+      Resource leak: Variable matched_ses going out of scope leaks the storage it points to.
+      Resource leak: Handle variable fd going out of scope leaks the handle.
+      Resource leak: Handle variable fd going out of scope leaks the handle.
+      Out-of-bounds read: Overrunning array of 4 bytes at byte offset 7 by dereferencing pointer
+      iscsi-iname: change default IQN prefix
+      iscsi-iname: verify prefix length is at most 210 characters
+      iscsi-iname remove unneeded temp buffer
+      iscsistart -b probably never worked with PPC OF parsing?
+      fwparam_pcc mulitple resource leaks
+      Resource leak: Handle variable fd going out of scope leaks the handle.
+      Out-of-bounds read: Overrunning array of 8 2-byte elements
+      Resource leak: Variable raw going out of scope leaks the storage it points to.
+      Uninitialized scalar value rc
+
+Lee Duncan (2):
+      Initialize timeout for printing specific session info.
+      Fix version strings in ChangeLog
+
+open-iscsi-2.0.877 - open-iscsi-2.0.878
+
+# output from "git shortlog --no-merges 2.0.877..HEAD"
+
+Daniel Schaefer (1):
+      Add target to install systemd units
+
+Lee Duncan (18):
+      iscsistart is not installed
+      Fix i586 build issues with string length overflow.
+      Use pkg-config in Makefiles for newer libraries.
+      Updated iscsiadm man page: add "onboot" handling.
+      Fix output for iscsiadm node/iface print level P1
+      When displaying interfaces, skip "iface.example"
+      Fix node print return value when no nodes.
+      Fix printing of node database again.
+      Fix output of node printing for multiple paths.
+      Stop using /var directory for PIDfile and locks
+      Improve daemon synchronization, fix err msgs
+      Fix pipe notification code
+      Add systemd support for iscsiuio
+      Make iscsid systemd usage optional
+      Fix possible discovery hang when timing out
+      Handle systemd disablement correctly in iscsiuio
+      The iscsi login/logout service requires iscsid.
+      Remove redundant Requires= from iscsi.service
+
+Manish Rangankar (3):
+      iscsiuio: Do not flush tx queue on each uio interrupt.
+      qedi: Set buf_size in case of ICMP and ARP packet.
+      qedi: Use uio BD index instead on buffer index.
+
+Nilesh Javali (3):
+      iscsiuio: v0.7.8.5
+      iscsiuio: allow processing of iscsid requests in DHCP failure condition
+      iscsiuio: update version to 0.7.8.6
+
+Xiubo Li (1):
+      rec update: disable the idbm_lock in read/write when updating the rec
+
+fredvx (1):
+      Add Restart=on-failure option to iscsid.service
+
+igo95862 (2):
+      Make iscsid.service a requirement.
+      Fixed iscsi.service considering every signal and exit code as successful. Now only code 21 (no objects found to execute on) and normal exit conditions are valid.
+
+open-iscsi-2.0.876 - open-iscsi-2.0.877
+
+Antoine de Maleprade (1):
+      iscsid: fix logging level when starting daemon
+
+Cathy Zhou (1):
+      Reduce delays to improve iscsi boot performance
+
+Chris Leech (16):
+      libopeniscsiusr: fixes err on prefix_len
+      vlan setting sync across ipv4/ipv6 for be2iscsi
+      iscsid logging blank messages at level EMERG
+      iscsistart: prevent unix socket cross-talk
+      libopeniscsiusr: hosts can have multiple ifaces
+      libopeniscsiusr: clear errno before calling strtoll
+      libopeniscsiusr: setup ipv6 records based on iface name
+      libopeniscsiusr: use asprintf and remove PATH_MAX stack buffers
+      Merge pull request #110 from cleech/libopeniscsiusr_fixes
+      Merge pull request #111 from cleech/for_upstream
+      Merge pull request #106 from phmccarty/lib-symlinks
+      enable MaxOutstandingR2T negotiation
+      Merge pull request #114 from njavali/iscsiuio-bug-fixes
+      Merge pull request #115 from cleech/for_upstream
+      Merge pull request #120 from maxnet/va
+      Merge pull request #122 from njavali/iscsiuio-bug-fixes
+
+Christian Ehrhardt (2):
+      iscsiuio: avoid loosing bad rc in nic_nl_open
+      iscsiuio: fail on nic_nl_open failing
+
+Floris Bos (1):
+      context.h: add missing stdarg.h include
+
+Gris Ge (8):
+      libopeniscsiusr: Fix iscsi_sessions_free() on 0 se_count.
+      libopeniscsiusr: Add full iscsi interface support.
+      Makefile: Trivial change on aligning output.
+      libopeniscsiusr: Fix incorrect debug message for iface query.
+      libopeniscsiusr: Add node query support
+      libopeniscsiusr: Fix iscsi_iface_get() on default interfaces.
+      iscsiadm: Use libopeniscsiusr in `iscsiadm -m iface -P1`
+      libopeniscsiusr: Fix compile error on GCC 8.
+
+Khem Raj (6):
+      libopeniscsiusr: Include limit.h for PATH_MAX
+      libopeniscsiusr: Add CFLAGS to linker cmdline
+      qedi.c: Removed unused linux/ethtool.h
+      idbm.c: Include fcnl.h for O_RDWR and O_CREAT definitions
+      bnx2x.c: Reorder the includes to avoid duplicate defines with musl
+      fwparam_ppc.c: Do not use __compar_fn_t
+
+Lee Duncan (55):
+      Merge pull request #91 from njavali/iscsiuio-bug-fixes
+      Merge pull request #92 from az0uz/master
+      Use correct size when copying nic name.
+      Do not overload global sysfs_path locally.
+      libopeniscsiusr: ensure sysfs pathname doesn't overflow.
+      Ensure sysfs pathname doesn't overflow.
+      Merge pull request #89 from kraj/kraj/musl-fixes
+      Merge pull request #94 from gonzoleeman/gcc-8-fixes
+      Merge branch 'master' into api
+      Merge pull request #93 from cathay4t/api
+      Keep iscsi_if in sync with kernel version.
+      Add a TODO item on iscsi_if.h.
+      Merge pull request #98 from gonzoleeman/update-iscsi_if-to-latest
+      Add error message for new ISCSI_ERR_NOP_TIMEDOUT
+      Merge pull request #99 from gonzoleeman/handle-new-kernel-error-code
+      Allow a host_id value of zero.
+      Merge pull request #100 from gonzoleeman/libopeniscsiusr-allow-zero-host_id
+      Merge pull request #101 from gonzoleeman/fix-qedi-iface-name
+      Fix iscsiuio segfault when shutting down.
+      Remove unused file fwparam_ibft_sysfs.c.
+      Merge pull request #96 from cathay4t/api
+      Merge pull request #103 from cathy-zhou/perf_fix
+      Plugging a memory leak from discovery.
+      Merge pull request #123 from gonzoleeman/fix-discovery-leak
+      Allow reading sysfs "port" to fail gracefully.
+      Fix incorrect sysfs logic for port and ip address.
+      Fix reading of sysfs signed integers when negative.
+      Create a new error for "target not connected".
+      Fix bug in error message when reading sysfs numbers.
+      Handle ENOTCONN error separately when reading sysfs values.
+      Limit session relogin attempts using config value.
+      Merge pull request #127 from smoser/fix/iscsid-pidfile-write
+      Merge pull request #129 from cpaelzer/cleanup-nic_nl_open-usage
+      Merge pull request #131 from gonzoleeman/fix-reconnect-forever
+      Removed unused value 'one'.
+      Include stdio.h for use of snprintf().
+      Fix qsort() comparator function call.
+      Merge pull request #132 from gonzoleeman/small-cleanups
+      Do not allow multiple sessions when nr_sessions=1
+      Merge pull request #136 from gonzoleeman/no-parallel-sessions
+      When reopen_max=0 retry reopening forever.
+      Merge pull request #137 from gonzoleeman/add-no-timeout-relogin-option
+      Use libkmod instead of fork/exec of modprobe.
+      Merge pull request #138 from gonzoleeman/remove-fork-exec-for-modprobe
+      Update GPLv2 License information.
+      Merge pull request #139 from gonzoleeman/fix-fsf-address
+      Make reconnect to session on startup forever default.
+      Merge pull request #141 from gonzoleeman/master
+      Restore space in node-mode level 0 output
+      Merge pull request #142 from gonzoleeman/fix-mode-node-level-0-print
+      Merge pull request #4 from open-iscsi/master
+      Added service file for iscsi logins
+      Use sd_notify() to tell systemd when iscsid is ready.
+      Update systemd unit files for iscsid
+      Merge pull request #143 from gonzoleeman/use-sd_notify-for-systemd
+
+Manish Rangankar (3):
+      iscsiuio: Add inter-host mutex while doing xmit
+      iscsid: Update boot gateway information during sync_session.
+      iscsiuio: Release xmit_mutex in error code path.
+
+Nilesh Javali (4):
+      iscsiuio: allow ARP for non-matching src and dst addresses
+      iscsiuio: v0.7.8.4
+      iscsiadm: get transport_name correctly for offload iface
+      iscsiuio: limit retries of performing dhcpv6 before declaring dhcp failure
+
+Patrick McCarty (1):
+      Fix installation of libopeniscsiusr symlinks
+
+Scott Moser (2):
+      Close file handles when writing pid files.
+      Better error message and failure if netlink socket fails.
+
+
+open-iscsi-2.0.875 - open-iscsi-2.0.876
+
+Chris Leech (2):
+      delete old kernel code
+      delete unused BSD stub code
+
+Gris Ge (6):
+      Remove white spaces.
+      Fix memory leak of session_info_print_tree() in usr/session_info.c.
+      Introducing iSCSI userspace library.
+      libopeniscsiusr: Add iSCSI session support.
+      libopeniscsiusr: Add basic iface support into iscsi session.
+      libopeniscsiusr: Use libopeniscsiusr in iscsiadm
+
+Khazhismel Kumykov (1):
+      iscsi_if.h: use attribute instead of '__packed'
+
+Lee Duncan (37):
+      Fix duplicate define of __bitwise
+      Fix compiler warning: possible string truncation
+      Replace deprecated _SVID_SOURCE with _DEFAULT_SOURCE
+      Rename local strings.[ch] to local_strings.[ch]
+      Fix compiler warnings about string overflows in prom_parse
+      Ignore library file for iscsiuio/src
+      Fix undefined call to writev(): include <sys/uio.h>
+      Remove unused variables. No functional change.
+      Include <sys/sysmacros.h> to properly define minor()
+      Declare inline best_match_bufcmp() as static.
+      Merge pull request #69 from gonzoleeman/new-compiler-fixes
+      Merge pull request #3 from open-iscsi/master
+      Check for root peer user for iscsiuio IPC
+      iscsiuio should ignore bogus iscsid broadcast packets
+      Ensure all fields in iscsiuio IPC response are set
+      Do not double-close IPC file stream to iscsid
+      Ensure strings from peer are copied correctly.
+      Skip useless strcopy, and validate CIDR length
+      Check iscsiuio ping data length for validity
+      tell git to ignore the iscsiuio binary
+      Merge pull request #72 from gonzoleeman/iscsiuio-fixes
+      Automate logging into iSCSI FW targets.
+      Ignore common build output files
+      Merge pull request #78 from gonzoleeman/updates/ignore-standard-build-files
+      Merge pull request #79 from gonzoleeman/updates/add-iscsi_fw_login
+      Merge pull request #80 from cleech/master
+      Cleanup iscsiuio master Makefile template.
+      Update iscsid.conf attribute iscsid.startup.
+      Merge pull request #81 from gonzoleeman/updates/iscsid.conf-changes-v2
+      Merge pull request #82 from gonzoleeman/updates/iscsiuio-Makefile.am-updates
+      Add in tracking IP prefix length, in addition to mask.
+      Add some scripts and manpages to the top Makefile.
+      Merge pull request #83 from gonzoleeman/fixes/update-top-level-makefile
+      Merge pull request #84 from gonzoleeman/fixes/add_ip_prefix
+      Discovery via non-tcp transport needs "ipc" value
+      Merge pull request #85 from gonzoleeman/fixes/ipc-should-not-be-null
+      Do not set LDFLAGS directly in usr/Makefile
+      remove kernel subdir from clean Makefile target
+
+
+open-iscsi-2.0.874 - open-iscsi-2.0.875
+
+Andrew Patterson (3):
+      iscsiuio must be present to use hardware offload for bnx2{,x}
+      iscsistart: move offload discovery/setup to fw_get_targets()
+      iscsiuio: fix long options
+
+Chris Leech (8):
+      fix timeout setting on discoverydb commands
+      Merge pull request #41 from cleech/master
+      Merge pull request #40 from Akrog/feature/autoscan_en
+      Merge pull request #42 from m4z/uniform-headings
+      Merge pull request #43 from m4z/whitespace
+      Merge pull request #44 from m4z/typos
+      Merge pull request #45 from m4z/punctuation
+      Merge pull request #49 from Akrog/fix/autoscan_en
+
+Christopher 'm4z' Holm (7):
+      Unify README headings.
+      Cleanup README whitespace.
+      Fix a bunch of typos and a bit of wording.
+      Improve README punctuation.
+      Merge branch 'master' into punctuation
+      Unify invocation examples, option documentation, and more.
+      Add actual "iscsiadm --help" output (on openSUSE).
+
+Christopher Holm (1):
+      Merge branch 'master' into uniform-invocation-examples
+
+Edward Kigwana (2):
+      Update bnx2.c
+      Update bnx2x.c
+
+Gorka Eguileor (2):
+      Allow disabling auto LUN scans
+      Fix manual LUN scans feature
+
+Hannes Reinecke (1):
+      Use timeout when waiting for responses from iscsid
+
+Lee Duncan (17):
+      iBFT 'origin' is an enum, not a string
+      Merge pull request #32 from gonzoleeman/master
+      iscsid: treat SIGTERM like "iscsiadm -k 0"
+      Make event_loop_stop volatile for safer access
+      Merge pull request #34 from gonzoleeman/master
+      Merge pull request #1 from open-iscsi/master
+      Fix coredump when printing session info.
+      Merge pull request #52 from gonzoleeman/master
+      Merge pull request #53 from gonzoleeman/master
+      Merge pull request #54 from njavali/iscsiuio-bug-fixes
+      Merge pull request #57 from y011/patch-1
+      Merge pull request #2 from open-iscsi/master
+      Clear errno before calling strtoull.
+      Merge pull request #60 from gonzoleeman/strtoull-fix
+      Merge pull request #61 from ekigwana/master
+      Merge pull request #46 from m4z/uniform-invocation-examples
+      Merge pull request #55 from apatters/bnx2-software-ibft-support
+
+Neal Wise (1):
+      Fixed typo for spelling of 'default'
+
+Nilesh Javali (5):
+      iscsid: Changes to support the new qedi transport
+      iscsiuio: Add support for the new qedi transport
+      iscsiuio: v0.7.8.3
+      iscsiuio: fix dhcpv6 transaction-id mismatch error
+      iscsiuio: serialize xmit_mutex lock to prevent iscsiuio seg fault
+
+Nilesh Javili (1):
+      iscsid: Add qedi ping transport hook
+
+
+open-iscsi-2.0.873 - open-iscsi-2.0.874
+
+Adam Jackson (6):
+      actor: Mark actor_check static
+      actor: simplify actor_check
+      actor: s/ACTOR_TICKS/actor_jiffies/
+      actor: Remove ACTOR_TICKS_10MS()
+      actor: Unobfuscate ACTOR_MAX_LOOPS
+      actor: Simplify actor_poll a little
+
+Adheer Chandravanshi (26):
+      Manpage changes for flashnode submode support for host mode.
+      README changes for flashnode submode support for host mode.
+      iscsiadm: Check for mode is not required when creating params list
+      iscsiadm: Correctly check for invalid hostno and flashnode index
+      flashnode: Add support to set ISCSI_FLASHNODE_CHAP_OUT_IDX param
+      iscsiadm: Use '-x' option instead of '-v' to specify chap_tbl_idx
+      iscsiadm: Man page changes to use -x option for chap_tbl_idx
+      README changes to use long option --index instead of --flashnode_idx
+      iscsiadm: Add support to set CHAP entry using host chap mode
+      iscsi tools: Correctly get username_in and password_in flashnode params
+      README changes for adding support to set CHAP entry
+      iscsi tools: Setup iface conf file with all iface attrs exported in sysfs
+      iscsi_if.h: Additional parameters for network param settings
+      iscsi tools: iface params should be updated for node_rec as well.
+      iscsi tools: Let default type of iface be ipv4
+      iscsi tools: Show iface params based on iface type
+      iscsi tools: Fix the iscsiadm help options for host mode
+      Man page correction for host mode options of iscsiadm
+      iscsiadm: Fix the compile time warning
+      iscsiuio: Correct the handling of Multi Function mode
+      iscsiuio: Add QLogic Vendor ID to support newer NX2 HBAs
+      iscsid: Changes to support ping through iscsiuio
+      iscsiuio: Add ping support through iscsiuio
+      iscsiadm: let ping be tried after iface config is initialized
+      iscsiuio: Wait for iface to be ready before issuing the ping
+      iscsiuio: Get the library to use based on uio sysfs name
+
+Andy Grover (20):
+      Update README for removal of DBM requirement
+      Fix build warnings for unused variables
+      Fix warning about possibly-uninitialized variable
+      Fix bad sizeof in memset
+      Fix missing header
+      iscsiuio: Fix warning about non-matching types
+      iscsiuio: Fix strict-aliasing warning with struct mac_address
+      iscsiuio: Resolve strict aliasing issue in iscsiuio/src/unix/nic.c
+      iscsiuio: Fix aliasing issue with IPV6_IS_ADDR_UNSPECIFIED
+      iscsiuio: Use attribute(unused) for variables that are unused but needed
+      iscsiuio: Use attribute(unused) for *icmpv6_hdr
+      iscsiuio: Change nic_disable to return void
+      iscsiuio: Remove set but unused variables
+      iscsiuio: Check return value from nic_queue_tx_packet
+      Remove actor_init and rename actor_new to actor_init
+      Make running actors event-driven
+      Wake up to reap children
+      Fix incorrect list operation leading to out-of-order items on pend_list
+      Prevent spinning over poll() when reconnecting to an inaccessible target
+      Add some more debug logging to actor.c
+
+Anish Bhatt (1):
+      iscsiadm : make iface.ipaddress optional in iface configs for transports that don't have a hard requirement on it.
+
+Chris Leech (19):
+      iscsiadm: Fix the hostno check for stats submode of host mode
+      fix regression in iscsi_tcp iface binding
+      guard against NULL ptr during discovery from unexpected event
+      add discovery as a valid mode in iscsiadm.8
+      iscsid: fix order of setting uid/gid and drop supplementary groups
+      iscsiuio CFLAGS fixes
+      iscsiuio systemd socket activation support
+      iscsid safe session logout
+      iscsid: don't re-read config file for every session logout
+      make use of all 24 bits of ISID qualifier space
+      iscsi_tcp set SO_LINGER to abort connection for error handling
+      iscsiadm: fix parallel rescan handling of exit codes
+      iscsistart: support booting over a VLAN
+      iscsid: safe_logout fix device path canonicalization by using libmount cache
+      iscsid: make safe_logut session checks apply for flashnode session
+      remove sysfs attr_list
+      Merge pull request #25 from cleech/master
+      Merge pull request #29 from chris-se/debian-patches
+      Replace open-iscsi.org with open-iscsi.com in docs
+
+Christian Hesse (1):
+      typo in man iscsiadm(8)
+
+Christian Seiler (8):
+      buildsys: make 'make clean' idempotent
+      buildsys: respect CFLAGS and LDFLAGS from the outside
+      Remove outdated Debian packaging code.
+      Reformat man page synopsis sections
+      Build system: sort object file lists
+      iscsiuio: Make builds reproducible if SOURCE_DATE_EPOCH is set
+      Additional spelling fixes
+      iscsiuio/Makefile.am: fix typo introduced by reproducibility patch
+
+Christophe Vu-Brugier (1):
+      Fix typos in iscsiadm man page
+
+Christopher Unkel (1):
+      Fix typo in man page.
+
+Duane Northcutt (1):
+      iscsid: Fix double close of mgmt ipc fd
+
+Eddie Wai (13):
+      ISCSISTART: Bring up the corresponding network interface for iboot
+      ISCSID: Passing more net params from ibft to iface
+      ISCSID: Modified the Makefile for iscsiuio compilation
+      ISCSID: Added iscsiuio source to the open-iscsi pkg
+      ISCSIUIO: Updated iscsiuio to version 0.7.8.1b for perf optimization
+      ISCSID: Added the extraction of the session boot info
+      ISCSID: Added iface content override fix
+      ISCSIUIO: Added tx doorbell override mechanism
+      ISCSIUIO: Added fix for the iface.subnet_mask decoding for IPv6
+      ISCSIUIO: Added fix for the ARP cache flush mechanism
+      ISCSIUIO: Updated RELEASE note and version
+      ISCSIUIO: Removed the auto-generated COPYING file
+      ISCSIUIO: Fixed a pthread resc leak from excessive session recovery
+
+Frank Fegert (2):
+      Prevent iscsiuio from segfaulting due to un-lock of a not locked mutex.
+      iscsiuio: ensure unlock of mutex in case of an error.
+
+Hannes Reinecke (14):
+      iscsiuio: Remove autogenerated files from tracking
+      iscsiuio: Update automake files
+      iscsiuio: Add .gitignore files
+      Remove unused variable 'path'
+      Parse 'origin' value from iBFT
+      Added new utility script to generate initiator name
+      Added new util script to aid in CNA setup
+      Code cleanup: no functional changes
+      Represent DHCP "origin" as an enum, not a string.
+      fwparam_ibft: Check iBFT target and NIC flags
+      Allow modifications for iface.gateway and iface.subnet_mask
+      iscsiuio: Do not memcpy identical locations
+      iscsiuio: Clear memory after allocation
+      iscsiuio: fixup race condition
+
+Harish Zunjarrao (6):
+      iscsi_if.h: Remove numbers used for network parameter settings
+      iscsi tools: Use macro to set IPv4/IPv6 IP addresses
+      iscsi tools: Use single function to enable/disable network parameters
+      iscsi tools: Use single function to set integer network parameters
+      iscsi tools: Ignore network parameter if not enabled/disabled
+      iscsi tools: Additional parameters for network settings
+
+Heinrich Schuchardt (1):
+      Kernel include path
+
+Jan Vesely (2):
+      iscsid: Fix strlen parameter
+      iscsiuio: Change socket bind to use the same struct size as iscsid
+
+Jim Ramsay (1):
+      iscsi tools: Convert '-r' argument to an integer before checking if it is a path
+
+John Soni Jose (2):
+      be2iscsi: Fix MaxXmitDataLenght of the driver.
+      Fix StatSN in Open-iSCSI Stack.
+
+Kamalneet Singh (1):
+      fix typo
+
+Lalit Chandivade (3):
+      iscsi_tool: Add offload host statistics support.
+      README: Updated for host statistics.
+      iscsiadm.8: Updated man page for host statistics.
+
+Lee Duncan (13):
+      PATCH 1 of 1] correctly check return value of nice()
+      iscsiadm: return error when login fails
+      Fix discovery error return without return value
+      Add missing DESTDIR
+      isns: Add docs for deregistering discovery domains.
+      Supply strings for newly-added error numbers
+      Allow setting host params to return EAGAIN errors.
+      Remove duplicate newlines in log messages.
+      Fix iBFT target flags check.
+      Use system-wide open-isns, not internal version.
+      ARP table too small when switches involved.
+      Merge pull request #22 from frank-fegert/master
+      Merge pull request #26 from cvubrugier/master
+
+Manish Rangankar (1):
+      iscsiadm: Initialize param_count in set_host_chap_info
+
+Mark Karpeles (1):
+      fixed typo in iscsi_discovery usage()
+
+Mike Christie (22):
+      iscsid: fix iscsid segfault during qla4xxx login
+      iscsi tools: fix compile error when OFFLOAD_BOOT_SUPPORT defined
+      iscsi tools: fix get_random_bytes error handling
+      ISCSID: Added socket communication hooks for uip
+      From: Adheer Chandravanshi <adheer.chandravanshi@qlogic.com>
+      Allow firmware mode to use debug flag
+      iscsiadm: bind ifaces to portals found using isns
+      iscsid/iscsiadm: add support for emulex one connect storage
+      Make rescan run in parallel
+      iscsi tools: sync iscsi_if.h with kernel space
+      ISCSISTART: Saved ibft boot info to the session
+      iscsi tools: Bug fix on IPC address copy (version 2)
+      ISCSIUIO: Updated the configure file to reflect the new version
+      iscsiuio: fix compilation
+      iscsi tools: set non negotiated params early.
+      iscsid: Fix handling of iscsi async events.
+      iscsid: retry login for ISCSI_ERR_HOST_NOT_FOUND
+      iscsid: don't round up when modifying padding len
+      iscsi: remove local copy of open-isns
+      iscsid: make sure actor is delated before rescheduling
+      iscsid/iscsiuio: remove uio poll
+      iscsid: fix iscsi_host_set_net_params return code
+
+Ritesh Raj Sarraf (1):
+      Spelling and escaping error fixes.
+
+Salvatore Bonaccorso (1):
+      Fix small typo in iscsid.conf
+
+Tomasz Torcz (3):
+      iscsid,iscsiadm: fix abstract socket length in bind() call
+      iscsid: implement systemd-compatible socket activation
+      iscsid: add example unit files for systemd
+
+Vikas Chaudhary (3):
+      iscsi tools: Print additional session info for flashnode session
+      iscsiadm: Added document for description of iface attributes
+      iscsiuio: Rebranding iscsiuio
+
+Ville Skyttä (2):
+      man page syntax fixes
+      Spelling fixes
+
+mikechristie (3):
+      Merge pull request #11 from deepankar/master
+      Merge pull request #8 from dscunkel/master
+      Merge pull request #9 from xypron/kernel_source_path
+
+open-iscsi-2.0.872 - open-iscsi-2.0.873
+
+Ales Kozumplik (1):
+      fwparam_sysfs: fix pathname manipulation error in fwparam_sysfs_boot_info.
+
+Eddie Wai (3):
+      ISCSID: Fixed a race condition in the INVALID_HOST path
+      ISCSID: Fixed iface update for the new iface net config params
+      ISCSIADM: Included the new iface net params to the node creation
+
+Hannes Reinecke (6):
+      iscsid sends SIGTERM to PID 0
+      iscsid: Implement --no-pid-file
+      Keep startup mode in sync when specified in config file
+      Allow LOCK_DIR to be set via CFLAGS
+      Allow 'onboot' as loginall parameter
+      boot.suse: Update with latest fixes
+
+Jim Ramsay (12):
+      Add specific session information to session_rec_t
+      Add support for multiple sessions per iface to iscsid
+      Add multiple sessions per iface commandline syntax
+      Add new node.session.nr_sessions config parameter
+      Implement leading-login support
+      Fix dcb_app.c compile error with old kernels
+      Check all ifaces during discovery even if some timeout
+      iscsid: In foreground mode, treat SIGINT like SIGTERM
+      Revise bind_conn_to_iface logic
+      iscsi tools: Fix warnings reported by gcc-4.5.2
+      fwparam_ibft: Fix warnings reported by gcc-4.5.2
+      open-isns: Fix warnings reported by gcc-4.5.2
+
+Karen Xie (1):
+      open-iscsi: add transport cxgb4i
+
+Lalit Chandivade (2):
+      iscsiadm: add netconfig support
+      iscsi tools: manage qla4xxx iscsi sessions with iscsiadm
+
+Manish Rangankar (1):
+      iscsid: Fixed iscsid restart issue for offload iSCSI login
+
+Mark Rustad (7):
+      Add some consts to char * parameters that are not changed
+      Add dcb_app.h for DCB support
+      Add dcb_app.c for DCB support
+      Add initial DCB support
+      iscsid: Fix netdev check
+      Remove redundant initialization
+      iscsid: Add IEEE DCB support
+
+Mike Christie (86):
+      iscsid: remove bogus debug log msg in isns_disc_new_portals
+      isns: Fix endless loop when pollhup is returned
+      iscsi tools: fix multi pdu sendtargets discovery sequences
+      iscsi boot: fix iscsi_boot sysfs parsing
+      Use pass through interface for sendtargets (take4) Currently offload cards like bnx2i, be2iscsi, cxgb3i must use a normal eth for discovery. This patch allows us to do discovery using the iscsi class passthrough interface.
+      Add userspace/tools iscsi error code defs
+      iscsi tools: fix iscsiadm exit codes
+      iscsid: modify data drop
+      iscsi doc: document iscsiadm host argument
+      iscsid: add new auth error code
+      iscsi tools: convert discovery code to iscsi error codes
+      iscsi tools: document iface rp_filter use
+      iscsi tools: disable isns dsa code
+      iscsi tools: support hostnames in node mode
+      iscsi tools: fix discovery return code
+      iscsiadm: fix offload discovery retry
+      iscsid: fix signal handler debug msg
+      iscsiadm: fix discovery exit code
+      iscsi tools: fix dcbnl.h compile error
+      iscsid: retry initial connect
+      iscsi tools/kernel: switch make defaults
+      iscsi tools: fix comment about sysfs lookup failures
+      iscsi tools: fix netlink bug allocation
+      iscsi tools: Don't try to bind offload EPs to sockets
+      iscsi tools: fix oom_adj use
+      iscsi tools: fix bnx2i boot due to MAC mismatch
+      iscsiadm: fix discoverydb help
+      Update SUSE init script
+      iscsi tools: revert commit c440cbe7ba2464f8baadedb55b00754c36773c2c
+      Add a TODO
+      TODO: mark down Jose as working on idr
+      Update TODO
+      iscsi tools: fix iname sysfs handling
+      iscsi tools: handle compile warnings about unused variables
+      iscsiadm: print kernel iface info
+      iscsi tools: add tgt reset to session info and fix unknown values
+      iscsi tools: fix default iface binding setup
+      iscsi tools: fix iscsiadm return value on failed login
+      iscsi tools: don't build with openssl
+      iscsi tools: check NULL pointer first and add limit check in str_remove_initial
+      iscsi tools: fix README sid lookup info
+      iscsid: print out more informative error string for kernel errors
+      iscsi tools: fix netlink msg setup
+      iscsi tools: fix up vlan support
+      update todo
+      iscsiadm: fix printing of unknown host values
+      Do not run configure for open-isns on every build
+      iscsi tools: fix ipv6 ibft/firmware boot
+      iscsid: don't sync qla4xxx flash sessions
+      iscsid: kill session if already exists.
+      isns: remove rfc files.
+      iscsistart: allow any rec/iscsid.conf setting as arg
+      iscsistart: support params in offload/ibft mode
+      iscsi tools: never use hdr digest with iser
+      iscsi tools: update iscsi_if.h for host event
+      iscsi tools: added ping support
+      iscsi tools: Add support to display a host's CHAP list and delete
+      iscsi tools: fix conn state compilation warnings
+      iscsi tools: allow default to have different transort names
+      iscsiadm: print ping status string
+      iscsi tools: fix hostname with port handling
+      iscsi tools: have iscsid/iscsiadm load modules as needed
+      iscsi tools: have iscsiadm load offload modules
+      init: update red hat init script for module changes
+      iscsi tools: create def ifaces on demand
+      iscsi tools: iscsiadm modprobe support
+      iscsi tools: remove class version check
+      iscsi tools: remove unused len variable
+      iscsiadm: support multiple params in one call
+      iscsid: remove DCB support
+      iscsiadm: print port speed and link state
+      iscsi tools: check for loaded module before loading
+      iscsistart: have iscsistart use same multi param code as iscsiadm
+      iscsi tools: print and load boot transport
+      iscsiadm: load iface before checking for hostno/mac match
+      iscsistart: fix iface overriding
+      iscsiadm: make sure offload drivers are loaded in host mode
+      iscsi tools: have iscsi tools bring up offload net iface
+      iscsi tools: fix bnx2i login
+      iscsi tools: fix ipv6 handling
+      iscsistart: fix invalid param handling
+      iscsiadm: added command line option '--interval'
+      iscsi tools: fix unknown param warnings
+      iscsi tools: fix socket leak in transport probe
+      iscsi tools: remove useless NULL iface check
+      iscsi tools: use strlpy in net code
+
+Nilesh Javali (1):
+      iscsi tools: update documents for CHAP command
+
+Rahul Gupta (1):
+      iscsi tools: Displaying timeout and CHAP in iscisadm info
+
+Vikas Chaudhary (2):
+      iscsi tools: update documents for ping command
+      iscsi tools: remove un-necessary print message
+
+Wang Sheng-Hui (1):
+      usr/config.h: fix comment for struct iscsi_session_timeout_config
+

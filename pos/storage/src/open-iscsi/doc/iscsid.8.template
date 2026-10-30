@@ -1,0 +1,84 @@
+.TH ISCSID 8 "July 2005" "" "Linux Administrator's Manual"
+.SH NAME
+iscsid \- Open-iSCSI daemon
+.SH SYNOPSIS
+.BI iscsid
+[OPTION]
+.SH "DESCRIPTION"
+The
+.B iscsid
+implements the control path of iSCSI protocol, plus some management
+facilities. For example, the daemon could be configured to automatically 
+re-start discovery at startup, based on the contents of persistent 
+iSCSI database.
+.SH OPTIONS
+.TP
+.BI [-c|--config=]\fIconfig\-file\fP
+Read configuration from \fIconfig\-file\fR rather than the default
+\fI@HOMEDIR@/iscsid.conf\fR file.
+.TP
+.BI [-i|--initiatorname=]\fIiname\-file\fP
+Read initiator name from \fIiname\-file\fR rather than the default
+\fI@HOMEDIR@/initiatorname.iscsi\fR file.
+.TP
+.BI [-f|--foreground]
+run
+.B iscsid
+in the foreground. Implies
+.BR --no-pid-file .
+.TP
+.BI [-d|--debug=] debug_level
+print debugging information. Valid values for debug_level are 0 to 8.
+.TP
+.BI [-u|--uid=] uid
+run under user ID \fIuid\fR (default is the current user ID).
+.TP
+.BI [-g|--gid=] gid
+run under user group ID \fIgid\fR (default is the current user group ID).
+.TP
+.BI [-n|--no-pid-file]
+do not write a process ID file. Conflicts with the
+.BI --pid=
+option.
+.TP
+.BI [-p|--pid=] pid\-file
+write process ID to \fIpid\-file\fR rather than the default
+\fI/run/iscsid.pid\fR. Conflicts with the 
+.BI --no-pid-file
+option. 
+.TP
+.BI [-h|--help]
+display this help and exit
+.TP
+.BI [-v|--version]
+display version and exit.
+
+.SH FILES
+.TP
+@HOMEDIR@/iscsid.conf
+The configuration file read by
+.B iscsid
+and
+.B iscsiadm
+on startup.
+.TP
+@HOMEDIR@/initiatorname.iscsi
+The file containing the iSCSI initiatorname
+and initiatoralias read by
+.B iscsid
+and
+.B iscsiadm
+on startup.
+.TP
+@DBROOT@/nodes
+Open-iSCSI persistent configuration database
+
+.SH "SEE ALSO"
+.BR iscsiadm (8)
+
+.SH AUTHORS
+Open-iSCSI project <http://www.open-iscsi.com/>
+.br
+Alex Aizman <itn780@yahoo.com>
+.br
+Dmitry Yusupov <dmitry_yus@yahoo.com>
