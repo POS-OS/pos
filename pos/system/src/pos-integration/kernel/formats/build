@@ -10,7 +10,7 @@
 #              before localyesconfig (--disable DEBUG_INFO_BTF), one per line
 #   keep       LMC_KEEP: directories whose modules stay modules
 #              (drivers/gpu:...), so their firmware loads from the root
-#   make       variables for every make (the compiler: CC=/pos/sdk/bin/gcc)
+#   make       variables for every make (the compiler: CC=/apps/pos-sdk/current/bin/gcc)
 # The base configuration is a hosted kernel's (base_config). The modules
 # seen loaded (modules_seen) are built in with localyesconfig, and the
 # other modules are left out, unless none were recorded yet: then the base

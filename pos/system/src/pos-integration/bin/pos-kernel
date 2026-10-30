@@ -107,7 +107,8 @@ base_config() {
 }
 
 # Check that the commands a channel's format runs are there (requires).
-# The compiler and linker are POS's sdk.
+# The compiler and linker are pos-sdk's, the selected version's:
+# /apps/pos-sdk/current, which installing pos-sdk sets.
 # Inputs:
 #   conf
 check_requires() {
@@ -117,13 +118,8 @@ check_requires() {
     command -v "$cmd" >/dev/null || missing+=("$cmd")
   done
   ((${#missing[@]})) || return 0
-  if [[ " ${missing[*]} " == *" /pos/sdk/bin/gcc "* || " ${missing[*]} " == *" /pos/sdk/bin/ld "* ]]; then
-    if pos-stage list 2>/dev/null | grep -q '^sdk '; then
-      hint="; the compiler is POS's sdk: pos-stage enable sdk"
-    else
-      hint="; the compiler is POS's sdk: install pos-sdk"
-    fi
-  fi
+  [[ " ${missing[*]} " != *" /apps/pos-sdk/current/"* ]] ||
+    hint="; the compiler is pos-sdk's: install pos-sdk"
   die "channel $channel needs ${missing[*]}${hint:-}"
 }
 

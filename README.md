@@ -27,8 +27,8 @@ POS boots kernels other projects build, from kernel channels: `fedora`
 trees, built by Fedora's kernel-vanilla project). The `linus` channel
 builds kernel.org's mainline release on the machine instead: Fedora's
 configuration with the drivers the machine used while it ran Fedora's
-kernel built in, and the others left out. It needs POS's sdk
-(`pos-stage enable sdk`). Each channel the system
+kernel built in, and the others left out. It needs pos-sdk installed
+(`/apps/pos-sdk/current`). Each channel the system
 boots has a boot entry for its newest kernel and one for the kernel before
 it, to fall back to from the boot menu. Downloading needs the network
 stage (`pos-stage enable network`).

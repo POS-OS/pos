@@ -19,6 +19,7 @@ config --disable WERROR --disable DRM_WERROR
 # driver that loads firmware when it starts, such as amdgpu's, finds it
 # on the root as a module; built in, it starts before the root is there.
 #keep drivers/gpu
-# POS's compiler and linker (the sdk), not others a system has in its PATH.
-make CC=/pos/sdk/bin/gcc HOSTCC=/pos/sdk/bin/gcc LD=/pos/sdk/bin/ld
-requires /pos/sdk/bin/gcc /pos/sdk/bin/ld make flex bison bc perl
+# pos-sdk's compiler and linker, the version selected (current), not
+# others a system has in its PATH.
+make CC=/apps/pos-sdk/current/bin/gcc HOSTCC=/apps/pos-sdk/current/bin/gcc LD=/apps/pos-sdk/current/bin/ld
+requires /apps/pos-sdk/current/bin/gcc /apps/pos-sdk/current/bin/ld make flex bison bc perl

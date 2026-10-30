@@ -1227,8 +1227,9 @@ commands.
   modules left out, except under `keep` (`LMC_KEEP`, all of a directory's
   modules: a driver that loads firmware when it starts needs to be a
   module, started once the root with the firmware is there; none by
-  default). `make` names POS's compiler (`CC=/pos/sdk/bin/gcc`), not
-  another in the `PATH`. The modules seen loaded are a list,
+  default). `make` names pos-sdk's compiler, the selected version's
+  (`CC=/apps/pos-sdk/current/bin/gcc`), not another in the `PATH`.
+  The modules seen loaded are a list,
   `/var/lib/pos/kernel/modules-seen`, that `pos-kernel record-modules`
   adds `/proc/modules` to, at every boot and shutdown
   (`pos-kernel-modules.service`, enabled by POS's preset), and before
@@ -1236,9 +1237,8 @@ commands.
   kernel. With no list, the configuration is built whole.
 * A channel's `requires` are the commands its format runs. pos-kernel
   checks them before it enables or updates the channel, and names the
-  missing ones; when the compiler is, it says to enable the sdk
-  (`pos-stage enable sdk`, or the pos-sdk package where the system has no
-  sdk image). `linus` needs the sdk and make, flex, bison, bc and perl,
+  missing ones; when the compiler is, it says to install pos-sdk.
+  `linus` needs pos-sdk and make, flex, bison, bc and perl,
   which POS does not package yet.
 * The archive, `/var/lib/pos/kernel/archive/<channel>/<kver>`, holds each
   kernel's modules directory. For each channel the system boots, its
