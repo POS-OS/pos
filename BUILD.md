@@ -893,7 +893,9 @@ Each package stages into `work/builds/<id>/dest/<name>` with `--prefix=/pos`
 With the sdk compiler, packages use `gcc`, `g++` and `ld` of
 `$sdk_prefix/bin`, whose defaults already search `/pos/include` and `/pos/lib`,
 and `pos-link` adds only
-`-L/pos/lib` and `PKG_CONFIG_LIBDIR`. No rpath: the POS loader finds
+`-L/pos/lib` and `PKG_CONFIG_LIBDIR` (`/pos/lib/pkgconfig` and, for
+the architecture-independent `systemd.pc`, `udev.pc` and `kmod.pc`,
+`/pos/share/pkgconfig`). No rpath: the POS loader finds
 `/pos/lib` through its own cache or its default search path (below).
 `/pos/include` must not be named again with `-isystem` or
 `CPLUS_INCLUDE_PATH`. That moves it in front of the libstdc++ directories,

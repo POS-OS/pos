@@ -10,5 +10,7 @@
 # "Core libs stage").
 export LDFLAGS="-L/pos/lib -Wl,--dynamic-linker=/pos/lib/ld-linux-x86-64.so.2${LDFLAGS:+ $LDFLAGS}"
 # Replace the host search path so .pc files cannot fall back to /usr.
-export PKG_CONFIG_LIBDIR=/pos/lib/pkgconfig
+# Architecture-independent .pc files (systemd.pc, udev.pc, kmod.pc: their
+# directories and versions) are in /pos/share/pkgconfig.
+export PKG_CONFIG_LIBDIR=/pos/lib/pkgconfig:/pos/share/pkgconfig
 unset PKG_CONFIG_PATH
