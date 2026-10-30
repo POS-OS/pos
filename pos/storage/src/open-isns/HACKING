@@ -1,0 +1,21 @@
+
+When hacking on open-isns, or when trying to locate a problem,
+the following information may be useful:
+
+ -	You can start the daemon using the -f option, which
+ 	prevents it from backgrounding itself. Crucial if
+	you want to run it in a debugger, or under strace.
+
+	This option works for isnsd and isnsdd
+
+ -	All tools support the "-d" option to enable debugging.
+ 	In general, you want to use "-d all" to turn on all
+	debugging options. However, you can select individual
+	debug facilities - check out the manpages and/or
+	the source code in logging.c
+
+ -	If you want to debug memory issues (crashing, memory leaks, etc),
+ 	there is a memory debuging module (mdebug.c), but it doesn't
+	currently work. So you're on your own. If you figure out
+	something useful, or you get the current mdebug.c file working,
+	please update this file.

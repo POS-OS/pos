@@ -1,0 +1,254 @@
+* Changes v0.102 to v0.103:
+
+Chris Leech (14):
+      logging: fix segfault on an underflow with an input string of all newlines
+      isns_proxy_free: fix free call on strdup string
+      libisns: fix print_size overrun
+      db mkdir: leak of strdup memory
+      isns_create_getnnext_response: resource leak
+      refresh_registration: resource leak
+      rebuild_proxy_list: move def inside loop to make lifetime clear to static checkers
+      register_exported_objects: move call definition insize loop
+      isns_msg_complete: msg_buf resource leak
+      isns_get_address: free addrinfo on error
+      rebuild_proxy_list: free proxy on error
+      isnsadm: free qry in error paths
+      isnsadm: free simp in list_objects
+      isnsadm: more memleaks in error handling paths
+
+Lee Duncan (8):
+      Quiet a commpiler warning.
+      Testing: remove deprecated perl testing code
+      Remove last remnants of the old Make/configure bulid system
+      Disable broken memory debugging
+      Update HACKING file with memory debuging update
+      Remove old stale TODO item
+      Update the git ignore list for meson
+      Testing: update testing system
+
+客串一回 (1):
+      Fix the bug in compare value
+
+
+* Changes v0.101 to v0.102:
+
+Andrew Sayers (1):
+      Typo: s/overried/override/
+
+Lee Duncan (15):
+      Add a package config file for libisns.a
+      build: Remove these two files, no longer used
+      git: ignore all shared library files
+      meson builds now working
+      meson: Add ability to disable static library build
+      Add a decprecation warning to configure script.
+      meson: update README with meson info
+      meson: convert some args to 'features'
+      meson: fix error building shared lib with version
+      meson: several updates based on review
+      meson: small option usage cleanup
+      meson: update README
+      Fix two compiler warnings in slp.c
+      build: only specify version in one place
+      meson: just specify subdir for header-file install.
+
+Pavel I Volkov (1):
+      Removed bash-specific function definitions.
+
+Wenchao Hao (2):
+      isnsadm: Fix unparse command line options "-V" and "-r"
+      isnsd: socket: Make sure to create IPv6 socket default
+
+
+* Changes v0.100 to v0.101:
+
+Dmitry Bogdanov (1):
+      Fix parsing of GetNextRsp
+
+Lee Duncan (10):
+      Ignore common build files
+      Fix compiler issue when not in security mode
+      Do not ignore write() return value.
+      Fix 586 compile issue and remove -Werror
+      Added a TODO: 'make depend' not worrking
+      Update version string to "0.100".
+      Fix broken server authentication initialization.
+      Add man page for isnssetup.
+      Added TODO to test "isnsd --init"
+      Preparing for version 0.101
+
+Leo (1):
+      socket.c: include poll.h instead of sys/poll.h for POSIX compatibility
+
+Rosen Penev (2):
+      fix compilation without deprecated OpenSSL APIs
+      libisns: remove sighold and sigrelse
+
+
+* Changes v0.99 to v0.100:
+
+Chris Leech (1):
+      Travis-CI and Coverity Scan setup
+
+Lee Duncan (7):
+      Fix compiler complaint about possible alignment issue
+      add tags to ignored list of files
+      Change isns_portal_string() to return allocated string.
+      Remove old compiler option, and add "-Werror".
+      openssl: handle newer version with ifdefs
+      General cleanup for the compiler.
+      Fix problem with parsing IPv6 Addresses with brakcets.
+      Preparing for version v0.100
+      Added debugging, moved .cvsignore to .gitignore
+      fixed issues with old openssl usage
+      Adding python compiled files
+      Change isns_portal_string() to use static mem
+      Running make twice should not rebuild everything
+      Fix mdebug.c so it compiles when enabled.
+      Handle restarting test harness server correctly
+      Ignore SO lib
+      Create and use pythong unittest framework
+
+
+* Changes v0.98 to v0.99:
+
+Khem Raj (1):
+      util.h: endian.h is available on musl on linux
+
+Lee Duncan (9):
+      Export debugging print-to-stderr routine.
+      Add testing information to the README.
+      Fix error with type of node in GetNext test.
+      Cleanup: reformat and add some print statements.
+      Fix error with SCN Deregister when not registered.
+      Define 'free()' for isns_free()
+      Support building/testing for with-security=no
+      Added README info about testing without security.
+      Merge pull request #18 from kraj/kraj/musl-fix
+
+* Changes v0.97 to v0.98:
+
+Christian Seiler (1):
+      Add support for musl-libc (endian.h)
+
+Lee Duncan (7):
+      Merge pull request #10 from eroen/master
+      Merge pull request #11 from prometheanfire/prometheanfire-musl-fixes
+      Merge pull request #17 from FluffGlitter/srcdir_fixes
+      Merge pull request #13 from nacc/fix_test02
+      Merge pull request #16 from nacc/harness_changes
+      Merge pull request #15 from nacc/fix_tests
+      Merge pull request #14 from nacc/fix_test06
+
+Nishanth Aravamudan (5):
+      DD: handle Domain ID change on creation
+      tests/data/test06: sort database responses
+      tests/test06.pl: :iscsi suffix is not valid
+      tests: Sort database dump by index
+      tests/harness.pl: always treat __isns_bin as a delimiter-suffixed string
+
+Robert Beckett (2):
+      Makefile: Add support for initiating build from another directory
+      Makefile: Fix shared object dependency handling
+
+eroen (1):
+      Disable deprecated initializations for openssl-1.1.0
+
+
+* Changes v0.96 to v0.97:
+
+Christian Seiler (3):
+      Support OpenSSL 1.1
+      Support FreeBSD and GNU/kFreeBSD
+      Add support for GNU Hurd
+
+Lee Duncan (13):
+      Merge pull request #7 from chris-se/openssl11
+      Merge pull request #8 from chris-se/otheros
+      Ignore common build files
+      Fix RFC Reference and wording.
+      Adding TODO Items to README file.
+      Fix calls to err(): no newline needed.
+      Nit: fix "else" formatting.
+      Make function buf_fill static.
+      Add comment about possibly duplicate call.
+      Fix DD member doubling when restoring from DB.
+      Added more items to TODO list
+      Update to version 0.97
+      Reverting changes to libisns.vers.
+
+* Changes v0.95 to v0.96:
+
+Christian Seiler (8):
+      Add support for building a shared library
+      Build system: use LDFLAGS for building binaries
+      Fix trivial spelling mistakes in manpages
+      Fix trivial spelling mistake in isnsadm's help output
+      Fall back to port 3205 if isns is not in /etc/services
+      isnsdd: Use isnsdd.pid as default pid file
+      Make RUNDIR (/var/run) configurable
+      Warn if fallback to port 3205 is used
+
+Lee Duncan (7):
+      Install isns_config.5
+      Update GPL license information.
+      Merge pull request #2 from printesoi/fix-build-non-gcc
+      Merge pull request #4 from chris-se/shared-library
+      Merge pull request #6 from chris-se/rundir
+      Merge pull request #5 from chris-se/minor-fixes
+      Update to version 0.96
+
+Victor Dodon (1):
+      Fix build when the compiler is not gcc
+
+
+Under development:
+
+2007-09-27:
+	Fixed a serious interoperability bug
+	Added SLP support (using openslp)
+	Init script (courtesy Albert Pauw)
+
+2007-09-18:
+	Fixed a number of bugs
+	Added more test cases
+	Implemented default DD
+	Support autoconf, and building with/without openssl
+
+2007-08-24:
+	Improved discovery domain handling
+	Implemented DD deregistration
+	Backward compat fixes for older openssl versions
+	Made SCN more robust, SCN state now persists across server restarts
+	More regression tests
+
+2007-07-27:
+	Implemented SCN and ESI
+	Created iSNS discovery daemon (isnsdd)
+	Rewrote the policy handling a bit
+	Started to write some regression test code
+	Better manpages
+
+2007-07-12:
+	DevGetNext support
+	You can now define policies linking authentication
+		to permitted storage node names, permitted
+		entity names, etc.
+	Implemented DDReg
+	Queries and GetNext are now scoped to discovery domains
+	Lots of little bits and pieces for RFC conformance
+
+2005-07-18:
+	Public snapshot released
+	DSA based authentication
+	Deregistration
+	Simple file backed storage for the iSNS database
+	Entity Registration Period + Timestamp support (server side),
+		and entity expiration
+	isnsd now writes a pid file
+	Improved manual pages
+	DevGetNext support under development
+
+2007-05-11:
+	First public release, supporting register/query
+
