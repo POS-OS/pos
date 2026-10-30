@@ -33,9 +33,10 @@ glib
 qemu-guest-agent
 # POS's own integration: the default PAM stack.
 pos-integration
-# Moved to stages/sdk (developer material): diffutils, patch, man-pages.
+# Developer tools (diffutils, patch) are pos-extras'.
 # Deferred for later:
 #man-db       page viewer; needs groff, gdbm, libpipeline for that alone
+#man-pages    the pages of the Linux and C library interfaces
 #groff
 #gdbm
 #libpipeline

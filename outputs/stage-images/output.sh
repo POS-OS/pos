@@ -2,5 +2,4 @@
 output() {
   sysext_stage network core-libs system
   sysext_stage container core-libs system
-  sysext_stage sdk core-libs system
 }

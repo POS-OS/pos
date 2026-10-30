@@ -3,7 +3,7 @@ pkg() {
 
   # Only the runtime is part of the base image: gettext, ngettext and envsubst
   # for shell scripts. libintl itself comes from glibc. The translation tools
-  # (msgfmt, xgettext, autopoint) are build-time and belong to the sdk stage.
+  # (msgfmt, xgettext, autopoint) are build-time, not part of pos.
   cd "${build_dir}/gettext-runtime" || exit 1
   pkg_autotools \
     --disable-static \

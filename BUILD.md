@@ -213,7 +213,7 @@ list of the stage named after the tree.
 
 | Tree | What it holds |
 | --- | --- |
-| `core-libs`, `system`, `sdk` | the stages: their member lists, and the packages and sources of their members |
+| `core-libs`, `system` | the stages: their member lists, and the packages and sources of their members |
 | `network`, `container` | the optional stages (see "Network stage", "Container stage"), as the stages above |
 | `common` | sources of packages of several trees: gnulib |
 | `build-env` | the host and profile packages builds require (host-base, host-toolchain, gcc-host, pos-link) |
@@ -1009,7 +1009,7 @@ rpm-pos-fedora; fedora-toolbox from container-fs-dnf).
 
 | output | requires | makes |
 | --- | --- | --- |
-| `container-fs` | core-libs, system, sdk | `pos-container-fs-<stem>.tar.zst` |
+| `container-fs` | core-libs, system | `pos-container-fs-<stem>.tar.zst` |
 | `stage-images` | core-libs, system, network, container | `pos-<stage>-<stem>.raw` and `.requires` of network and container |
 | `vm-disk` | core-libs, system, stage-images | `pos-vm-disk-<stem>.qcow2` |
 | `rpm-pos` | core-libs, system | `rpm/pos`, `rpm/pos-debuginfo` |
@@ -1057,7 +1057,7 @@ runs through the image's own loader, `pos/lib/ld-linux-x86-64.so.2
 Everything is owned by root in the archive. Group write, which build trees
 pick up from the build directory, is removed except on sticky directories.
 
-`container-fs` is core-libs, system and the sdk, for `podman import` or
+`container-fs` is core-libs and system, for `podman import` or
 `docker import`. It has no `/etc/pos/ld.so.cache`; the loader searches
 `/pos/lib`. Programs are in `/pos/bin` and `/pos/sbin`, which are not in
 a container engine's default `PATH`, so the import sets it:
@@ -1268,7 +1268,7 @@ commands.
   shows as `package` and leaves alone.
 
 ## Stage images
-An optional stage (network, container, sdk) ships with an installed system without being
+An optional stage (network, container) ships with an installed system without being
 part of its `/pos`: as a system extension image in the system's library
 of stage images, which `pos-stage` enables. The stage arrives built, from
 the same build as the rest, and nothing is downloaded or integrated on
@@ -1359,7 +1359,7 @@ Fedora's repositories:
     $ sudo dnf --installroot=<root> --releasever=44 --use-host-config \
         install work/builds/<id>/rpm/pos{,-fedora}-1.0.0-1.main.202610171524.x86_64.rpm dnf
 
-* `pos` is the `/pos` tree of the stages other than sdk: the OS, as one
+* `pos` is the `/pos` tree of the stages: the OS, as one
   package. It installs nothing outside `/pos` and provides nothing Fedora
   packages require, so it installs on any Fedora system without touching
   it, and is removed again with dnf.
@@ -1446,9 +1446,8 @@ The sdk is the compiler, the assembler and linker (binutils, gcc): the
 toolchain, built by toolchain builds of pos-sdk (see "Toolchain") and
 installed in `/apps/pos-sdk/<version>` (see "Prefix"), apart from pos.
 A pos build compiles with its toolchain reference's, and pos ships only
-its gcc-runtime. pos's sdk stage (`pos/sdk/stage`) holds the developer
-tools moved out of the system stage (diffutils, patch), until they move
-to pos-extras.
+its gcc-runtime. The developer tools once in pos's sdk stage (diffutils,
+patch) are pos-extras'.
 
 binutils is what makes the sdk compiler self-contained. gcc execs `as` and
 `ld`; without POS copies it would run the build container's, whose ld
@@ -1549,7 +1548,7 @@ differently; POS follows Fedora except where noted.
 | scheduled jobs | cronie, systemd timers | both. cronie needs a `run-parts` for cron.hourly, which no listed package provides (Fedora: crontabs, Debian: debianutils) |
 | log rotation | logrotate, journald | journald handles the journal; logrotate for other files |
 | man | man-db + groff + gdbm, mandoc | neither in the base (Scope). If a viewer is ever added, mandoc is one package where man-db is four |
-| passwd.5, getspnam.3, crypt.3 | man-pages, shadow, libxcrypt | man-pages (sdk) for the first two, shadow's deleted; libxcrypt for crypt, man-pages' deleted |
+| passwd.5, getspnam.3, crypt.3 | man-pages, shadow, libxcrypt | man-pages (deferred, with man-db) for the first two, shadow's deleted; libxcrypt for crypt, man-pages' deleted |
 
 ## Deferred
 * polkit: needs glib (built, for the guest agent) and duktape. duktape's
@@ -1558,7 +1557,7 @@ differently; POS follows Fedora except where noted.
   stage waits on it.
 * gettext tools: the base ships gettext-runtime only (gettext, ngettext,
   envsubst; libintl is glibc's). msgfmt, xgettext and autopoint are build
-  tools for the sdk stage.
+  tools, not part of pos.
 
 ## Circular dependencies
 systemd links libmount and libblkid from util-linux, and util-linux links

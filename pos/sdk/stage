@@ -1,9 +1,0 @@
-# Developer tools and documentation, moved here from the system stage
-# (BUILD.md "System stage", OS boundary). Not part of a base system
-# image: end-user installs can omit this stage. The toolchain (binutils,
-# gcc) is pos-sdk's, in /apps/pos-sdk/<version>; a pos build takes it from
-# its toolchain reference. diffutils and patch are to move to pos-extras,
-# and the stage to go.
-diffutils
-patch
-#man-pages

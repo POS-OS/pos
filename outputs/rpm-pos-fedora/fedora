@@ -85,8 +85,6 @@ dracut dracut
 # dracut: Fedora's subpackages (dracut-network, dracut-squash, ...) are not
 # listed; POS's dracut has their modules, but not the Fedora configuration
 # (dracut-config-*).
-diffutils diffutils
-patch patch
 pos-integration fedora-release fedora-release-common fedora-release-identity-basic
 # pos-integration: the system is POS: /pos/lib/os-release, with pos-fedora's
 # /usr/lib/os-release and /etc/os-release links to it. Fedora's presets
