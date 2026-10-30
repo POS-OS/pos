@@ -717,7 +717,8 @@ source_of() {
     return 0
   fi
   SOURCE_EPOCH=$(git -C "$base" log -1 --format=%ct HEAD -- "${SRCPATH[$s]}")
-  SOURCE_VERSION=$(git -C "$base" show "HEAD:${SRCPATH[$s]}.upstream" 2>/dev/null |
+  # A source of the project itself (pos-integration) has no .upstream, and no version.
+  SOURCE_VERSION=$({ git -C "$base" show "HEAD:${SRCPATH[$s]}.upstream" 2>/dev/null || true; } |
     awk '{v[$1] = $2} END {if (v["ref"] != "" && v["commit"] != "" && v["date"] != "")
       print v["ref"] "-" substr(v["date"], 1, 4) substr(v["date"], 6, 2) substr(v["date"], 9, 2) "-" substr(v["commit"], 1, 12)}')
   if has_prepare "$s"; then
