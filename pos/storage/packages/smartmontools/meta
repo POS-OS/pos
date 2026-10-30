@@ -1,3 +1,5 @@
 build-requires gcc pos-link
 # libstdc++ (gcc-runtime), libsystemd.
 requires glibc gcc-runtime systemd
+# prepare.sh: the version from the upstream history.
+prepare-requires git-core
