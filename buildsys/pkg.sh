@@ -24,6 +24,12 @@
 #                   $POS_DEST_DIR$POS_PREFIX
 #   POS_OUTPUTS     further packages this build produces (meta "outputs");
 #                   the recipe installs each into $(pkg_output <name>)
+#   POS_OUTPUT_PREFIXES  the prefix of each output, as <output>=<prefix>
+#                   words: POS_PREFIX, or /pos for one whose meta says so
+#   POS_SDK_PREFIX  the prefix of the sdk the build compiles with, its
+#                   toolchain reference's (/apps/pos-sdk/<version>, /pos/sdk
+#                   for toolchains from before prefixes); a pos-sdk build
+#                   installs the new one in its own prefix
 #   POS_DEBUG_DIR   where _pkg_finish puts the package's separate debug
 #                   info, $POS_DEBUG_DIR$POS_PREFIX/lib/debug; an output's goes
 #                   next to it, as with the staging directories
@@ -60,11 +66,12 @@ _require_container() {
 # Initialize the package build environment and directory layout before pkg() runs.
 # Inputs (environment):
 #   POS_BASE, POS_PACKAGE, POS_RECIPE_DIR, POS_PREFIX, POS_SRC_DIR,
-#   POS_BUILD_DIR, POS_DEST_DIR, POS_DEBUG_DIR, POS_OUTPUTS, POS_ENV_SCRIPTS
+#   POS_BUILD_DIR, POS_DEST_DIR, POS_DEBUG_DIR, POS_OUTPUTS, POS_ENV_SCRIPTS,
+#   POS_SDK_PREFIX
 # Outputs (shell variables set for pkg()):
 #   base, recipe_dir, src_dir, build_dir, dest_dir, debug_dir, prefix (the
 #   build's: /pos, or /apps/pos-extras/<version>), pos_prefix (/pos),
-#   sdk_prefix (/pos/sdk), sysconfdir (/etc), localstatedir (/var), nproc,
+#   sdk_prefix (the compiler's sdk), sysconfdir (/etc), localstatedir (/var), nproc,
 #   CFLAGS, CXXFLAGS, LDFLAGS
 _pkg_setup() {
   _require_container
@@ -76,9 +83,9 @@ _pkg_setup() {
   prefix=${POS_PREFIX:?}
   # The OS, which every build links against, whatever its own prefix.
   pos_prefix=/pos
-  # The sdk (the toolchain) is one directory in pos's prefix, which can be
-  # left out of an image or mounted on its own (BUILD.md "Prefix").
-  sdk_prefix=${pos_prefix}/sdk
+  # The sdk (the toolchain) the build compiles with, in its own prefix
+  # (BUILD.md "Prefix").
+  sdk_prefix=${POS_SDK_PREFIX:-${pos_prefix}/sdk}
   # Configuration is read from the machine's /etc, never from inside the
   # prefix. Variable data is /var. Files a package installs under either
   # are shipped defaults; _pkg_finish moves them to /pos/share/factory
@@ -138,6 +145,19 @@ pkg_output() {
     exit 1
   fi
   echo "$(dirname "$dest_dir")/$1"
+}
+
+# The prefix an output installs in: the build's, or /pos (meta prefix), as
+# pos-sdk's gcc-runtime does.
+# Inputs:
+#   $1    output name
+#   POS_OUTPUT_PREFIXES, prefix
+pkg_output_prefix() {
+  local w
+  for w in ${POS_OUTPUT_PREFIXES:-}; do
+    [[ ${w%%=*} != "$1" ]] || { echo "${w#*=}"; return; }
+  done
+  echo "$prefix"
 }
 
 # Copy the source into the build tree, and each further source into a
@@ -402,8 +422,9 @@ _pkg_split() {
 # Inputs:
 #   $1    staging directory to scan ($dest_dir or output staging dir)
 #   $2    debuginfo destination directory ($debug_dir or output debug dir)
+#   [$3]  the tree's prefix (default $prefix)
 _pkg_strip() {
-  local dest=$1 debug=$2 f magic type id dbg mode
+  local dest=$1 debug=$2 pre=${3:-$prefix} f magic type id dbg mode
   local -A seen=()
   while IFS= read -r -d '' f; do
     # ELF, or an ar archive. A .a can also be a linker script (glibc's
@@ -422,7 +443,7 @@ _pkg_strip() {
       if [[ $type == EXEC || $type == DYN ]]; then
         id=$(readelf -n "$f" 2>/dev/null | awk '$1 == "Build" && $2 == "ID:" {print $3}')
         if [[ -n $id ]]; then
-          dbg=$debug${prefix}/lib/debug/.build-id/${id:0:2}/${id:2}.debug
+          dbg=$debug${pre}/lib/debug/.build-id/${id:0:2}/${id:2}.debug
           if [[ ! -e $dbg ]]; then
             mkdir -p "$(dirname "$dbg")"
             objcopy --only-keep-debug "$f" "$dbg"
@@ -439,7 +460,7 @@ _pkg_strip() {
       fi
     fi
     chmod "$mode" "$f"
-  done < <(find "$dest" \( -path "$dest${prefix}/include" -o -path "$dest${prefix}/share" \) -prune -o -type f -print0)
+  done < <(find "$dest" \( -path "$dest${pre}/include" -o -path "$dest${pre}/share" \) -prune -o -type f -print0)
 }
 
 # Finalize the package staging tree(s) after pkg() completes: relocate /etc and
@@ -453,7 +474,7 @@ _pkg_finish() {
   _pkg_split
   _pkg_strip "$dest_dir" "$debug_dir"
   for o in ${POS_OUTPUTS:-}; do
-    _pkg_strip "$(pkg_output "$o")" "$(dirname "$debug_dir")/$o"
+    _pkg_strip "$(pkg_output "$o")" "$(dirname "$debug_dir")/$o" "$(pkg_output_prefix "$o")"
   done
   _pkg_cleanup
 }

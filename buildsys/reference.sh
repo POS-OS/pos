@@ -61,6 +61,24 @@ ref_prefix() {
   echo "${p:-/pos}"
 }
 
+# The package records of a restored reference: in its prefix, and in /pos,
+# where a package of another prefix's project can install (meta prefix:
+# pos-sdk's gcc-runtime).
+# Inputs:
+#   $1      reference ID
+#   refs    work/references directory
+ref_metas() {
+  local pre meta
+  pre=$(ref_prefix "$1")
+  for meta in "$refs/$1"/dest/*"$pre"/lib/pos/packages/*/meta; do
+    [[ ! -f $meta ]] || echo "$meta"
+  done
+  [[ $pre != /pos ]] || return 0
+  for meta in "$refs/$1"/dest/*/pos/lib/pos/packages/*/meta; do
+    [[ ! -f $meta ]] || echo "$meta"
+  done
+}
+
 # The references a new build of PIPELINE uses, restored: the settings (a
 # build ID or a release, reference_named), else
 # for a pos or extras build the pos reference its toolchain reference was
@@ -266,8 +284,7 @@ load_references() {
   for ref in "$TOOLCHAIN_REF" "$POS_REF"; do
     [[ $ref != none ]] || continue
     from=$(ref_info "$ref" pipeline)
-    for meta in "$refs/$ref"/dest/*"$(ref_prefix "$ref")"/lib/pos/packages/*/meta; do
-      [[ -f $meta ]] || continue
+    while read -r meta; do
       p=$(basename "$(dirname "$meta")")
       [[ -n ${KIND[$p]:-} && ${PIPE[$p]} == "${from:-pos}" ]] || continue
       if [[ $from == toolchain ]]; then
@@ -276,7 +293,7 @@ load_references() {
         POSREF[$p]=1
       fi
       REF_REQ[$p]=$(awk '$1 == "requires" {$1 = ""; print}' "$meta" | xargs)
-    done
+    done < <(ref_metas "$ref")
   done
   return 0
 }
