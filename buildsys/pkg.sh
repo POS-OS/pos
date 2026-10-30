@@ -410,6 +410,73 @@ _pkg_split() {
   find "$dest_dir" -mindepth 1 -depth -type d -empty -delete
 }
 
+# Give the ELF programs and libraries of a staging tree outside /pos the
+# runpath to the libraries of their own prefix they link, relative to
+# themselves ($ORIGIN/../lib from bin), so a program loads the libraries
+# of the tree it comes from, wherever the tree is (BUILD.md "Prefix").
+# The POS loader's cache covers /pos/lib only. The directories looked in
+# are <prefix>/lib and the runpath entries in the prefix a build tool set
+# (libtool's absolute libdir); a needed library is found in this build's
+# staging trees or the build environment's prefix (other packages of the
+# project). Entries outside the prefix (build directories) are dropped.
+# /pos keeps no runpath at all. Uses patchelf (a project's pos-link
+# host-requires it).
+# Inputs:
+#   $1    staging directory to scan ($dest_dir or output staging dir)
+#   [$2]  the tree's prefix (default $prefix)
+#   prefix, pos_prefix, dest_dir, POS_OUTPUTS
+_pkg_runpath() {
+  local dest=$1 prefix=${2:-$prefix} f o d s t old new mode id
+  local -a trees=("$dest_dir") needed=() dirs=() entries=()
+  local -A seen=()
+  [[ $prefix != "$pos_prefix" && -d $dest$prefix ]] || return 0
+  for o in ${POS_OUTPUTS:-}; do
+    trees+=("$(pkg_output "$o")")
+  done
+  # The build environment's own tree, mounted read-only.
+  trees+=("")
+  while IFS= read -r -d '' f; do
+    [[ $(head -c 4 "$f" | od -An -c | tr -d ' \n') == 177ELF ]] || continue
+    id=$(stat -c %d:%i "$f")
+    [[ -z ${seen[$id]:-} ]] || continue
+    seen[$id]=1
+    mapfile -t needed < <(readelf -d "$f" 2>/dev/null | awk -F'[][]' '/\(NEEDED\)/ {print $2}')
+    ((${#needed[@]})) || continue
+    old=$(readelf -d "$f" 2>/dev/null | awk -F'[][]' '/\((RUNPATH|RPATH)\)/ {print $2}')
+    dirs=("$prefix/lib")
+    entries=()
+    for d in ${old//:/ }; do
+      case $d in
+        '$ORIGIN'*) entries+=("$d") ;;
+        "$prefix" | "$prefix"/*) [[ " ${dirs[*]} " == *" $d "* ]] || dirs+=("$d") ;;
+      esac
+    done
+    for d in "${dirs[@]}"; do
+      for s in "${needed[@]}"; do
+        for t in "${trees[@]}"; do
+          [[ -e $t$d/$s ]] || continue
+          d=$(realpath -m -s --relative-to="$(dirname "${f#"$dest"}")" "$d")
+          [[ $d == . ]] && entries+=('$ORIGIN') || entries+=("\$ORIGIN/$d")
+          continue 3
+        done
+      done
+    done
+    new=$(IFS=:; echo "${entries[*]}")
+    [[ $new != "$old" ]] || continue
+    command -v patchelf >/dev/null ||
+      { echo "${package}: no patchelf to set runpaths with (host-requires patchelf in pos-link)" >&2; exit 1; }
+    mode=$(stat -c %a "$f")
+    chmod u+w "$f"
+    if [[ -n $new ]]; then
+      patchelf --set-rpath "$new" "$f"
+    else
+      patchelf --remove-rpath "$f"
+    fi
+    chmod "$mode" "$f"
+    echo "${package}: runpath ${f#"$dest"}: ${old:-none} -> ${new:-none}"
+  done < <(find "$dest" \( -path "$dest${prefix}/include" -o -path "$dest${prefix}/share" \) -prune -o -type f -print0)
+}
+
 # Split the debug info off the ELF programs and libraries of a staging
 # tree and strip them, as Fedora's debuginfo packages do. The debug info
 # goes to <debug><prefix>/lib/debug/.build-id/<xx>/<rest>.debug, where gdb and
@@ -464,16 +531,19 @@ _pkg_strip() {
 }
 
 # Finalize the package staging tree(s) after pkg() completes: relocate /etc and
-# /var defaults to factory, split secondary outputs, strip ELF binaries into
-# separate debuginfo, and clean up the build directory.
+# /var defaults to factory, split secondary outputs, set runpaths outside
+# /pos, strip ELF binaries into separate debuginfo, and clean up the build
+# directory.
 # Inputs:
 #   dest_dir, debug_dir, build_dir, POS_OUTPUTS
 _pkg_finish() {
   local o
   _pkg_factory
   _pkg_split
+  _pkg_runpath "$dest_dir"
   _pkg_strip "$dest_dir" "$debug_dir"
   for o in ${POS_OUTPUTS:-}; do
+    _pkg_runpath "$(pkg_output "$o")" "$(pkg_output_prefix "$o")"
     _pkg_strip "$(pkg_output "$o")" "$(dirname "$debug_dir")/$o" "$(pkg_output_prefix "$o")"
   done
   _pkg_cleanup

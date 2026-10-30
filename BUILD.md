@@ -736,6 +736,18 @@ also in a pos-sdk build, which installs the new sdk in `$prefix`. A
 staging tree is a root holding the prefix (`dest/<name>/pos`,
 `dest/<name>/apps/pos-extras/1.0.0`).
 
+The POS loader finds only `/pos/lib` (see "Library directory"). A
+program or library in another prefix that links libraries of that
+prefix gets a runpath to them relative to itself: `$ORIGIN/../lib` from
+`bin`. `_pkg_runpath` (`buildsys/pkg.sh`) sets it after install with
+patchelf, which the project's `pos-link` declares (`host-requires`), so
+`$ORIGIN` need not survive configure and make quoting. It looks in
+`<prefix>/lib` and in the runpath entries in the prefix a build tool set
+(libtool's absolute libdir), and drops entries outside the prefix (build
+directories). A program then loads the libraries of the tree it comes
+from, wherever that tree is and whichever versions sit beside it, as
+apps bundle theirs. `/pos` keeps no runpath.
+
 The sdk, the toolchain (see "SDK"), is one directory of the prefix,
 `/pos/sdk` (`$sdk_prefix` in `buildsys/pkg.sh`), with its own `bin`,
 `lib`, `libexec`, `include` and `share`. `/pos/bin` and `/pos/lib` are the
@@ -913,7 +925,7 @@ library lookup (dracut-install, and the cache it makes in the initramfs)
 is changed by its recipe to read `/etc/pos/ld.so.conf` and search
 `/pos/lib`, as the POS loader does.
 
-Binaries carry no rpath. The loader searches the binary's RPATH/RUNPATH,
+Binaries in `/pos` carry no rpath (other prefixes: see "Prefix"). The loader searches the binary's RPATH/RUNPATH,
 then `LD_LIBRARY_PATH`, then its cache, then its default directory
 (`/pos/lib`). The POS cache is built from `/pos/lib` and
 `/etc/pos/ld.so.conf`, so it gives the same answer as the default; an rpath
