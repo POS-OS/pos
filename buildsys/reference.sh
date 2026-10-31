@@ -82,26 +82,36 @@ ref_metas() {
 }
 
 # The references a new build of PIPELINE uses, restored: the settings (a
-# build ID or a release, reference_named), else
-# for a pos or extras build the pos reference its toolchain reference was
-# built on, else the store's defaults.
+# build ID or a release, reference_named), else the store's defaults. The
+# pos reference is the setting, else the project file's pos-reference
+# line; a toolchain build needs one of them, since the glibc it builds on
+# is the oldest its toolchain runs on. A pos or extras build takes the
+# store's default, which pos_ref_check holds to that glibc or newer, else
+# the one its toolchain reference was built on.
 # Inputs:
 #   PIPELINE, config(toolchain-reference, pos-reference, tools,
-#   reference-dir)
+#   reference-dir), base
 # Outputs:
 #   TOOLCHAIN_REF, POS_REF, TOOLS_REF (reference IDs or none)
 references_choose() {
+  local pin
   TOOLCHAIN_REF=$(reference_named "$(config toolchain-reference)") || exit 1
   TOOLCHAIN_REF=${TOOLCHAIN_REF:-$(reference_default toolchain)}
   TOOLCHAIN_REF=${TOOLCHAIN_REF:-none}
   reference_restore "$TOOLCHAIN_REF" toolchain
   POS_REF=$(reference_named "$(config pos-reference)") || exit 1
-  if [[ -z $POS_REF && $PIPELINE != toolchain ]]; then
-    # The bootstrap builds the first pos reference without one.
-    [[ $TOOLCHAIN_REF == none ]] || POS_REF=$(ref_info "$TOOLCHAIN_REF" pos-reference)
+  pin=$(awk '$1 == "pos-reference" {print $2}' "$base/project")
+  if [[ -z $POS_REF && -n $pin ]]; then
+    POS_REF=$(reference_named "$pin") || exit 1
   fi
-  [[ -n $POS_REF || ($PIPELINE == pos && $TOOLCHAIN_REF == none) ]] ||
+  if [[ -z $POS_REF && $PIPELINE == toolchain ]]; then
+    die "a toolchain build builds on the pos reference its project pins, the oldest glibc its toolchain runs on: a pos-reference line in $base/project, or the pos-reference setting"
+  fi
+  # The bootstrap builds the first pos reference without one.
+  if [[ -z $POS_REF && ($PIPELINE != pos || $TOOLCHAIN_REF != none) ]]; then
     POS_REF=$(reference_default pos)
+    [[ -n $POS_REF || $TOOLCHAIN_REF == none ]] || POS_REF=$(ref_info "$TOOLCHAIN_REF" pos-reference)
+  fi
   POS_REF=${POS_REF:-none}
   reference_restore "$POS_REF" pos
   tools_choose

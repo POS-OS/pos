@@ -169,7 +169,7 @@ an unknown key is an error.
 | `tools-image` | `POS_TOOLS_IMAGE` | `registry.fedoraproject.org/fedora:<release>` |
 | `reference-dir` | `POS_REFERENCE_DIR` | none: no reference store |
 | `toolchain-reference` | `POS_TOOLCHAIN_REFERENCE` | the store's default (see "Reference builds"); a build ID or `<project>/<release>`; `none`: a build with Fedora's compiler |
-| `pos-reference` | `POS_POS_REFERENCE` | a pos build: its toolchain reference's; a toolchain build: the store's default; a build ID or `<project>/<release>` |
+| `pos-reference` | `POS_POS_REFERENCE` | the project file's `pos-reference`; else a pos or extras build: the store's default, else its toolchain reference's; a toolchain build: none, an error (see "Reference builds"); a build ID or `<project>/<release>` |
 | `tools` | `POS_TOOLS` | `fedora`: host-base in the tools image; an extras reference, a build ID or `<project>/<release>`: its tools and the pos reference's base (see "Build tools") |
 | `release-dir` | `POS_RELEASE_DIR` | none: `publish` needs it; the release library of every project, a directory each; read by `publish` and to restore references, not recorded by builds |
 | `download-dir` | `POS_DOWNLOAD_DIR` | `work/downloads`: the sources' release archives (see "Release archives"); not recorded by builds |
@@ -198,9 +198,9 @@ project the same way.
 
 A project has the packages of one pipeline, which a `pipeline` line of
 its `project` file names: `pipeline toolchain` in pos-sdk, `pipeline
-extras` in pos-extras, none (pos) in pos. The other pipelines' packages
-are known from the references, by the
-`meta` each installed in `<prefix>/lib/pos/packages/<package>/`, of the
+extras` in pos-extras, none (pos) in pos. A `pos-reference` line pins
+the pos reference of its builds (see "Reference builds"). The other
+pipelines' packages are known from the references, by the `meta` each installed in `<prefix>/lib/pos/packages/<package>/`, of the
 pipeline the reference's `info` names, and taken from them as any
 reference package is; a capability nothing in the project provides is checked when
 a build resolves it. A package's `env.sh` is installed beside its `meta`,
@@ -398,14 +398,15 @@ kinds (`info`: `pipeline`), its project's:
   toolchain packages only. Its compiler is the toolchain reference's gcc, or
   Fedora's without one; it builds on the glibc of a pos reference, a
   stored pos build, with its kernel headers (linux-headers), and never
-  builds either. `./build reference` stores it
-  as the toolchain reference of later builds, which records the pos
-  reference it was built on.
+  builds either. Its pos reference is the one its `project` file pins
+  (`pos-reference`), the oldest glibc the toolchain serves.
+  `./build reference` stores it as the toolchain reference of later
+  builds, which records the pos reference it was built on.
 * A pos build (`run --new` in pos) builds every stage with the toolchain
   reference's toolchain, and never builds a toolchain package. Its own
   packages are all built from the checkout; core-libs, which lists
   gcc-runtime, is assembled with the toolchain reference's. Until it has built them, core-libs is the
-  pos reference's: by default the one the toolchain was built on.
+  pos reference's: by default the store's.
   `./build reference` stores its core-libs and base as the pos reference
   of later toolchain and extras builds.
 
@@ -424,9 +425,9 @@ them in pos-sdk:
 
     pos$     POS_TOOLCHAIN_REFERENCE=none ./build run --new glibc  # glibc, linux-headers by Fedora's gcc
     pos$     ./build reference                                     # the first pos reference
-    pos-sdk$ POS_TOOLCHAIN_REFERENCE=none ./build run --new        # by Fedora's gcc
+    pos-sdk$ POS_TOOLCHAIN_REFERENCE=none POS_POS_REFERENCE=<it> ./build run --new  # by Fedora's gcc
     pos-sdk$ ./build reference
-    pos-sdk$ ./build run --new                                     # by itself
+    pos-sdk$ POS_POS_REFERENCE=<it> ./build run --new              # by itself
     pos-sdk$ ./build reference
     pos$     ./build run --new                                     # the stages
     pos$     ./build reference                                     # pos reference of later toolchains
@@ -439,9 +440,12 @@ references, stored as the next toolchain reference.
 
 A toolchain built on glibc N runs on glibc N or newer (symbol
 versioning), so a toolchain is built on the oldest pos it serves, and a
-glibc update in pos needs no toolchain build. A pos build may take a
-newer pos reference than its toolchain was built on (`pos-reference`);
-an older glibc is refused. libstdc++ (gcc-runtime) is configured against
+glibc update in pos needs no toolchain build. pos-sdk pins its pos
+reference in its `project` file (`pos-reference <id or release>`), so a
+newer pos stored as the default does not raise what the sdk needs; the
+pin moves when that is meant. A pos or extras build takes the store's
+newest pos reference, which may be newer than its toolchain was built
+on; an older glibc is refused. libstdc++ (gcc-runtime) is configured against
 the glibc it is built on: new glibc features reach it only with a
 toolchain build.
 
@@ -489,7 +493,8 @@ reference and on the core-libs and base of a pos reference, as a pos build takes
 them before it has built its own; it builds no package of either.
 Fedora's compiler builds only from nothing, which the extras are not
 part of: an extras build needs a toolchain reference. Its pos reference
-is, by default, the one its toolchain reference was built on. A pos
+is, by default, the store's (see "Reference builds"): the extras link
+its libraries. A pos
 package outside core-libs and base is not in the pos reference, so an
 extras package cannot require it. `./build reference` stores a complete extras
 build as an extras reference; builds do not take one yet. The extras
@@ -661,12 +666,17 @@ settings take a build ID or a release, `<project>/<release>`
 (`pos-sdk/1.0-1.main.20261029-2129`), which names its build; `info`
 records the build ID.
 
-A pos build's pos reference is, by default, the one its toolchain
-reference was built on (`pos-reference` in the reference's `info`); the
-`pos-reference` setting can name a newer one, as long as its glibc is
-not older (`include/features.h`). A toolchain reference from before pos
+A build's pos reference is the `pos-reference` setting, else the
+`pos-reference` line of its project's `project` file. A toolchain build
+needs one of them: the glibc it builds on is the oldest its toolchain
+runs on, which the project decides, not the store. A pos or extras build
+otherwise takes the store's `default-pos`, and without one the pos
+reference its toolchain reference was built on (`pos-reference` in the
+reference's `info`); its glibc may not be older than that one's
+(`include/features.h`). A toolchain reference from before pos
 references holds glibc as well, which is not used: it was built on that
-glibc, and a pos build with it needs `pos-reference` set.
+glibc; a pos build with it takes the store's pos reference or the
+setting's.
 
 Comparing a pos build made with a toolchain built from nothing to one
 made with a later toolchain (`buildsys/compare-builds.sh`: the files of
