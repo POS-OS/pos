@@ -344,6 +344,17 @@ pkg_setuid() {
   done
 }
 
+# Remove the info directory index (<prefix>/share/info/dir) that make
+# install writes where install-info is on PATH: it indexes one package's
+# manuals, and every package would ship it. Readers build the index of
+# what is installed, as Fedora's packages leave it to info's trigger.
+# Inputs:
+#   $1    staging directory ($dest_dir or output staging dir)
+#   [$2]  the tree's prefix (default $prefix)
+_pkg_infodir() {
+  rm -f "$1${2:-$prefix}/share/info/dir"
+}
+
 # Remove the scratch build directory ($build_dir).
 # Inputs:
 #   build_dir    scratch build directory
@@ -590,19 +601,21 @@ _pkg_strip() {
 }
 
 # Finalize the package staging tree(s) after pkg() completes: relocate /etc and
-# /var defaults to factory, split secondary outputs, set runpaths outside
-# /pos, strip ELF binaries into separate debuginfo, and clean up the build
-# directory.
+# /var defaults to factory, split secondary outputs, drop the info index,
+# set runpaths outside /pos, check what the ELF files link, strip them into
+# separate debuginfo, and clean up the build directory.
 # Inputs:
 #   dest_dir, debug_dir, build_dir, POS_OUTPUTS
 _pkg_finish() {
   local o
   _pkg_factory
   _pkg_split
+  _pkg_infodir "$dest_dir"
   _pkg_runpath "$dest_dir"
   _pkg_linkcheck "$dest_dir"
   _pkg_strip "$dest_dir" "$debug_dir"
   for o in ${POS_OUTPUTS:-}; do
+    _pkg_infodir "$(pkg_output "$o")" "$(pkg_output_prefix "$o")"
     _pkg_runpath "$(pkg_output "$o")" "$(pkg_output_prefix "$o")"
     _pkg_linkcheck "$(pkg_output "$o")" "$(pkg_output_prefix "$o")"
     _pkg_strip "$(pkg_output "$o")" "$(dirname "$debug_dir")/$o" "$(pkg_output_prefix "$o")"

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Compare the packages of two builds: the files each package installs, and
-# the libraries every ELF file in it links against (NEEDED). Differences
+# the libraries every ELF file in it links against (NEEDED), with paths in
+# each build's prefix as <prefix>. Differences
 # between builds of the same sources point at what the build environment
 # leaked into a package: a library found because it happened to be there,
 # or a tool that changed the output.
@@ -46,6 +47,11 @@ prefix_of() {
 }
 
 (($# >= 2)) || usage
+# Without readelf every NEEDED list would be empty, and compare equal.
+command -v readelf >/dev/null || {
+  echo "compare-builds: no readelf; run it where binutils is, such as a build's tools image" >&2
+  exit 2
+}
 a=$(build_dir "$1")
 b=$(build_dir "$2")
 shift 2
@@ -71,8 +77,22 @@ built() {
   done | sort -u
 }
 
+# Paths in a build's prefix as <prefix>/..., so builds of a project whose
+# prefix names the product release (BUILD.md "Prefix") compare.
+# Inputs:
+#   $1    build directory
+#   stdin paths
+unprefix() {
+  local pre=${prefix[$1]}
+  if [[ $pre == /pos ]]; then
+    cat
+  else
+    awk -v p="$pre" '{ if (index($0, p) == 1 && (length($0) == length(p) || substr($0, length(p) + 1, 1) == "/")) $0 = "<prefix>" substr($0, length(p) + 1); print }'
+  fi
+}
+
 files() {
-  cat "$(record "$1" "$2")/files"
+  unprefix "$1" <"$(record "$1" "$2")/files"
 }
 
 needed() {
@@ -81,7 +101,7 @@ needed() {
     [[ $(head -c 4 "$f" | od -An -c | tr -d ' ') == 177ELF ]] || continue
     printf '%s: %s\n' "${f#"$dest"}" \
       "$(readelf -d "$f" 2>/dev/null | sed -n 's/.*(NEEDED).*\[\(.*\)\]/\1/p' | xargs)"
-  done < <(find "$dest" -type f -print0) | sort
+  done < <(find "$dest" -type f -print0) | unprefix "$1" | sort
 }
 
 packages=("$@")
