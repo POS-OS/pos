@@ -7,4 +7,9 @@ build-requires cryptsetup
 # util-linux links libsystemd, so systemd is built against util-linux-bootstrap.
 requires glibc util-linux-bootstrap libseccomp kmod pam acl libcap libxcrypt
 requires openssl elfutils pcre2 zlib bzip2 xz zstd
+# libsystemd and libudev are an output, systemd-libs, the base stage's;
+# systemd requires it, so what requires systemd gets its headers and
+# libraries too.
+requires systemd-libs
+outputs systemd-libs
 host-requires meson ninja-build python3-jinja2 python3-pyyaml python3-pyelftools

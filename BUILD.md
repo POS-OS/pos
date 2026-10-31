@@ -136,7 +136,7 @@ build's `info`, everything named after it (stage and debug archives,
 image archives with their package lists, disks, the recipes and engine
 archives), its source archives, its RPM packages in `rpm/`, its
 reference archive (`pos-ref-<kind>-<id>.tar.zst`, as `./build reference`
-writes it: a pos release's core-libs, a pos-sdk release's toolchain
+writes it: a pos release's core-libs and base, a pos-sdk release's toolchain
 packages, which is what a pos-sdk release ships), and `SHA256SUMS`. It refuses
 a release that is there already, and one whose RPM packages would not
 update those of a release of the same product version there (the same
@@ -213,7 +213,7 @@ list of the stage named after the tree.
 
 | Tree | What it holds |
 | --- | --- |
-| `core-libs`, `system` | the stages: their member lists, and the packages and sources of their members |
+| `core-libs`, `base`, `system` | the stages: their member lists, and the packages and sources of their members |
 | `network`, `container`, `storage` | the optional stages (see "Network stage", "Container stage", "Storage stage"), as the stages above |
 | `common` | sources of packages of several trees: gnulib |
 | `build-env` | the host and profile packages builds require (host-base, host-toolchain, gcc-host, pos-link) |
@@ -405,8 +405,8 @@ kinds (`info`: `pipeline`), its project's:
   packages are all built from the checkout; core-libs, which lists
   gcc-runtime, is assembled with the toolchain reference's. Until it has built them, core-libs is the
   pos reference's: by default the one the toolchain was built on.
-  `./build reference` stores its core-libs as the pos reference of later
-  toolchain builds.
+  `./build reference` stores its core-libs and base as the pos reference
+  of later toolchain and extras builds.
 
 The interface between the two is a built pos: pos-sdk builds nothing of
 pos, and pos nothing of the toolchain (see "Reference builds").
@@ -484,13 +484,13 @@ The extras are the packages of the extras pipeline, the pos-extras
 project's (`pipeline extras`): the tools builds use and applications, not
 part of the OS. An extras build (`run --new` in pos-extras) builds every
 package of its project, by default, with the toolchain of a toolchain
-reference and on the core-libs of a pos reference, as a pos build takes
+reference and on the core-libs and base of a pos reference, as a pos build takes
 them before it has built its own; it builds no package of either.
 Fedora's compiler builds only from nothing, which the extras are not
 part of: an extras build needs a toolchain reference. Its pos reference
 is, by default, the one its toolchain reference was built on. A pos
-package outside core-libs is not in the pos reference, so an extras
-package cannot require it. `./build reference` stores a complete extras
+package outside core-libs and base is not in the pos reference, so an
+extras package cannot require it. `./build reference` stores a complete extras
 build as an extras reference; builds do not take one yet. The extras
 install in `/apps/pos-extras/<version>` (see "Prefix"); pos-extras's
 `pos-link` links against that prefix and `/pos`.
@@ -565,14 +565,15 @@ kinds:
   obsoletes provides: the reference's gcc stands in for `gcc-host`), or,
   in a pos build, if no target of the run provides it. A pos build does
   not build the toolchain packages, so they are always the reference's.
-* A pos reference is a pos build's core-libs: glibc, the kernel headers
-  and the libraries that link glibc. It must hold what the toolchain
+* A pos reference is a pos build's core-libs and base stages: glibc, the
+  kernel headers and the libraries that link glibc, and the base's tools
+  and libraries (see "Base stage"). It must hold what the toolchain
   packages require of pos (glibc, linux-headers). Its packages are
   `<name>@pos`, and provide what no package of the build does in a
   toolchain build, which builds no pos package, or, in a pos build, if no
   target of the run provides it. A run of a single
   package in a new pos build builds only that package, against the pos
-  reference's core-libs; what it requires outside core-libs must be among
+  reference's core-libs and base; what it requires outside them must be among
   the targets. In an extras build, as in a toolchain build, a pos
   reference package provides what no package of the build does, and a
   toolchain reference package what no target provides.
@@ -598,7 +599,7 @@ the reference store, the `reference-dir` setting, as
 `pos-ref-<kind>-<id>.tar.zst` (`toolchain`, `pos`, `extras`): its
 `info` and the staging trees and debug info of what it stores. Of a
 toolchain or extras build, which must be complete, that is its packages
-and outputs; of a pos build, its core-libs packages, which must include
+and outputs; of a pos build, its core-libs and base packages, which must include
 glibc. It marks the build the store's `default-<kind>`, the reference of
 that kind of new builds (a store's
 `default` from before pos references counts as `default-toolchain`). A
@@ -1000,7 +1001,7 @@ An output is what a build makes of its assembled stages: an image, a disk,
 RPM packages. `outputs/<output>/` holds `meta`, which declares what it is
 made from, and `output.sh`, its recipe (format in `buildsys/outputs.sh`):
 
-    requires core-libs system
+    requires core-libs base system
     host-requires rpm-build
 
 `requires` names stages and other outputs: an output is made from the
@@ -1011,11 +1012,11 @@ rpm-pos-fedora; fedora-toolbox from container-fs-dnf).
 
 | output | requires | makes |
 | --- | --- | --- |
-| `container-fs` | core-libs, system | `pos-container-fs-<stem>.tar.zst` |
-| `stage-images` | core-libs, system, network, container, storage | `pos-<stage>-<stem>.raw` and `.requires` of network, container and storage |
-| `vm-disk` | core-libs, system, stage-images | `pos-vm-disk-<stem>.qcow2` |
-| `rpm-pos` | core-libs, system | `rpm/pos`, `rpm/pos-debuginfo` |
-| `rpm-pos-fedora` | core-libs, system | `rpm/pos-fedora` |
+| `container-fs` | core-libs, base, system | `pos-container-fs-<stem>.tar.zst` |
+| `stage-images` | core-libs, base, system, network, container, storage | `pos-<stage>-<stem>.raw` and `.requires` of network, container and storage |
+| `vm-disk` | core-libs, base, system, stage-images | `pos-vm-disk-<stem>.qcow2` |
+| `rpm-pos` | core-libs, base, system | `rpm/pos`, `rpm/pos-debuginfo` |
+| `rpm-pos-fedora` | core-libs, base, system | `rpm/pos-fedora` |
 | `container-fs-dnf` | the rpm-pos outputs | `pos-container-fs-dnf-<stem>.tar.zst` |
 | `vm-disk-dnf` | the rpm-pos outputs | `pos-vm-disk-dnf-<stem>.qcow2` |
 | `fedora-toolbox` | container-fs-dnf | `localhost/pos-fedora-toolbox` in podman |
@@ -1059,7 +1060,7 @@ runs through the image's own loader, `pos/lib/ld-linux-x86-64.so.2
 Everything is owned by root in the archive. Group write, which build trees
 pick up from the build directory, is removed except on sticky directories.
 
-`container-fs` is core-libs and system, for `podman import` or
+`container-fs` is core-libs, base and system, for `podman import` or
 `docker import`. It has no `/etc/pos/ld.so.cache`; the loader searches
 `/pos/lib`. Programs are in `/pos/bin` and `/pos/sbin`, which are not in
 a container engine's default `PATH`, so the import sets it:
@@ -1077,8 +1078,8 @@ output's name in podman (`tag`) and whether POS's programs come first in
 podman (see "Images made with podman"), which is in podman already, it
 only sets the version tag.
 
-`vm-disk` is a bootable POS system without an RPM layer: core-libs and
-system, Fedora's kernel and a disk (see "Disks"). `fs_kernel` installs
+`vm-disk` is a bootable POS system without an RPM layer: core-libs, base
+and system, Fedora's kernel and a disk (see "Disks"). `fs_kernel` installs
 the kernel of a pos-kernel channel (`fedora`) as a running system would
 (see "Kernels"): it downloads the channel's packages from Fedora's
 repositories with dnf, and the tree's `pos-kernel import` unpacks them
@@ -1262,8 +1263,8 @@ commands.
 * The default entry is `default <entry>` in `/boot/loader/loader.conf`,
   rewritten on each change; without one systemd-boot boots the newest
   entry. bootctl's `install` keeps an existing loader.conf.
-* Downloading needs curl, which is in the network stage
-  (`pos-stage enable network`). Unpacking needs only the system stage, as
+* Downloading needs curl, which is in the base stage. Unpacking needs
+  only the base and system stages, as
   in `fs_kernel`, which imports packages dnf downloaded.
 * On vm-disk-dnf, Fedora's kernel package is dnf's: its modules are real
   directories in `/var/lib/pos/kernel/modules`, which `pos-kernel list`
@@ -1420,7 +1421,7 @@ which the POS loader does not search by default. pos-fedora ships
 which Fedora's glibc ships, links to it: tools that read the library path
 there (dracut's) see the POS loader's.
 
-dracut is POS's (in the system stage, with GNU cpio): pos-fedora stands in
+dracut is POS's (in the system stage; GNU cpio is the base's): pos-fedora stands in
 for Fedora's. Its configuration (`/pos/lib/dracut/dracut.conf.d/01-dist.conf`,
 from `pos/system/packages/dracut`) names POS's directories of systemd, udev and dbus,
 and the library directories, so an initramfs is made from POS's systemd.
@@ -1495,42 +1496,36 @@ check gcc's own `make bootstrap` does. The pos package gmp is
 copy is built for gcc's own host triplet, generic x86-64.
 
 
-# System stage
-The system stage (`pos/system/stage`) is init, the service manager, the login and account tools,
-and the shell userland. It builds on core-libs.
+# Base stage
+The base stage (`pos/base/stage`) is what a POS system is without init
+and kernel, as in a container: the shell, the core utilities, the login
+and account tools, and transfer with curl. It is not a minimal set but a
+generally functional userland. It builds on core-libs, and a pos
+reference holds it with core-libs (see "Reference builds"), so pos-sdk
+and pos-extras builds can take its tools and libraries.
 
-* Left out for now: man-db with its groff, gdbm and libpipeline
-  dependencies (a page viewer that costs four packages; each package still
-  installs its man pages under `/pos/share/man`). Their recipes remain in
-  `pos/system/packages/` for reuse.
-* e2fsprogs and dosfstools, the tools of the root's ext4 and the ESP's
-  FAT: systemd-fsck checks them at boot with fsck.ext4 and fsck.vfat, and
-  they resize and repair without a stage enabled. Other file systems are
-  the storage stage's. e2fsprogs uses util-linux's libuuid, libblkid,
-  fsck and uuidd; no fuse2fs.
-* file and which are user utilities in the base. GNU which is the GNU
+* util-linux, procps and shadow link libsystemd (logind sessions,
+  journal output; see "Circular dependencies"). libsystemd and libudev
+  are systemd-libs, an output of the systemd build that the base stage
+  lists, as Fedora's systemd-libs: the base has them without init. pam_systemd, in
+  the base's PAM stack, is optional (`-session`) and works once systemd
+  is there.
+* POS's integration for the base is pos-integration-base, an output of
+  pos-integration (see "System integration"): os-release, the PAM stack,
+  `/etc/profile` and pos-preferences.
+* file and which are user utilities. GNU which is the GNU
   project's git tree on Savannah, with its build system in the cwm4
-  submodule; `pos/system/packages/which/prepare.sh` notes what its bootstrap needs.
+  submodule; `pos/base/packages/which/prepare.sh` notes what its bootstrap needs.
 * procps has the programs of Fedora's procps-ng: ps, top, free, pgrep,
   hugetop, pkill, pidof, pidwait, pmap, pwdx, skill, snice, slabtop, sysctl,
   tload, uptime, vmstat, w and watch, and libproc2. `w` reads sessions from
   logind. Its translated man pages are made by po4a (a host requirement),
   which leaves out those less than 80% translated.
-* The QEMU guest agent (qemu-ga, pos/system/packages/qemu-guest-agent) answers the
-  host's libvirt in a VM: guest IP addresses, `virsh guestinfo`, shutdown
-  and reboot through the agent, file system freeze for quiesced snapshots,
-  setting the clock and passwords. Its unit is qemu's, started by a udev
-  rule of pos-integration when the VM has the agent's port
-  (`org.qemu.guest_agent.0`, which virt-manager and vm.sh add), so it does
-  nothing elsewhere. QEMU is synced as a subset of its tree, without the
-  firmware submodules and prebuilt firmware, and only the agent is built:
-  configure runs offline (`--disable-download`) with keycodemapdb, the one
-  subproject it checks for, fetched by `pos/system/packages/qemu/prepare.sh`, and
-  configure's Python packages from the build host. glib, its library, is
-  built from git with gvdb as a submodule; its Python code generators
-  (gdbus-codegen, glib-mkenums, glib-genmarshal, gtester-report) are not
-  shipped, POS has no Python. SPICE's vdagent is left out: clipboard and display resizing
-  need a graphical session.
+* curl and libcurl: OpenSSL with OpenSSL's trust store (`/etc/ssl/cert.pem`,
+  ca-certificates), HTTP/2 with nghttp2 (its library only), zlib and zstd.
+  Not built for lack of the libraries: brotli, IDN (libidn2), libpsl,
+  libssh2 (scp:, sftp:), GSSAPI, LDAP. pos-kernel downloads with it, and
+  pos-extras' git links libcurl.
 
 ## Overlapping binaries
 Several programs are shipped by more than one project. Fedora and LFS pick
@@ -1557,6 +1552,36 @@ differently; POS follows Fedora except where noted.
 | man | man-db + groff + gdbm, mandoc | neither in the base (Scope). If a viewer is ever added, mandoc is one package where man-db is four |
 | passwd.5, getspnam.3, crypt.3 | man-pages, shadow, libxcrypt | man-pages (deferred, with man-db) for the first two, shadow's deleted; libxcrypt for crypt, man-pages' deleted |
 
+# System stage
+The system stage (`pos/system/stage`) is init and the service manager,
+with what boots a system: kmod, dbus, cron and log rotation, the root's
+file system tools and the initramfs. It builds on core-libs and base.
+
+* Left out for now: man-db with its groff, gdbm and libpipeline
+  dependencies (a page viewer that costs four packages; each package still
+  installs its man pages under `/pos/share/man`). Their recipes remain in
+  `pos/system/packages/` for reuse.
+* e2fsprogs and dosfstools, the tools of the root's ext4 and the ESP's
+  FAT: systemd-fsck checks them at boot with fsck.ext4 and fsck.vfat, and
+  they resize and repair without a stage enabled. Other file systems are
+  the storage stage's. e2fsprogs uses util-linux's libuuid, libblkid,
+  fsck and uuidd; no fuse2fs.
+* The QEMU guest agent (qemu-ga, pos/system/packages/qemu-guest-agent) answers the
+  host's libvirt in a VM: guest IP addresses, `virsh guestinfo`, shutdown
+  and reboot through the agent, file system freeze for quiesced snapshots,
+  setting the clock and passwords. Its unit is qemu's, started by a udev
+  rule of pos-integration when the VM has the agent's port
+  (`org.qemu.guest_agent.0`, which virt-manager and vm.sh add), so it does
+  nothing elsewhere. QEMU is synced as a subset of its tree, without the
+  firmware submodules and prebuilt firmware, and only the agent is built:
+  configure runs offline (`--disable-download`) with keycodemapdb, the one
+  subproject it checks for, fetched by `pos/system/packages/qemu/prepare.sh`, and
+  configure's Python packages from the build host. glib, its library, is
+  built from git with gvdb as a submodule; its Python code generators
+  (gdbus-codegen, glib-mkenums, glib-genmarshal, gtester-report) are not
+  shipped, POS has no Python. SPICE's vdagent is left out: clipboard and display resizing
+  need a graphical session.
+
 ## Deferred
 * polkit: needs glib (built, for the guest agent) and duktape. duktape's
   git tree generates its sources with a Python 2 `dist.py`; only release
@@ -1568,10 +1593,11 @@ differently; POS follows Fedora except where noted.
 
 ## Circular dependencies
 systemd links libmount and libblkid from util-linux, and util-linux links
-libsystemd (journal output for logger/lslogins). util-linux-bootstrap,
+libsystemd (journal output for logger/lslogins) from systemd-libs, an
+output of systemd. util-linux-bootstrap,
 `--without-systemd`, is what systemd is built against; util-linux is built
-after systemd `--with-systemd`. shadow and dbus require systemd so their
-logind and sd_notify integration is on.
+after systemd `--with-systemd`. shadow and procps require systemd-libs,
+and dbus systemd, so their logind and sd_notify integration is on.
 
 systemd builds against cryptsetup (it dlopens libcryptsetup), which links
 libdevmapper from lvm2, and lvm2 links libudev and libsystemd.
@@ -1585,7 +1611,10 @@ such a capability count for the stage of the package that provides it
 
 ## System integration
 `pos-integration` is POS's own package for the files that make the
-packages one system and that no upstream ships. Its source is
+packages one system and that no upstream ships. Its base stage part is
+an output, pos-integration-base: os-release, the PAM stack, `/etc/profile`
+and pos-preferences; the rest (presets, udev rules, pos-stage, pos-kernel)
+needs systemd and is the system stage's. Its source is
 `pos/system/src/pos-integration`, a POS-owned tree (no upstream, so `get-latest.sh`
 skips it); like any source, it is built from the committed tree. So far it
 holds POS's PAM configuration: `system-auth`, the stack services include
@@ -1616,7 +1645,7 @@ policy for units no preset names is systemd's default, enable; Fedora's
 # Network stage
 The network stage (`pos/network/stage`) is the network tools, optional
 on a system: it is not in `/pos` until enabled (see "Stage images"). It
-builds on core-libs and system, whose systemd-networkd and
+builds on core-libs, base and system, whose systemd-networkd and
 systemd-resolved configure the network without it.
 
 * iproute2 (ip, ss, bridge, tc, devlink and the rest) with libmnl, libelf
@@ -1632,16 +1661,12 @@ systemd-resolved configure the network without it.
   writes its rules with (see "Container stage"); no iptables
   compatibility. nftables.service loads `/etc/nftables/rules/main.nft`
   where there is one.
-* curl and libcurl: OpenSSL with OpenSSL's trust store (`/etc/ssl/cert.pem`,
-  ca-certificates), HTTP/2 with nghttp2 (its library only), zlib and zstd.
-  Not built for lack of the libraries: brotli, IDN (libidn2), libpsl,
-  libssh2 (scp:, sftp:), GSSAPI, LDAP.
 * GNU Wget2 and libwget, as Fedora has it, with `wget` a link to `wget2`
   (Fedora's wget2-wget): OpenSSL (its default is GnuTLS) with OpenSSL's
   trust store, HTTP/2 with nghttp2, pcre2, and zlib, zstd, xz and bzip2
   encodings; no libpsl, HSTS preload list (libhsts), IDN or brotli, and no
   man page (pandoc). Wget2 has no FTP or WARC, which Wget 1 had. Built from
-  git with gnulib bootstrap, as the GNU packages of the system stage,
+  git with gnulib bootstrap, as the GNU packages of the base stage,
   synced without its submodules (gnulib is POS's, the wiki is not needed).
 * rsync with popt, zlib and zstd from POS (not its included copies) and
   OpenSSL; no lz4 or xxhash. Its daemon units are installed.
@@ -1700,8 +1725,8 @@ and iptables, which podman's current defaults do without.
 # Storage stage
 The storage stage (`pos/storage/stage`) is file system, volume,
 encryption and network storage tools, optional on a system: it is not in
-`/pos` until enabled (see "Stage images"). It builds on core-libs and
-system; the root's and the ESP's tools (e2fsprogs, dosfstools) are the
+`/pos` until enabled (see "Stage images"). It builds on core-libs, base
+and system; the root's and the ESP's tools (e2fsprogs, dosfstools) are the
 system stage's.
 
 * File systems: xfsprogs, with liburcu (userspace-rcu) and inih, and ICU

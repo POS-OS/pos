@@ -203,7 +203,7 @@ publish_check() {
 # named after the build (*-<stem>.*: stage and debug archives, image archives and their package lists, disks, the
 # recipes and engine archives), its source archives, its RPM packages in
 # rpm/, its reference archive (reference_pack: a pos-sdk release's
-# toolchain packages, a pos release's core-libs), and SHA256SUMS of them.
+# toolchain packages, a pos release's core-libs and base), and SHA256SUMS of them.
 # Inputs:
 #   $1      the release directory to fill
 #   id, bdir

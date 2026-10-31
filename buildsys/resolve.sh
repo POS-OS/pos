@@ -64,7 +64,7 @@
 # pos build builds the OS; an extras build builds the extras (pos-extras),
 # on both. Each takes what another builds from a reference (reference.sh):
 # the toolchain from a toolchain reference (REF: its packages), glibc and
-# the rest of core-libs from a pos reference (POSREF). A host or profile package is not available where a toolchain
+# the rest of core-libs and base from a pos reference (POSREF). A host or profile package is not available where a toolchain
 # reference package obsoletes it, or a target of the run that does not
 # itself require it: gcc-host, Fedora's compiler, stands in for gcc only
 # in a build without a toolchain reference, and in the toolchain build

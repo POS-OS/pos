@@ -1,0 +1,6 @@
+# libsystemd (sd-journal, sd-login, sd-daemon, sd-bus) and libudev, with
+# their headers: what the base's util-linux, procps and shadow link.
+# Produced by the systemd build (pos/system/packages/systemd/build.sh).
+kind output
+output-of systemd
+requires glibc

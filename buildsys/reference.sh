@@ -7,8 +7,9 @@
 #
 #   toolchain reference  a toolchain build: the toolchain packages. Its
 #                        info names the pos reference it was built on
-#   pos reference        a pos build: its core-libs packages, glibc and
-#                        what links it. The toolchain runs on its glibc
+#   pos reference        a pos build: its core-libs and base packages,
+#                        glibc and what links it, and the base's tools
+#                        and libraries. The toolchain runs on its glibc
 #                        and builds with its kernel headers
 #   extras reference     an extras build: the extras packages. Stored, not
 #                        yet taken by builds
@@ -16,12 +17,12 @@
 # A toolchain build takes the compiler from a toolchain reference (or
 # Fedora's, gcc-host, without one) and glibc from a pos reference. A pos
 # build takes the toolchain from a toolchain reference and, until it has
-# built its own, core-libs from a pos reference: by default the one the
+# built its own, core-libs and base from a pos reference: by default the one the
 # toolchain was built on, or a newer one. A pos build without a toolchain
 # reference is the bootstrap: glibc and linux-headers, by Fedora's
 # compiler, for the first pos reference. An extras build takes the
-# toolchain from a toolchain reference and core-libs from a pos reference,
-# as a pos build does, and builds no package of either.
+# toolchain from a toolchain reference and core-libs and base from a pos
+# reference, as a pos build does, and builds no package of either.
 
 declare TOOLCHAIN_REF=none POS_REF=none
 
@@ -318,9 +319,9 @@ build_references() {
 
 # The reference archive of a build: its info and the staging trees and
 # debug info of what a reference of it holds: a complete toolchain or
-# extras build's packages, or a pos build's core-libs packages, which must
-# include what the toolchain packages require of pos (glibc,
-# linux-headers). Written as <dir>/pos-ref-<kind>-<id>.tar.zst
+# extras build's packages, or a pos build's core-libs and base packages
+# (BUILD.md "Base stage"), which must include what the toolchain packages
+# require of pos (glibc, linux-headers). Written as <dir>/pos-ref-<kind>-<id>.tar.zst
 # (reference_archive), for the reference store and for a release.
 # Inputs:
 #   $1      directory to write the archive into
@@ -349,16 +350,18 @@ reference_pack() {
     REF_KIND=pos
     for p in $(toolchain_needs); do
       [[ -n ${BUILT[$p]:-} ]] ||
-        die "build $id has not built $p, which the toolchain builds on; a pos reference is its core-libs"
+        die "build $id has not built $p, which the toolchain builds on; a pos reference is its core-libs and base"
     done
-    # The members of core-libs the build built. Not targets_expand: the
-    # stage lists gcc-runtime, which a build without a toolchain reference
-    # (the bootstrap glibc) does not know.
-    while read -r t; do
-      t=${t%%#*}
-      t=${t//[[:space:]]/}
-      [[ -z $t || -z ${BUILT[$t]:-} ]] || keep[$t]=1
-    done <"$(stage_file core-libs)"
+    # The members of core-libs and base the build built. Not
+    # targets_expand: core-libs lists gcc-runtime, which a build without a
+    # toolchain reference (the bootstrap glibc) does not know.
+    for s in core-libs base; do
+      while read -r t; do
+        t=${t%%#*}
+        t=${t//[[:space:]]/}
+        [[ -z $t || -z ${BUILT[$t]:-} ]] || keep[$t]=1
+      done <"$(stage_file "$s")"
+    done
   fi
   for p in "${PKGS[@]}"; do
     [[ -n ${keep[$p]:-} && -n ${BUILT[$p]:-} ]] || continue

@@ -14,9 +14,7 @@ ethtool
 # Packet filtering; jansson for its JSON mode.
 jansson
 nftables
-# Transfer: curl and libcurl (HTTP/2 with nghttp2), wget2, rsync.
-nghttp2
-curl
+# Transfer: wget2, rsync (curl is the base's).
 wget2
 rsync
 # Remote shell: ssh, sshd, scp, sftp.

@@ -27,6 +27,8 @@ mpfr
 icu
 openssl
 elfutils
+# System call filters: systemd, file, crun.
+libseccomp
 # JSON: crun, cryptsetup, nvme-cli.
 json-c
 pam

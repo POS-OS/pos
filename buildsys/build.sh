@@ -93,7 +93,7 @@ usage: ./build plan [--new] [<target>...]
                                                make outputs of the current build again
        ./build status                          show the current build
        ./build reference [<id>]                store a toolchain or extras build, or
-                                               a pos build's core-libs, as the
+                                               a pos build's core-libs and base, as the
                                                default reference of its kind
        ./build clean [<id>]                    remove the tools image of a build
        ./build validate [--unchecked] [<id>]   check that a build is an OS build
@@ -117,8 +117,8 @@ archive as downloaded, pos-src-<archive>) and of the build recipes
 (<project>-recipes-<stem>.tar.zst, pos-recipes for pos).
 
 A new build takes the toolchain from a toolchain reference, a stored
-toolchain build, and core-libs from a pos reference, a stored pos build's
-core-libs; by default the ones reference marked last, and for a pos build
+toolchain build, and core-libs and base from a pos reference, a stored
+pos build's core-libs and base stages; by default the ones reference marked last, and for a pos build
 the pos reference its toolchain was built on. A toolchain build without a
 toolchain reference (none) is built by Fedora's compiler; it needs a pos
 reference. A pos build without one builds glibc, the first pos reference.

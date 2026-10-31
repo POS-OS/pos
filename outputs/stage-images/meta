@@ -1,5 +1,5 @@
 # The optional stages as system extension images, the library of stage
 # images an installed system enables them from (vm-disk). BUILD.md "Stage
 # images". The base stages have the os-release the images are made for.
-requires core-libs system network container storage
+requires core-libs base system network container storage
 host-requires tar zstd erofs-utils

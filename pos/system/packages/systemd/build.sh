@@ -98,4 +98,15 @@ pkg() {
         -Dimportd=disabled \
         -Dmountfsd=false \
         -Dnsresourced=false
+
+  # libsystemd and libudev, with their headers and .pc files, are
+  # systemd-libs, the base stage's: util-linux, procps and shadow link them
+  # without the base needing init (BUILD.md "Base stage").
+  local libs f
+  libs=$(pkg_output systemd-libs)
+  mkdir -p "${libs}${prefix}/lib/pkgconfig" "${libs}${prefix}/include"
+  for f in lib/libsystemd.so* lib/libudev.so* lib/pkgconfig/libsystemd.pc \
+           lib/pkgconfig/libudev.pc include/systemd include/libudev.h; do
+    mv "${dest_dir}${prefix}"/$f "${libs}${prefix}/${f%/*}/"
+  done
 }

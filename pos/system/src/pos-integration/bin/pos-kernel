@@ -59,15 +59,15 @@ die() {
   exit 1
 }
 
-# Download a URL to a file (format plugins use it). curl is in the network
-# stage.
+# Download a URL to a file (format plugins use it), with the base stage's
+# curl.
 # Inputs:
 #   $1    URL
 #   $2    file
 # Outputs:
 #   status 0 when downloaded; curl's error otherwise
 download() {
-  command -v curl >/dev/null || die "downloading needs curl: pos-stage enable network"
+  command -v curl >/dev/null || die "downloading needs curl (the base stage's)"
   curl -fsSL --retry 2 -o "$2" "$1"
 }
 

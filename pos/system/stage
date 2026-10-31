@@ -1,41 +1,22 @@
-# System services and init.
+# System services and init, on the base stage.
 # Decisions on overlapping binaries and scope are in BUILD.md "System stage".
-libseccomp
-util-linux
 kmod
 popt
-bash
-coreutils
-findutils
-grep
-sed
-gawk
-tar
-gzip
-less
-gettext
 systemd
 dbus
-shadow
-sudo
 cronie
 logrotate
-# User utilities: libmagic file type detection, command lookup.
-file
-which
-# Process tools: ps, top, free, pgrep, sysctl, watch, w, uptime.
-procps
 # File systems of the root and the ESP: ext4 (e2fsprogs) and FAT (dosfstools),
 # for systemd-fsck at boot and resizing. Others are the storage stage's.
 e2fsprogs
 dosfstools
-# The initramfs: dracut (kernel-install's plugin), with GNU cpio.
-cpio
+# The initramfs: dracut (kernel-install's plugin; GNU cpio is the base's).
 dracut
 # The QEMU guest agent, for POS in VMs; glib is its library.
 glib
 qemu-guest-agent
-# POS's own integration: the default PAM stack.
+# POS's own integration: presets, udev rules, pos-stage and pos-kernel
+# (its PAM stack and os-release are the base's, pos-integration-base).
 pos-integration
 # Developer tools (diffutils, patch) are pos-extras'.
 # Deferred for later:

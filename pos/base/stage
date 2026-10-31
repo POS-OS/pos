@@ -1,0 +1,35 @@
+# The base: what a POS system is without init and kernel, as in a
+# container. The shell, the core utilities, the login and account tools,
+# and transfer with curl. Not a minimal set: a generally functional
+# userland (BUILD.md "Base stage"). A pos reference holds it with
+# core-libs, so pos-sdk and pos-extras builds can take its tools and
+# libraries.
+# POS's own integration: os-release, the PAM stack, /etc/profile and
+# pos-preferences (an output of pos-integration).
+pos-integration-base
+# libsystemd and libudev (an output of systemd): util-linux, procps and
+# shadow link them; systemd itself is the system stage's.
+systemd-libs
+util-linux
+bash
+coreutils
+findutils
+grep
+sed
+gawk
+tar
+gzip
+cpio
+less
+gettext
+shadow
+sudo
+# User utilities: libmagic file type detection, command lookup.
+file
+which
+# Process tools: ps, top, free, pgrep, sysctl, watch, w, uptime.
+procps
+# Transfer: curl and libcurl (HTTP/2 with nghttp2). pos-kernel downloads
+# with it; git in pos-extras links libcurl.
+nghttp2
+curl

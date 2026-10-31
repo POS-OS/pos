@@ -1,3 +1,6 @@
+# The base stage's part is an output, pos-integration-base: os-release,
+# the PAM stack, /etc/profile and pos-preferences; the rest needs systemd
+# or the kernel tools, the system stage's.
 # The default PAM configuration goes to pam's vendor directory
 # (pos/core-libs/packages/pam: VENDORDIR=/pos/share/pam), not to /etc: it applies
 # without being copied, and /etc/pam.d overrides it per service. os-release
@@ -13,16 +16,21 @@
 # come from the factory tree (_pkg_factory).
 
 pkg() {
-  install -d "$dest_dir$prefix/share/pam/pam.d"
-  install -m 0644 "$src_dir"/pam.d/* "$dest_dir$prefix/share/pam/pam.d/"
-  install -D -m 0644 "$src_dir/os-release" "$dest_dir$prefix/lib/os-release"
+  local out
+  out=$(pkg_output pos-integration-base)
+  install -d "$out$prefix/share/pam/pam.d"
+  install -m 0644 "$src_dir"/pam.d/* "$out$prefix/share/pam/pam.d/"
+  install -D -m 0644 "$src_dir/os-release" "$out$prefix/lib/os-release"
+  install -D -m 0755 "$src_dir/bin/pos-preferences" "$out$prefix/sbin/pos-preferences"
+  install -D -m 0644 "$src_dir/preferences" "$out$prefix/lib/pos/preferences"
+  install -D -m 0644 "$src_dir/profile" "$out/etc/profile"
+  install -d "$out/etc/profile.d"
+
   install -d "$dest_dir$prefix/lib/systemd/system-preset"
   install -m 0644 "$src_dir"/presets/*.preset "$dest_dir$prefix/lib/systemd/system-preset/"
   install -d "$dest_dir$prefix/lib/udev/rules.d"
   install -m 0644 "$src_dir"/udev/*.rules "$dest_dir$prefix/lib/udev/rules.d/"
   install -D -m 0755 "$src_dir/bin/pos-stage" "$dest_dir$prefix/sbin/pos-stage"
-  install -D -m 0755 "$src_dir/bin/pos-preferences" "$dest_dir$prefix/sbin/pos-preferences"
-  install -D -m 0644 "$src_dir/preferences" "$dest_dir$prefix/lib/pos/preferences"
   install -D -m 0755 "$src_dir/bin/pos-kernel" "$dest_dir$prefix/sbin/pos-kernel"
   install -d "$dest_dir$prefix/lib/pos/kernel/channels" "$dest_dir$prefix/lib/pos/kernel/formats"
   install -m 0644 "$src_dir"/kernel/channels/* "$dest_dir$prefix/lib/pos/kernel/channels/"
@@ -30,8 +38,6 @@ pkg() {
   install -D -m 0644 "$src_dir/tmpfiles/pos-kernel.conf" "$dest_dir$prefix/lib/tmpfiles.d/pos-kernel.conf"
   install -D -m 0644 "$src_dir/systemd/pos-kernel-modules.service" \
     "$dest_dir$prefix/lib/systemd/system/pos-kernel-modules.service"
-  install -D -m 0644 "$src_dir/profile" "$dest_dir/etc/profile"
-  install -d "$dest_dir/etc/profile.d"
   install -D -m 0644 "$src_dir/systemd/systemd-sysext.service.d/pos.conf" \
     "$dest_dir$prefix/lib/systemd/system/systemd-sysext.service.d/pos.conf"
 }

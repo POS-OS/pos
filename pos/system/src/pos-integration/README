@@ -1,5 +1,7 @@
 POS system integration: the files that make POS's packages one system,
-which no upstream package ships. Installed by packages/pos-integration.
+which no upstream package ships. Installed by packages/pos-integration;
+os-release, pam.d, profile and pos-preferences by its output
+pos-integration-base, the base stage's.
 
 pam.d/  POS's PAM configuration: system-auth, the stack services
         include; a file for every PAM service in POS (util-linux's login,

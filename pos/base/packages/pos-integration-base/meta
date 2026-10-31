@@ -1,0 +1,9 @@
+# POS's integration of the base stage (pos/system/src/pos-integration):
+# the system's identity (/pos/lib/os-release), the PAM stack, which uses
+# pam's modules, pam_systemd where systemd is installed, and util-linux's
+# login; /etc/profile with its drop-ins; pos-preferences (bash).
+# Produced by the pos-integration build
+# (pos/system/packages/pos-integration/build.sh).
+kind output
+output-of pos-integration
+requires pam bash
