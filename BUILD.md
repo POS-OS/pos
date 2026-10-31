@@ -1598,6 +1598,8 @@ differently; POS follows Fedora except where noted.
 | scheduled jobs | cronie, systemd timers | both. cronie needs a `run-parts` for cron.hourly, which no listed package provides (Fedora: crontabs, Debian: debianutils) |
 | log rotation | logrotate, journald | journald handles the journal; logrotate for other files |
 | man | man-db + groff + gdbm, mandoc | neither in the base (Scope). If a viewer is ever added, mandoc is one package where man-db is four |
+| rmt | tar, cpio (both from paxutils) | tar; cpio's deleted, it runs tar's at the same path |
+| zic, zdump, tzselect | glibc, tzdata | glibc (Fedora); tzdata's deleted, it ships the data |
 | passwd.5, getspnam.3, crypt.3 | man-pages, shadow, libxcrypt | man-pages (deferred, with man-db) for the first two, shadow's deleted; libxcrypt for crypt, man-pages' deleted |
 
 # System stage
