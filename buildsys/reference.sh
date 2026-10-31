@@ -347,14 +347,18 @@ reference_pack() {
     done
   else
     REF_KIND=pos
-    targets_expand core-libs
     for p in $(toolchain_needs); do
       [[ -n ${BUILT[$p]:-} ]] ||
         die "build $id has not built $p, which the toolchain builds on; a pos reference is its core-libs"
     done
-    for t in "${TARGETS[@]}"; do
-      [[ -z ${BUILT[$t]:-} ]] || keep[$t]=1
-    done
+    # The members of core-libs the build built. Not targets_expand: the
+    # stage lists gcc-runtime, which a build without a toolchain reference
+    # (the bootstrap glibc) does not know.
+    while read -r t; do
+      t=${t%%#*}
+      t=${t//[[:space:]]/}
+      [[ -z $t || -z ${BUILT[$t]:-} ]] || keep[$t]=1
+    done <"$(stage_file core-libs)"
   fi
   for p in "${PKGS[@]}"; do
     [[ -n ${keep[$p]:-} && -n ${BUILT[$p]:-} ]] || continue
