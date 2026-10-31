@@ -100,6 +100,12 @@ declare -A KIND=() REQ=() BREQ=() HREQ=() PREQ=() PROV=() OBS=() SRC=() WSRC=() 
 declare -A PIPE=() PKGDIR=() SRCPATH=() SRCREFS=() ARCHIVE=() VERSION=() PFX=()
 declare -A PROVIDERS=() BOOTCAP=() TPROV=()
 declare -A BUILT=() REF=() POSREF=() REF_REQ=() FOREIGN=()
+# Memos of what does not change within a run (resolution asks them for
+# every capability of every package, again for each package it picks):
+# whether a host or profile package is available (TARGETS and REF; reset
+# by targets_expand and load_references), and the capabilities of a
+# package's build.
+declare -A HOSTAVAIL=() SELFPROV=()
 declare -a TARGETS=()
 PIPELINE=pos
 # The prefix the build's packages install in (build.sh: project_prefix).
@@ -378,7 +384,13 @@ meta_validate() {
 #   REF, TARGETS
 available() {
   case ${KIND[$1]} in
-    host|profile) ! obsoleted_by_any "$1" "${!REF[@]}" && ! obsoleted_by_target "$1" ;;
+    host|profile)
+      if [[ -z ${HOSTAVAIL[$1]:-} ]]; then
+        HOSTAVAIL[$1]=no
+        ! obsoleted_by_any "$1" "${!REF[@]}" && ! obsoleted_by_target "$1" && HOSTAVAIL[$1]=yes
+      fi
+      [[ ${HOSTAVAIL[$1]} == yes ]]
+      ;;
     *) [[ -n ${BUILT[$1]:-} ]] ;;
   esac
 }
@@ -392,7 +404,8 @@ obsoleted_by_target() {
   local p=$1 t b cap
   for t in "${TARGETS[@]}"; do
     obsoleted_by_any "$p" "$t" || continue
-    b=$(build_of "$t")
+    b=$t
+    [[ ${KIND[$t]} != output ]] || b=${PARENT[$t]}
     for cap in ${BREQ[$b]} ${REQ[$b]}; do
       [[ " ${PROV[$p]} " != *" $cap "* ]] || continue 2
     done
@@ -429,6 +442,23 @@ self_provides() {
   for o in ${OUTS[$p]}; do
     echo "${PROV[$o]}"
   done
+}
+
+# Set SELF to the capabilities a build provides (self_provides), as
+# " <cap> ... ", for matching " $cap ".
+# Inputs:
+#   $1    package name
+# Outputs:
+#   SELF (shell variable)
+self_caps() {
+  local o
+  if [[ -z ${SELFPROV[$1]:-} ]]; then
+    SELFPROV[$1]=" ${PROV[$1]} "
+    for o in ${OUTS[$1]}; do
+      SELFPROV[$1]+="${PROV[$o]} "
+    done
+  fi
+  SELF=${SELFPROV[$1]}
 }
 
 # True when one of the packages q (or, for builds, their outputs) obsoletes p.
@@ -530,7 +560,8 @@ env_of() {
   local -a queue=()
   local -A seen=() inenv=()
   local self
-  self=" $(self_provides "$p" | xargs) "
+  self_caps "$p"
+  self=$SELF
   for cap in ${BREQ[$p]} ${REQ[$p]}; do
     [[ $self == *" $cap "* ]] || queue+=("$cap")
   done
@@ -639,7 +670,7 @@ targets_expand() {
     fi
   done
   mapfile -t TARGETS < <(printf '%s\n' "${!set[@]}" | sed '/^$/d' | sort)
-  TPROV=()
+  TPROV=() HOSTAVAIL=()
   for t in "${TARGETS[@]}"; do
     for p in $(self_provides "$(build_of "$t")"); do
       TPROV[$p]=1
@@ -706,12 +737,15 @@ wanted() {
   local -A want=()
   local p cap q o b self changed=1
   for p in "$@"; do
-    available "$p" || want[$(build_of "$p")]=1
+    q=$p
+    [[ ${KIND[$p]} != output ]] || q=${PARENT[$p]}
+    available "$p" || want[$q]=1
   done
   while ((changed)); do
     changed=0
     for p in "${!want[@]}"; do
-      self=" $(self_provides "$p" | xargs) "
+      self_caps "$p"
+      self=$SELF
       local -a caps=(${BREQ[$p]} ${REQ[$p]})
       for o in ${OUTS[$p]}; do
         caps+=(${REQ[$o]})
@@ -727,7 +761,8 @@ wanted() {
           continue
         fi
         for q in ${PROVIDERS[$cap]:-}; do
-          b=$(build_of "$q")
+          b=$q
+          [[ ${KIND[$q]} != output ]] || b=${PARENT[$q]}
           # Only packages are built, each by the builds of its pipeline.
           [[ ${KIND[$b]} == package ]] || continue
           in_pipeline "$b" || continue
@@ -754,7 +789,7 @@ wanted() {
 # Outputs:
 #   NEXT (package name ready to build), WANTED (array of remaining unbuilt packages)
 next_package() {
-  local p e
+  local p e q
   local -a ready=() first=()
   local -A want=()
   wanted "$@"
@@ -765,7 +800,10 @@ next_package() {
     env_of "$p" || continue
     ready+=("$p")
     for e in "${ENV[@]}"; do
-      is_ref "$e" && [[ -n ${want[$(build_of "${e%@*}")]:-} ]] && continue 2
+      is_ref "$e" || continue
+      q=${e%@*}
+      [[ ${KIND[$q]} != output ]] || q=${PARENT[$q]}
+      [[ -z ${want[$q]:-} ]] || continue 2
     done
     first+=("$p")
   done

@@ -281,7 +281,7 @@ reference_restore() {
 #   REF[], POSREF[], REF_REQ[]
 load_references() {
   local ref from meta p
-  REF=() POSREF=() REF_REQ=()
+  REF=() POSREF=() REF_REQ=() HOSTAVAIL=()
   for ref in "$TOOLCHAIN_REF" "$POS_REF"; do
     [[ $ref != none ]] || continue
     from=$(ref_info "$ref" pipeline)
