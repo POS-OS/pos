@@ -53,6 +53,8 @@ sysext_stage() {
   img=$bdir/pos-$stage-$stem.raw
   for s in "$@"; do
     skip[$s]=1
+  done
+  for s in "$@"; do
     osrel=$(tar --zstd -xOf "$bdir/pos-$s-$stem.tar.zst" pos/lib/os-release 2>/dev/null) && break
   done
   [[ -n $osrel ]] || die "$output: no pos/lib/os-release in the base stages: $*"
