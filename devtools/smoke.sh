@@ -97,20 +97,21 @@ fi
 if [[ -f /pos/lib/pos/stages/pos-storage.raw ]]; then
   check "pos-stage enable storage" bash -c 'pos-stage enable storage &&
     pos-stage list | grep -qx "storage enabled" || { systemd-sysext status; false; }'
+  # mkfs.exfat -V exits 1 after printing its version.
   check "storage stage tools" bash -c 'mdadm --version && iscsiadm --version && nvme version &&
-    smartctl --version >/dev/null && mkfs.exfat -V && thin_check -V'
+    smartctl --version >/dev/null && { mkfs.exfat -V || (($? == 1)); } && thin_check -V'
   check "LVM, LUKS, XFS and Btrfs" bash -c 'set -e
     truncate -s 1G /var/tmp/smoke-lvm.img
     dev=$(losetup --show -f /var/tmp/smoke-lvm.img)
     vgcreate -q smoke "$dev" && lvcreate -q -y -L 400M -n crypt smoke && lvcreate -q -y -L 400M -n btrfs smoke
     echo -n smoke-test >/run/smoke.key
     cryptsetup luksFormat -q --pbkdf pbkdf2 --pbkdf-force-iterations 1000 --key-file /run/smoke.key /dev/smoke/crypt
-    cryptsetup open --key-file /run/smoke.key /dev/smoke/crypt smoke-crypt
-    mkfs.xfs -q /dev/mapper/smoke-crypt && mkfs.btrfs -q /dev/smoke/btrfs
-    mkdir -p /mnt/xfs /mnt/btrfs && mount /dev/mapper/smoke-crypt /mnt/xfs && mount /dev/smoke/btrfs /mnt/btrfs
+    cryptsetup open --key-file /run/smoke.key /dev/smoke/crypt smoke-luks
+    mkfs.xfs -q /dev/mapper/smoke-luks && mkfs.btrfs -q /dev/smoke/btrfs
+    mkdir -p /mnt/xfs /mnt/btrfs && mount /dev/mapper/smoke-luks /mnt/xfs && mount /dev/smoke/btrfs /mnt/btrfs
     echo smoke >/mnt/xfs/f && echo smoke >/mnt/btrfs/f && btrfs filesystem df /mnt/btrfs >/dev/null
-    umount /mnt/xfs /mnt/btrfs && xfs_repair -n /dev/mapper/smoke-crypt && btrfs check /dev/smoke/btrfs
-    cryptsetup close smoke-crypt && vgremove -q -f smoke && losetup -d "$dev" && rm /var/tmp/smoke-lvm.img'
+    umount /mnt/xfs /mnt/btrfs && xfs_repair -n /dev/mapper/smoke-luks && btrfs check /dev/smoke/btrfs
+    cryptsetup close smoke-luks && vgremove -q -f smoke && losetup -d "$dev" && rm /var/tmp/smoke-lvm.img'
 fi
 # The container stage enables the network stage it requires; podman runs
 # a container from Docker Hub on its default network and on a network of

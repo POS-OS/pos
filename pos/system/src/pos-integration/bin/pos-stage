@@ -95,6 +95,15 @@ unlink_stage() {
   echo "disabled $stage"
 }
 
+# Merge the enabled images again and have the running system see the result.
+# systemd-sysext reloads systemd's units; udevd looks at its rules on its own
+# at most every 3 seconds, and an event handled before then misses a stage's
+# rules. lvm2 waits for those rules to run, without a timeout.
+merge() {
+  systemd-sysext refresh
+  systemctl try-reload-or-restart systemd-udevd.service
+}
+
 # What a first boot does with a stage's files, for the stages merged now:
 # their users and groups (sysusers.d), their /etc and /var defaults
 # (factory tmpfiles.d) and the loader cache. Services are left as they
@@ -116,8 +125,7 @@ case ${1:-} in
     for stage in "$@"; do
       link_stage "$stage"
     done
-    # Merges the enabled images again, then reloads systemd's units.
-    systemd-sysext refresh
+    merge
     activate
     ;;
   disable)
@@ -126,7 +134,7 @@ case ${1:-} in
     for stage in "$@"; do
       unlink_stage "$stage" "$@"
     done
-    systemd-sysext refresh
+    merge
     ;;
   *) usage ;;
 esac

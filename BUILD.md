@@ -1296,7 +1296,9 @@ the machine; enabling it runs only what a first boot runs for its files.
 * `pos-stage` (`/pos/sbin`, pos-integration) enables a stage: it links the
   image into `/etc/extensions`, and the images of the stages it requires
   first, runs `systemd-sysext refresh`, which merges
-  the enabled images over `/pos` read-only and reloads systemd, then
+  the enabled images over `/pos` read-only and reloads systemd, reloads
+  udevd (it checks its rules at most every 3 seconds, and lvm2 waits without
+  a timeout for a stage's rules to run), then
   `systemd-sysusers`, `systemd-tmpfiles --create` (the stage's factory
   files) and `ldconfig`. `pos-stage disable` removes the link and merges
   again, unless an enabled stage requires the stage; `pos-stage list`
