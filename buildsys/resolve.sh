@@ -94,12 +94,28 @@
 # A requirement of a toolchain reference package that this build installs
 # in another prefix is met by the reference's: its gcc runs its own as and
 # ld, by the paths it was built with.
+#
+# Every package build gets the build tools (BUILD.md "Build tools"). With
+# the tools setting fedora (TOOLS_REF none) they are host-base, a
+# requirement like any other. With an extras reference they are what the
+# build-tools profile requires, resolved after the package's own
+# environment: a tool the environment already provides is not added, and
+# one it does not is the tools reference's (<name>@tools, in its own
+# prefix) or the pos reference's (<name>@pos), never this build's, so a
+# tool never makes a build wait, also not one of a package the run builds
+# (bash in a pos build). The requirements of a tools package that the
+# tools reference provides are its own, in its prefix (its perl runs its
+# autoconf); the rest, /pos packages, are the environment's where it has
+# them, so tools run on what the build built. Packages added only for the
+# tools are TOOLENV; a package build may not link their libraries
+# (pkg.sh: _pkg_linkcheck).
 
 declare -a PKGS=()
 declare -A KIND=() REQ=() BREQ=() HREQ=() PREQ=() PROV=() OBS=() SRC=() WSRC=() OUTS=() PARENT=()
 declare -A PIPE=() PKGDIR=() SRCPATH=() SRCREFS=() ARCHIVE=() VERSION=() PFX=()
 declare -A PROVIDERS=() BOOTCAP=() TPROV=()
 declare -A BUILT=() REF=() POSREF=() REF_REQ=() FOREIGN=()
+declare -A TOOLSREF=() TOOLS_REQ=() TOOLENV=()
 # Memos of what does not change within a run (resolution asks them for
 # every capability of every package, again for each package it picks):
 # whether a host or profile package is available (TARGETS and REF; reset
@@ -201,10 +217,6 @@ meta_load() {
         *) die "${PKGDIR[$p]}/meta: unknown key: $key" ;;
       esac
     done <"$dir/meta"
-    if [[ ${KIND[$p]} == package ]]; then
-      # Everything built gets the common host tools.
-      BREQ[$p]+=" host-base"
-    fi
     if [[ ${KIND[$p]} == package || ${KIND[$p]} == source ]]; then
       SRCREFS[$p]="${SRC[$p]} ${WSRC[$p]}"
       SRC[$p]=${SRC[$p]##*/}
@@ -529,17 +541,37 @@ provider_ref() {
       [[ -n $ref || $PIPELINE != pos || -z ${TPROV[$cap]:-} ]] || continue
       PROVIDER=$p@pos
       return 0
+    elif [[ -n ${TOOLSREF[$p]:-} && $PIPELINE != extras ]]; then
+      PROVIDER=$p@tools
+      return 0
     fi
   done
   return 1
 }
 
+# The tools' copy of a provider (see the top): the tools reference's
+# (<name>@tools), else the pos reference's (<name>@pos).
+# Inputs:
+#   $1    capability name
+# Outputs:
+#   PROVIDER (shell variable)
+provider_tools() {
+  local p
+  for p in ${PROVIDERS[$1]:-}; do
+    [[ -z ${TOOLSREF[$p]:-} ]] || { PROVIDER=$p@tools; return 0; }
+  done
+  for p in ${PROVIDERS[$1]:-}; do
+    [[ -z ${POSREF[$p]:-} ]] || { PROVIDER=$p@pos; return 0; }
+  done
+  return 1
+}
+
 # Return 0 if an environment entry is satisfied from a reference build
-# (<pkg>@ref or <pkg>@pos).
+# (<pkg>@ref, <pkg>@pos or <pkg>@tools).
 # Inputs:
 #   $1    environment entry
 is_ref() {
-  [[ $1 == *@ref || $1 == *@pos ]]
+  [[ $1 == *@ref || $1 == *@pos || $1 == *@tools ]]
 }
 
 # Resolve the build environment of a package: its requirements and,
@@ -548,24 +580,30 @@ is_ref() {
 # gcc-runtime) is installed with the package, not needed to build it.
 # Reached through another package's requirements, it is needed (systemd
 # links util-linux's libmount, which links libsystemd), and the reference's
-# copy is used, as in a new build, where the package is not built yet. Sets
-# ENV (sorted package names) and MISSING (capabilities with no available
-# provider). Returns 1 when anything is missing.
+# copy is used, as in a new build, where the package is not built yet. Then
+# the build tools (see the top). Sets ENV (sorted package names), TOOLENV
+# (the entries only the tools brought) and MISSING (capabilities with no
+# available provider). Returns 1 when anything is missing.
 # Inputs:
-#   $1    package name
+#   $1    package name, or nothing for the tools alone (prepare)
+#   TOOLS_REF
 # Outputs:
-#   ENV (array of resolved package names), MISSING (array of unresolved capabilities)
+#   ENV (array of resolved package names), TOOLENV, MISSING (array of
+#   unresolved capabilities)
 env_of() {
-  local p=$1 cap entry ref q
+  local p=${1:-} cap entry ref q
   local -a queue=()
   local -A seen=() inenv=()
-  local self
-  self_caps "$p"
-  self=$SELF
-  for cap in ${BREQ[$p]} ${REQ[$p]}; do
-    [[ $self == *" $cap "* ]] || queue+=("$cap")
-  done
-  ENV=() MISSING=()
+  local self=' '
+  ENV=() MISSING=() TOOLENV=()
+  if [[ -n $p ]]; then
+    self_caps "$p"
+    self=$SELF
+    for cap in ${BREQ[$p]} ${REQ[$p]}; do
+      [[ $self == *" $cap "* ]] || queue+=("$cap")
+    done
+    [[ $TOOLS_REF != none || ${KIND[$p]} != package ]] || queue+=(host-base)
+  fi
   # An entry is a capability, or ref:<capability> for a requirement of a
   # reference package.
   while ((${#queue[@]})); do
@@ -590,8 +628,56 @@ env_of() {
       queue+=(${REQ[$PROVIDER]})
     fi
   done
+  [[ $TOOLS_REF == none ]] || env_tools inenv
   mapfile -t ENV < <(printf '%s\n' "${!inenv[@]}" | sed '/^$/d' | sort)
   ((${#MISSING[@]} == 0))
+}
+
+# Add the build tools to an environment (env_of): the build-tools
+# profile, with what it requires and what that requires, as the top says.
+# An entry is tool:<capability>, or own:<capability> for a requirement of
+# a tools package, which its own reference meets.
+# Inputs:
+#   $1        name of the environment map (env_of: inenv)
+#   TOOLSREF, TOOLS_REQ, POSREF, REF_REQ
+# Outputs:
+#   the map, TOOLENV, MISSING
+env_tools() {
+  local -n env=$1
+  local entry cap e q
+  local -a queue=(tool:build-tools)
+  local -A seen=()
+  while ((${#queue[@]})); do
+    entry=${queue[0]}
+    queue=("${queue[@]:1}")
+    [[ -z ${seen[$entry]:-} ]] || continue
+    seen[$entry]=1
+    cap=${entry#*:}
+    PROVIDER=
+    if [[ $cap == build-tools ]]; then
+      [[ ${KIND[build-tools]:-} == profile ]] ||
+        die "tools $TOOLS_REF: the project has no build-tools profile (pos/build-env/packages/build-tools)"
+      PROVIDER=build-tools
+    elif [[ $entry == own:* ]]; then
+      for q in ${PROVIDERS[$cap]:-}; do
+        [[ -z ${TOOLSREF[$q]:-} ]] || { PROVIDER=$q@tools; break; }
+      done
+    fi
+    if [[ -z $PROVIDER ]]; then
+      for e in "${!env[@]}"; do
+        [[ " ${PROV[${e%@*}]} " != *" $cap "* ]] || continue 2
+      done
+      provider_tools "$cap" || { MISSING+=("$cap"); continue; }
+    fi
+    [[ -z ${env[$PROVIDER]:-} ]] || continue
+    env[$PROVIDER]=1
+    TOOLENV[$PROVIDER]=1
+    case $PROVIDER in
+      *@tools) for q in ${TOOLS_REQ[${PROVIDER%@*}]:-}; do queue+=("own:$q"); done ;;
+      *@pos) for q in ${REF_REQ[${PROVIDER%@*}]:-}; do queue+=("tool:$q"); done ;;
+      *) for q in ${REQ[$PROVIDER]}; do queue+=("tool:$q"); done ;;
+    esac
+  done
 }
 
 # Check whether any package in the resolved ENV[] provides a capability.
@@ -800,6 +886,7 @@ next_package() {
     env_of "$p" || continue
     ready+=("$p")
     for e in "${ENV[@]}"; do
+      [[ -z ${TOOLENV[$e]:-} ]] || continue
       is_ref "$e" || continue
       q=${e%@*}
       [[ ${KIND[$q]} != output ]] || q=${PARENT[$q]}

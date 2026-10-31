@@ -28,6 +28,7 @@ config_keys=(
   "reference-dir POS_REFERENCE_DIR -"
   "toolchain-reference POS_TOOLCHAIN_REFERENCE -"
   "pos-reference POS_POS_REFERENCE -"
+  "tools POS_TOOLS fedora"
   "release-dir POS_RELEASE_DIR -"
   "download-dir POS_DOWNLOAD_DIR -"
   "engine-checkout POS_ENGINE_CHECKOUT -"
@@ -71,8 +72,8 @@ config_load() {
 # The value of a setting; empty for one without a default.
 # Inputs:
 #   $1    setting key (fedora-release, tools-image, reference-dir,
-#         toolchain-reference, pos-reference, release-dir, download-dir,
-#         engine-checkout)
+#         toolchain-reference, pos-reference, tools, release-dir,
+#         download-dir, engine-checkout)
 config() {
   local line k var def
   for line in "${config_keys[@]}"; do

@@ -132,6 +132,8 @@ $build_config and $project_config; an environment variable overrides one:
   reference-dir   POS_REFERENCE_DIR   the reference store
   toolchain-reference  POS_TOOLCHAIN_REFERENCE  the toolchain reference, or none
   pos-reference   POS_POS_REFERENCE   the pos reference, or none
+  tools           POS_TOOLS           the build tools: fedora (default), or an
+                                      extras reference
   release-dir     POS_RELEASE_DIR     the release library publish copies into
   download-dir    POS_DOWNLOAD_DIR    the sources' release archives
                                       (default work/downloads)
@@ -225,6 +227,7 @@ build_new() {
     echo "tools-image $(tools_image)"
     echo "toolchain-reference $TOOLCHAIN_REF"
     echo "pos-reference $POS_REF"
+    echo "tools-reference $TOOLS_REF"
     echo "branch $branch"
     tree_state | awk '{print "commit", $1; print "tree", $2} NF > 2 {print "engine", $4}'
     echo "$version"
@@ -237,17 +240,20 @@ build_new() {
 # The prefix the project's packages install in: the project file's prefix
 # line (default /pos), its <version> the build's <product
 # version>.<revision>, which stays the same while developing and changes
-# with a service release (BUILD.md "Prefix").
+# with a service release, and its <release> the build's product release,
+# <branch>.<timestamp> while developing (BUILD.md "Prefix").
 # Inputs:
 #   $1      the build's version lines (version_info)
 #   base    the project checkout
 project_prefix() {
-  local p v
+  local p v r
   p=$(awk '$1 == "prefix" {print $2}' "$base/project")
   p=${p:-/pos}
   [[ $p == /?* && $p != */ ]] || die "$base/project: prefix is an absolute path, not '$p'"
   v=$(awk '$1 == "product-version" {pv = $2} $1 == "revision" {r = $2} END {print pv "." r}' <<<"$1")
-  echo "${p//<version>/$v}"
+  r=$(awk '$1 == "product-release" {print $2}' <<<"$1")
+  p=${p//<version>/$v}
+  echo "${p//<release>/$r}"
 }
 
 # The sdk's prefix in a project of prefix $1: /pos/sdk in pos's prefix
@@ -410,6 +416,9 @@ prepare_key() {
     upstream_info "$s"
     cat "$base/${PKGDIR[$s]}/prepare.sh" "$engine/buildsys/prepare.sh"
     echo "${PREQ[$s]}"
+    # What prepare generates with is part of it; fedora's tools are the
+    # tools image's, which keys never had.
+    [[ $TOOLS_REF == none ]] || echo "tools $TOOLS_REF"
     if [[ -f $base/${SRCPATH[$s]}/bootstrap.conf || -x $base/${SRCPATH[$s]}/autopull.sh ]]; then
       source_tree gnulib
     fi
@@ -444,6 +453,23 @@ prepare_source() {
   upstream_info "$s" >"$dir.upstream"
   recipe_mounts
   mounts=(net ro:"$engine/buildsys" "${RECIPE_MOUNTS[@]}" ro:"$base/${SRCPATH[$s]}" rw:"$dir.tmp" ro:"$dir.upstream")
+  # The build tools of an extras reference: /pos and their prefix as a
+  # package build has them, without a package's own environment.
+  # Its own environment: prepare runs within a package's build_one.
+  local root='' scripts=''
+  local -a ENV=() MISSING=()
+  local -A TOOLENV=()
+  if [[ $TOOLS_REF != none ]]; then
+    root=$bdir/roots/prepare-$s
+    env_of || die "prepare $s: build tools unresolved: ${MISSING[*]}"
+    local p=prepare-$s q
+    root_compose "$root"
+    root_mounts "$root"
+    mounts+=("${ROOT_MOUNTS[@]}")
+    for q in $(env_scripts); do
+      scripts+=" $(env_script "$q" "$hbase")"
+    done
+  fi
   if [[ -n ${SRCPATH[gnulib]:-} && -d $base/${SRCPATH[gnulib]} ]]; then
     gnulib=$hbase/${SRCPATH[gnulib]}
     mounts+=(ro:"$base/${SRCPATH[gnulib]}")
@@ -462,7 +488,10 @@ prepare_source() {
     POS_PREP_DIR="$(host_path "$dir.tmp")" \
     POS_UPSTREAM="$(host_path "$dir.upstream")" \
     POS_WITH_SRC_DIRS="${with_dirs# }" \
+    POS_TOOLS_PREFIX="$(tools_prefix)" \
+    POS_ENV_SCRIPTS="${scripts# }" \
     bash "$(host_path "$engine/buildsys/prepare.sh")" 2>&1 | tee -a "$log"
+  [[ -z $root ]] || rm -rf "$root"
   mv "$dir.tmp" "$dir"
   touch "$dir.done"
 }
@@ -632,6 +661,7 @@ pkg_record() {
     echo "build-tools $TOOLS_ID"
     echo "build-toolchain-reference $TOOLCHAIN_REF"
     echo "build-pos-reference $POS_REF"
+    echo "build-tools-reference $TOOLS_REF"
     echo "built $(date -u +%FT%TZ)"
   } >"$dir/meta.tmp"
   mv "$dir/meta.tmp" "$dir/meta"
@@ -643,14 +673,16 @@ pkg_record() {
 }
 
 # The staging tree of a package in the environment, a root holding its
-# prefix: this build's, or a reference's (<name>@ref, <name>@pos).
+# prefix: this build's, or a reference's (<name>@ref, <name>@pos,
+# <name>@tools).
 # Inputs:
-#   $1    environment entry (<pkg>, <pkg>@ref or <pkg>@pos)
-#   TOOLCHAIN_REF, POS_REF
+#   $1    environment entry (<pkg>, <pkg>@ref, <pkg>@pos or <pkg>@tools)
+#   TOOLCHAIN_REF, POS_REF, TOOLS_REF
 env_tree() {
   case $1 in
     *@ref) echo "$refs/$TOOLCHAIN_REF/dest/${1%@ref}" ;;
     *@pos) echo "$refs/$POS_REF/dest/${1%@pos}" ;;
+    *@tools) echo "$refs/$TOOLS_REF/dest/${1%@tools}" ;;
     *) echo "$bdir/dest/$1" ;;
   esac
 }
@@ -658,8 +690,8 @@ env_tree() {
 # The prefix of an environment entry's package: a reference's
 # (ref_prefix), or this build's; /pos for one whose meta says so (PFX).
 # Inputs:
-#   $1    environment entry (<pkg>, <pkg>@ref or <pkg>@pos)
-#   TOOLCHAIN_REF, POS_REF, PREFIX, PFX
+#   $1    environment entry (<pkg>, <pkg>@ref, <pkg>@pos or <pkg>@tools)
+#   TOOLCHAIN_REF, POS_REF, TOOLS_REF, PREFIX, PFX
 env_prefix() {
   local p=${1%@*}
   if [[ -n ${PFX[$p]:-} ]]; then
@@ -669,8 +701,43 @@ env_prefix() {
   case $1 in
     *@ref) ref_prefix "$TOOLCHAIN_REF" ;;
     *@pos) ref_prefix "$POS_REF" ;;
+    *@tools) ref_prefix "$TOOLS_REF" ;;
     *) echo "$PREFIX" ;;
   esac
+}
+
+# The prefix of the build tools from an extras reference, or nothing
+# (fedora's, in the tools image).
+# Inputs:
+#   TOOLS_REF
+tools_prefix() {
+  [[ $TOOLS_REF == none ]] || ref_prefix "$TOOLS_REF"
+}
+
+# The build tools, for messages: fedora, or the extras reference and its
+# number of packages.
+# Inputs:
+#   TOOLS_REF, TOOLSREF
+tools_name() {
+  if [[ $TOOLS_REF == none ]]; then
+    echo fedora
+  else
+    echo "$TOOLS_REF (${#TOOLSREF[@]} packages)"
+  fi
+}
+
+# The packages of the environment a package build may link (pkg.sh:
+# _pkg_linkcheck): all but those only the build tools brought (TOOLENV),
+# by name, and the build's own outputs.
+# Inputs:
+#   $1    package name
+#   ENV, TOOLENV, OUTS
+env_linkable() {
+  local q
+  for q in "${ENV[@]}"; do
+    [[ -n ${TOOLENV[$q]:-} ]] || echo "${q%@*}"
+  done
+  echo "$1" ${OUTS[$1]}
 }
 
 # Compose the root of a package build: the trees of the packages in ENV
@@ -829,6 +896,8 @@ build_one() {
     POS_RECIPE_DIR="$hbase/${PKGDIR[$p]}" \
     POS_PREFIX="$PREFIX" \
     POS_SDK_PREFIX="$(sdk_prefix)" \
+    POS_TOOLS_PREFIX="$(tools_prefix)" \
+    POS_LINKABLE="$(env_linkable "$p" | xargs)" \
     POS_OUTPUT_PREFIXES="${outpfx# }" \
     POS_SRC_DIR="/src/${SRC[$p]}" \
     POS_WITH_SRC_DIRS="${with_dirs# }" \
@@ -886,7 +955,8 @@ cmd_plan() {
   targets_expand "${args[@]}"
   targets_check "${TARGETS[@]}"
   echo "build $id ($PIPELINE)"
-  echo "toolchain reference $TOOLCHAIN_REF (${#REF[@]} packages), pos reference $POS_REF (${#POSREF[@]} packages)"
+  echo "toolchain reference $TOOLCHAIN_REF (${#REF[@]} packages), pos reference $POS_REF (${#POSREF[@]} packages)," \
+       "tools $(tools_name)"
   while next_package "${TARGETS[@]}"; do
     env_of "$NEXT"
     printf '%3d %-24s setup: %s\n' $((++n)) "$NEXT" "$(env_scripts | sed 's/@.*//' | xargs)"
@@ -1048,7 +1118,7 @@ cmd_run() {
   build_versioned "$bdir"
   build_load
   echo "build $id ($PIPELINE), toolchain reference $TOOLCHAIN_REF (${#REF[@]} packages)," \
-       "pos reference $POS_REF (${#POSREF[@]} packages)"
+       "pos reference $POS_REF (${#POSREF[@]} packages), tools $(tools_name)"
   if ((${#args[@]} == 0)); then
     all=1
     mapfile -t args < <(pipeline_targets)

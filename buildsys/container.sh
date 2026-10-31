@@ -36,13 +36,15 @@ host_podman() {
 
 # The Fedora packages of the tools image: the host-requires and
 # prepare-requires of every package and the host-requires of every output
-# (outputs.sh), so any step of the run finds what it declares.
+# (outputs.sh), so any step of the run finds what it declares. host-base's
+# only with fedora's build tools (reference.sh: tools_choose).
 # Inputs:
-#   PKGS, HREQ, PREQ, OUT_HREQ
+#   PKGS, HREQ, PREQ, OUT_HREQ, TOOLS_REF
 tools_packages() {
   local p
   {
     for p in "${PKGS[@]}"; do
+      [[ $p != host-base || $TOOLS_REF == none ]] || continue
       echo ${HREQ[$p]} ${PREQ[$p]}
     done
     echo "${OUT_HREQ[@]}"

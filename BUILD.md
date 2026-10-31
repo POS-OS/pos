@@ -170,6 +170,7 @@ an unknown key is an error.
 | `reference-dir` | `POS_REFERENCE_DIR` | none: no reference store |
 | `toolchain-reference` | `POS_TOOLCHAIN_REFERENCE` | the store's default (see "Reference builds"); a build ID or `<project>/<release>`; `none`: a build with Fedora's compiler |
 | `pos-reference` | `POS_POS_REFERENCE` | a pos build: its toolchain reference's; a toolchain build: the store's default; a build ID or `<project>/<release>` |
+| `tools` | `POS_TOOLS` | `fedora`: host-base in the tools image; an extras reference, a build ID or `<project>/<release>`: its tools and the pos reference's base (see "Build tools") |
 | `release-dir` | `POS_RELEASE_DIR` | none: `publish` needs it; the release library of every project, a directory each; read by `publish` and to restore references, not recorded by builds |
 | `download-dir` | `POS_DOWNLOAD_DIR` | `work/downloads`: the sources' release archives (see "Release archives"); not recorded by builds |
 | `engine-checkout` | `POS_ENGINE_CHECKOUT` | none: the pos checkout another project's `./build` takes the engine from (see "Engine"); read by that `./build` |
@@ -216,7 +217,7 @@ list of the stage named after the tree.
 | `core-libs`, `base`, `system` | the stages: their member lists, and the packages and sources of their members |
 | `network`, `container`, `storage` | the optional stages (see "Network stage", "Container stage", "Storage stage"), as the stages above |
 | `common` | sources of packages of several trees: gnulib |
-| `build-env` | the host and profile packages builds require (host-base, host-toolchain, gcc-host, pos-link) |
+| `build-env` | the host and profile packages builds require (host-base, build-tools, host-toolchain, gcc-host, pos-link) |
 
 A package lives in the tree of the stage that ships it, and one no stage
 ships by its role. The toolchain is the exception: core-libs lists
@@ -340,8 +341,8 @@ wherever it is installed. `build-requires` are needed only to build it.
 Every package provides its own name. When two available packages provide
 what is required, the one the other obsoletes is not used. `host-requires`
 are Fedora packages, in the build's tools image (see "Build containers");
-`host-base` (`pos/build-env/packages/host-base`) lists the tools every
-build gets.
+the tools every build gets are `host-base`'s or `build-tools`' (see
+"Build tools").
 
 Go and Rust packages (the container stage's) build with Fedora's
 compilers, from the tools image (`host-requires golang`, `rust cargo`):
@@ -495,6 +496,44 @@ build as an extras reference; builds do not take one yet. The extras
 install in `/apps/pos-extras/<version>` (see "Prefix"); pos-extras's
 `pos-link` links against that prefix and `/pos`.
 
+## Build tools
+What every step builds with, beyond what a package requires: make, the
+autotools, perl, python, git, the shell and the file tools. The `tools`
+setting picks them when a build is created (`info`: `tools-reference`):
+
+* `fedora`, the default: `host-base`'s Fedora packages, installed in the
+  tools image (see "Build containers") and a requirement of every package.
+  The from-nothing chain (see "Toolchain") builds with these.
+* an extras reference (see "Reference builds"): a pos-extras build or
+  release, and the base stage of the build's pos reference. `host-base`
+  is left out of the tools image, which keeps the `host-requires` that
+  packages and outputs declare. The `build-tools` profile
+  (`pos/build-env/packages/build-tools`) lists the tools; its `env.sh`
+  puts `<tools prefix>/bin`, `/pos/bin` and `/pos/sbin` on `PATH`, ahead
+  of the tools image's, and `pos-link` puts the build's prefix and the sdk
+  in front of them.
+
+The tools are resolved after a package's own environment (`env_of`,
+`buildsys/resolve.sh`). A tool the environment already provides is not
+added. One it does not is the extras reference's (`<name>@tools`) or the
+pos reference's (`<name>@pos`), never this build's, so a tool never
+makes a package wait, also not one the run builds (bash in a pos build).
+A tool's requirements of /pos packages are the environment's where it
+has them, so the tools run on what the build built; those of extras
+packages are the extras reference's own, in its prefix: its autoconf runs
+its perl. The extras reference's packages stay in their own prefix
+(`/apps/pos-extras/<version>-<release>`, see "Prefix"), so their `#!`
+lines and runpaths hold; it may not be the build's own prefix, where an
+extras build installs its packages.
+
+The libraries of the tools are in `/pos` without the package requiring
+them, as Fedora's buildroot holds its build group, and a configure
+script can find them. `_pkg_linkcheck` (`buildsys/pkg.sh`) fails a
+package with an ELF file that links a library of a package only the
+tools brought: it requires that package, or keeps the library from being
+found. Preparing a source (see "Sources") gets the same tools,
+without a package's environment, and its key names the extras reference.
+
 ## Build containers
 Every step of a build (preparing a source, building a package, making an
 output) runs in a podman container of its own, except what an output
@@ -511,11 +550,13 @@ two things:
   same tools whatever order they run in. When a package declares more
   later in the build, the image is made again on the same base
   (`tools-packages` lists what it has). What a step uses from Fedora must
-  be declared (`host-base` for every build): the base image has little
-  more than bash, coreutils and dnf.
+  be declared (`host-base` for every build with Fedora's build tools, see
+  "Build tools"): the base image has little more than bash, coreutils and
+  dnf.
 * `/pos`: the package's resolved environment, composed for this build: the
   staging trees of the POS packages in it (this build's `dest/<name>`, or
-  a reference's), hard-linked into `roots/<package>`, whose top
+  a reference's), and the build tools of an extras reference with what
+  they run on, hard-linked into `roots/<package>`, whose top
   directories are mounted read-only: `/pos`, and in an extras build the
   build's prefix under `/apps` too.
   A path has one owner: composing fails when two packages of the
@@ -577,8 +618,9 @@ kinds:
   the targets. In an extras build, as in a toolchain build, a pos
   reference package provides what no package of the build does, and a
   toolchain reference package what no target provides.
-* An extras reference is an extras build: the extras packages. It is
-  stored, and not taken by builds yet.
+* An extras reference is an extras build: the extras packages. A build
+  whose `tools` setting names one takes its build tools from it (see
+  "Build tools"); its packages are `<name>@tools`.
 
 A reference package's own requirements are those it was built with (its
 recorded meta). They are met by this build's packages once built,
@@ -721,10 +763,14 @@ Third-party applications install in separate hierarchy. A machine can keep `/usr
 
 A project's packages install in its prefix: the `prefix` line of its
 `project` file, `/pos` without one. pos installs in `/pos`, pos-sdk in
-`/apps/pos-sdk/<version>` and pos-extras in `/apps/pos-extras/<version>`. `<version>` is `<product
+`/apps/pos-sdk/<version>` and pos-extras in `/apps/pos-extras/<version>-<release>`. `<version>` is `<product
 version>.<revision>` of `VERSION` (1.0.0): it stays the same while
 developing, so builds of the same sources stay comparable (the prefix is
-compiled into programs), and changes with a service release. A new
+compiled into programs), and changes with a service release. `<release>`
+is the build's product release (see "Build numbers"),
+`<branch>.<timestamp>` while developing: every build has a prefix of its
+own, so a build can take the build tools of another (see "Build tools"),
+and two builds of the same sources differ in it. A new
 build records its prefix in `info` (`prefix`), and a reference build's
 packages are found in the prefix its `info` names (`/pos` for builds
 from before prefixes). A package can install in `/pos` instead (meta
@@ -740,7 +786,7 @@ The POS loader finds only `/pos/lib` (see "Library directory"). A
 program or library in another prefix that links libraries of that
 prefix gets a runpath to them relative to itself: `$ORIGIN/../lib` from
 `bin`. `_pkg_runpath` (`buildsys/pkg.sh`) sets it after install with
-patchelf, which the project's `pos-link` declares (`host-requires`), so
+patchelf, from `host-base` or `build-tools` (see "Build tools"), so
 `$ORIGIN` need not survive configure and make quoting. It looks in
 `<prefix>/lib` and in the runpath entries in the prefix a build tool set
 (libtool's absolute libdir), and drops entries outside the prefix (build

@@ -1,0 +1,10 @@
+# Build profile: the build tools of every step when the tools setting
+# names an extras reference (BUILD.md "Build tools"), in place of
+# host-base: the base stage's tools from the pos reference, the rest
+# pos-extras', in its prefix. A package's own requirements come first; a
+# tool it does not require is the references' copy.
+kind profile
+requires bash coreutils findutils gawk grep sed tar gzip xz zstd bzip2 cpio file which curl
+requires make m4 autoconf automake autoconf-archive libtool pkgconf
+requires bison flex gperf texinfo help2man gettext-tools
+requires perl python3 git diffutils patch patchelf

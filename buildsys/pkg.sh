@@ -30,6 +30,14 @@
 #                   toolchain reference's (/apps/pos-sdk/<version>, /pos/sdk
 #                   for toolchains from before prefixes); a pos-sdk build
 #                   installs the new one in its own prefix
+#   POS_TOOLS_PREFIX  the prefix of the build tools from an extras
+#                   reference (/apps/pos-extras/<version>-<release>), or
+#                   empty for fedora's, in the tools image (BUILD.md
+#                   "Build tools"); the build-tools profile's env.sh puts
+#                   them on PATH
+#   POS_LINKABLE    the packages of the environment the package may link:
+#                   its own environment, not what only the build tools
+#                   brought; _pkg_linkcheck checks its ELF files
 #   POS_DEBUG_DIR   where _pkg_finish puts the package's separate debug
 #                   info, $POS_DEBUG_DIR$POS_PREFIX/lib/debug; an output's goes
 #                   next to it, as with the staging directories
@@ -67,11 +75,12 @@ _require_container() {
 # Inputs (environment):
 #   POS_BASE, POS_PACKAGE, POS_RECIPE_DIR, POS_PREFIX, POS_SRC_DIR,
 #   POS_BUILD_DIR, POS_DEST_DIR, POS_DEBUG_DIR, POS_OUTPUTS, POS_ENV_SCRIPTS,
-#   POS_SDK_PREFIX
+#   POS_SDK_PREFIX, POS_TOOLS_PREFIX
 # Outputs (shell variables set for pkg()):
 #   base, recipe_dir, src_dir, build_dir, dest_dir, debug_dir, prefix (the
 #   build's: /pos, or /apps/pos-extras/<version>), pos_prefix (/pos),
-#   sdk_prefix (the compiler's sdk), sysconfdir (/etc), localstatedir (/var), nproc,
+#   sdk_prefix (the compiler's sdk), tools_prefix (the build tools', or
+#   empty), sysconfdir (/etc), localstatedir (/var), nproc,
 #   CFLAGS, CXXFLAGS, LDFLAGS
 _pkg_setup() {
   _require_container
@@ -86,6 +95,8 @@ _pkg_setup() {
   # The sdk (the toolchain) the build compiles with, in its own prefix
   # (BUILD.md "Prefix").
   sdk_prefix=${POS_SDK_PREFIX:-${pos_prefix}/sdk}
+  # The build tools of an extras reference, in their own prefix.
+  tools_prefix=${POS_TOOLS_PREFIX:-}
   # Configuration is read from the machine's /etc, never from inside the
   # prefix. Variable data is /var. Files a package installs under either
   # are shipped defaults; _pkg_finish moves them to /pos/share/factory
@@ -161,16 +172,18 @@ pkg_output_prefix() {
 }
 
 # Copy the source into the build tree, and each further source into a
-# directory of it named after the source.
+# directory of it named after the source, replacing what was there.
 # Inputs:
 #   src_dir            primary source tree
 #   build_dir          scratch build directory
 #   POS_WITH_SRC_DIRS  optional space-separated <source>=<dir> pairs
 pkg_sync_src() {
   local w
-  rsync -a --delete "$src_dir/" "$build_dir/"
+  find "$build_dir" -mindepth 1 -delete
+  cp -a "$src_dir/." "$build_dir/"
   for w in ${POS_WITH_SRC_DIRS:-}; do
-    rsync -a --delete "${w#*=}/" "$build_dir/${w%%=*}/"
+    rm -rf "${build_dir:?}/${w%%=*}"
+    cp -a "${w#*=}" "$build_dir/${w%%=*}"
   done
 }
 
@@ -464,7 +477,7 @@ _pkg_runpath() {
     new=$(IFS=:; echo "${entries[*]}")
     [[ $new != "$old" ]] || continue
     command -v patchelf >/dev/null ||
-      { echo "${package}: no patchelf to set runpaths with (host-requires patchelf in pos-link)" >&2; exit 1; }
+      { echo "${package}: no patchelf to set runpaths with (host-base, or build-tools, has none)" >&2; exit 1; }
     mode=$(stat -c %a "$f")
     chmod u+w "$f"
     if [[ -n $new ]]; then
@@ -475,6 +488,52 @@ _pkg_runpath() {
     chmod "$mode" "$f"
     echo "${package}: runpath ${f#"$dest"}: ${old:-none} -> ${new:-none}"
   done < <(find "$dest" \( -path "$dest${prefix}/include" -o -path "$dest${prefix}/share" \) -prune -o -type f -print0)
+}
+
+# Check that the ELF files of a staging tree link only libraries of the
+# packages they may (POS_LINKABLE): its own environment's, not those only
+# the build tools brought into /pos, which a configure script can find
+# without the package requiring them (BUILD.md "Build tools"). A library
+# is looked up where the loader finds it, the tree's own lib, its prefix
+# and /pos/lib, and its package by the files record of each package in
+# the environment (<prefix>/lib/pos/packages/<name>/files). One the
+# package installs itself, or none records, is not checked.
+# Inputs:
+#   $1    staging directory to scan ($dest_dir or output staging dir)
+#   [$2]  the tree's prefix (default $prefix)
+#   POS_LINKABLE, pos_prefix, package
+_pkg_linkcheck() {
+  local dest=$1 pre=${2:-$prefix} f s d owner bad=
+  local -A owners=() ok=() seen=()
+  [[ -n ${POS_TOOLS_PREFIX:-} ]] || return 0
+  for s in ${POS_LINKABLE:-}; do
+    ok[$s]=1
+  done
+  for f in "$pos_prefix"/lib/pos/packages/*/files "$pre"/lib/pos/packages/*/files; do
+    [[ -f $f ]] || continue
+    owner=$(basename "$(dirname "$f")")
+    while read -r d; do
+      owners[$d]=$owner
+    done < <(grep -E "^($pos_prefix|$pre)/lib/[^/]+\.so[.0-9]*\$" "$f")
+  done
+  while IFS= read -r -d '' f; do
+    [[ $(head -c 4 "$f" | od -An -c | tr -d ' \n') == 177ELF ]] || continue
+    for s in $(readelf -d "$f" 2>/dev/null | awk -F'[][]' '/\(NEEDED\)/ {print $2}'); do
+      [[ -z ${seen[$s]:-} ]] || continue
+      seen[$s]=1
+      [[ ! -e $dest$pre/lib/$s ]] || continue
+      for d in "$pre/lib/$s" "$pos_prefix/lib/$s"; do
+        [[ -e $d ]] || continue
+        owner=${owners[$d]:-}
+        if [[ -n $owner && -z ${ok[$owner]:-} ]]; then
+          echo "${package}: ${f#"$dest"} links $s of $owner, which only the build tools brought; require $owner, or keep it from being found" >&2
+          bad=1
+        fi
+        break
+      done
+    done
+  done < <(find "$dest" \( -path "$dest${pre}/include" -o -path "$dest${pre}/share" \) -prune -o -type f -print0)
+  [[ -z $bad ]]
 }
 
 # Split the debug info off the ELF programs and libraries of a staging
@@ -541,9 +600,11 @@ _pkg_finish() {
   _pkg_factory
   _pkg_split
   _pkg_runpath "$dest_dir"
+  _pkg_linkcheck "$dest_dir"
   _pkg_strip "$dest_dir" "$debug_dir"
   for o in ${POS_OUTPUTS:-}; do
     _pkg_runpath "$(pkg_output "$o")" "$(pkg_output_prefix "$o")"
+    _pkg_linkcheck "$(pkg_output "$o")" "$(pkg_output_prefix "$o")"
     _pkg_strip "$(pkg_output "$o")" "$(dirname "$debug_dir")/$o" "$(pkg_output_prefix "$o")"
   done
   _pkg_cleanup

@@ -11,8 +11,9 @@
 #                        glibc and what links it, and the base's tools
 #                        and libraries. The toolchain runs on its glibc
 #                        and builds with its kernel headers
-#   extras reference     an extras build: the extras packages. Stored, not
-#                        yet taken by builds
+#   extras reference     an extras build: the extras packages. A build
+#                        whose tools setting names one takes its build
+#                        tools from it (BUILD.md "Build tools")
 #
 # A toolchain build takes the compiler from a toolchain reference (or
 # Fedora's, gcc-host, without one) and glibc from a pos reference. A pos
@@ -24,7 +25,7 @@
 # toolchain from a toolchain reference and core-libs and base from a pos
 # reference, as a pos build does, and builds no package of either.
 
-declare TOOLCHAIN_REF=none POS_REF=none
+declare TOOLCHAIN_REF=none POS_REF=none TOOLS_REF=none
 
 # The reference the store marks the default of a kind, or nothing. Stores
 # from before pos references mark the toolchain's as default.
@@ -85,9 +86,10 @@ ref_metas() {
 # for a pos or extras build the pos reference its toolchain reference was
 # built on, else the store's defaults.
 # Inputs:
-#   PIPELINE, config(toolchain-reference, pos-reference, reference-dir)
+#   PIPELINE, config(toolchain-reference, pos-reference, tools,
+#   reference-dir)
 # Outputs:
-#   TOOLCHAIN_REF, POS_REF (reference IDs or none)
+#   TOOLCHAIN_REF, POS_REF, TOOLS_REF (reference IDs or none)
 references_choose() {
   TOOLCHAIN_REF=$(reference_named "$(config toolchain-reference)") || exit 1
   TOOLCHAIN_REF=${TOOLCHAIN_REF:-$(reference_default toolchain)}
@@ -102,8 +104,10 @@ references_choose() {
     POS_REF=$(reference_default pos)
   POS_REF=${POS_REF:-none}
   reference_restore "$POS_REF" pos
+  tools_choose
   foreign_load "$TOOLCHAIN_REF"
   foreign_load "$POS_REF"
+  foreign_load "$TOOLS_REF"
   case $PIPELINE in
     toolchain)
       [[ $POS_REF != none ]] ||
@@ -126,6 +130,28 @@ references_choose() {
       [[ $TOOLCHAIN_REF == none ]] || pos_ref_needed
       ;;
   esac
+}
+
+# The build tools of a new build (tools setting): fedora, host-base in
+# the tools image (TOOLS_REF none), or an extras reference, restored. Its
+# packages are at their own prefix, which must not be the build's: an
+# extras build installs its own there.
+# Inputs:
+#   PREFIX, config(tools)
+# Outputs:
+#   TOOLS_REF (reference ID or none)
+tools_choose() {
+  local t
+  t=$(config tools)
+  if [[ $t == fedora ]]; then
+    TOOLS_REF=none
+    return 0
+  fi
+  TOOLS_REF=$(reference_named "$t") || exit 1
+  [[ -n $TOOLS_REF && $TOOLS_REF != none ]] || die "tools: fedora or an extras reference, not '$t'"
+  reference_restore "$TOOLS_REF" extras
+  [[ $(ref_prefix "$TOOLS_REF") != "$PREFIX" ]] ||
+    die "tools $TOOLS_REF are installed in $PREFIX, the prefix this build installs in; take tools of another version"
 }
 
 # Die unless a build with a toolchain reference has a pos reference its
@@ -211,7 +237,7 @@ reference_archive() {
 # neither has it.
 # Inputs:
 #   $1      reference ID
-#   $2      toolchain or pos
+#   $2      toolchain, pos or extras
 reference_find() {
   local name f store rels
   name=$(reference_archive "$1" "$2")
@@ -246,7 +272,7 @@ reference_named() {
 # remote one would be fetched from.
 # Inputs:
 #   $1      reference ID or "none"
-#   $2      toolchain or pos
+#   $2      toolchain, pos or extras
 #   refs    work/references directory
 reference_restore() {
   local ref=$1 kind=$2 store archive
@@ -271,17 +297,28 @@ reference_restore() {
 }
 
 # The packages of the references the resolver may use, with the
-# requirements they were built with (resolve.sh: REF, POSREF, REF_REQ):
-# the toolchain packages of the toolchain reference, the pos packages of the
-# pos reference. A toolchain reference from before pos references also
-# holds glibc, which is not taken from it.
+# requirements they were built with (resolve.sh: REF, POSREF, REF_REQ,
+# TOOLSREF, TOOLS_REQ): the toolchain packages of the toolchain
+# reference, the pos packages of the pos reference, the extras packages of
+# the tools. A toolchain reference from before pos references also holds
+# glibc, which is not taken from it. The tools' packages have requirements
+# of their own (TOOLS_REQ): in an extras build they have the names of the
+# build's packages, in another prefix.
 # Inputs:
-#   TOOLCHAIN_REF, POS_REF, refs
+#   TOOLCHAIN_REF, POS_REF, TOOLS_REF, refs
 # Outputs:
-#   REF[], POSREF[], REF_REQ[]
+#   REF[], POSREF[], REF_REQ[], TOOLSREF[], TOOLS_REQ[]
 load_references() {
   local ref from meta p
-  REF=() POSREF=() REF_REQ=() HOSTAVAIL=()
+  REF=() POSREF=() REF_REQ=() TOOLSREF=() TOOLS_REQ=() HOSTAVAIL=()
+  if [[ $TOOLS_REF != none ]]; then
+    while read -r meta; do
+      p=$(basename "$(dirname "$meta")")
+      [[ -n ${KIND[$p]:-} && ${PIPE[$p]} == extras ]] || continue
+      TOOLSREF[$p]=1
+      TOOLS_REQ[$p]=$(awk '$1 == "requires" {$1 = ""; print}' "$meta" | xargs)
+    done < <(ref_metas "$TOOLS_REF")
+  fi
   for ref in "$TOOLCHAIN_REF" "$POS_REF"; do
     [[ $ref != none ]] || continue
     from=$(ref_info "$ref" pipeline)
@@ -300,21 +337,26 @@ load_references() {
 }
 
 # The references of the build in bdir, restored: from its info. A build
-# from before pos references has one reference, its toolchain's.
+# from before pos references has one reference, its toolchain's; one from
+# before the tools setting has fedora's tools.
 # Inputs:
 #   bdir    active build directory
 # Outputs:
-#   TOOLCHAIN_REF, POS_REF
+#   TOOLCHAIN_REF, POS_REF, TOOLS_REF
 build_references() {
   TOOLCHAIN_REF=$(build_info toolchain-reference)
   TOOLCHAIN_REF=${TOOLCHAIN_REF:-$(build_info reference)}
   TOOLCHAIN_REF=${TOOLCHAIN_REF:-none}
   POS_REF=$(build_info pos-reference)
   POS_REF=${POS_REF:-none}
+  TOOLS_REF=$(build_info tools-reference)
+  TOOLS_REF=${TOOLS_REF:-none}
   reference_restore "$TOOLCHAIN_REF" toolchain
   reference_restore "$POS_REF" pos
+  reference_restore "$TOOLS_REF" extras
   foreign_load "$TOOLCHAIN_REF"
   foreign_load "$POS_REF"
+  foreign_load "$TOOLS_REF"
 }
 
 # The reference archive of a build: its info and the staging trees and

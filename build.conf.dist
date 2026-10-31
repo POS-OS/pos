@@ -34,6 +34,14 @@
 # reference marked last.
 #pos-reference none
 
+# The build tools of every step (POS_TOOLS): fedora, the Fedora packages
+# of host-base in the tools image, or an extras reference, as for
+# toolchain-reference (a pos-extras build ID or <project>/<release>): its
+# packages, at their own prefix, and the base stage of the build's pos
+# reference, as the build-tools profile lists them (BUILD.md "Build
+# tools"). Default: fedora.
+#tools fedora
+
 # Release library (POS_RELEASE_DIR): ./build publish copies a numbered
 # build's artifacts into <release-dir>/<project>/<release>; publish reads
 # it, and builds restore references from its releases; builds do not
