@@ -1732,5 +1732,14 @@ system stage's.
 * smartmontools: smartctl, smartd and the drive database, which updates
   with POS (no update-smart-drivedb).
 
+What the sources lack against a release, prepare makes as upstream's
+release does: nvme-cli's committed man pages, which upstream regenerates
+only for a release (newer commands have none on master), by its
+update-docs target; smartmontools' `util/dist-version.sh` (make dist), by
+its `getversion.sh` against the upstream history at the synced commit,
+fetched without file contents. thin-provisioning-tools' devicemapper-sys
+makes its bindings with bindgen, which needs libclang and the clang
+driver's header paths: Fedora's clang, a build tool only.
+
 Not in the stage: f2fs-tools, ntfs-3g, multipath-tools, targetcli (iSCSI
 targets), Stratis, VDO.
