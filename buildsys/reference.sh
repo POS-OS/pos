@@ -140,6 +140,7 @@ references_choose() {
       [[ $TOOLCHAIN_REF == none ]] || pos_ref_needed
       ;;
   esac
+  runtime_check
 }
 
 # The build tools of a new build (tools setting): fedora, host-base in
@@ -235,6 +236,68 @@ pos_ref_check() {
   [[ -n $have ]] || die "pos reference $POS_REF has no glibc"
   [[ $(printf '%s\n' "$need" "$have" | sort -V | head -n1) == "$need" ]] ||
     die "pos reference $POS_REF has glibc $have; toolchain reference $TOOLCHAIN_REF needs $need or newer (built on $on)"
+}
+
+# The gcc-runtime version of a restored toolchain reference (the version
+# line of its record), or nothing when it records none (references from
+# before package versions).
+# Inputs:
+#   $1      reference ID
+gcc_runtime_version() {
+  local m=$refs/$1/dest/gcc-runtime/pos/lib/pos/packages/gcc-runtime/meta
+  [[ ! -f $m ]] || awk '$1 == "version" {print $2}' "$m"
+}
+
+# Check the gcc-runtime what a new build makes or uses runs on (BUILD.md
+# "Extras"): programs linked with a toolchain's libstdc++ need its symbols,
+# and on an older gcc-runtime the ones its headers use are missing.
+# * An extras build's own: the toolchain reference's gcc, run on the
+#   gcc-runtime its pos reference shipped (that pos build's toolchain
+#   reference's).
+# * The tools' (an extras reference, any build): their toolchain's gcc, run
+#   on the gcc-runtime the build gives them, the toolchain reference's, or
+#   without one the pos reference's.
+# Inputs:
+#   PIPELINE, TOOLCHAIN_REF, POS_REF, TOOLS_REF
+runtime_check() {
+  local by on
+  if [[ $PIPELINE == extras ]]; then
+    on=$(ref_info "$POS_REF" toolchain-reference)
+    runtime_pair "$TOOLCHAIN_REF" "$on" "the extras on pos reference $POS_REF"
+  fi
+  [[ $TOOLS_REF != none ]] || return 0
+  by=$(ref_info "$TOOLS_REF" toolchain-reference)
+  on=$TOOLCHAIN_REF
+  [[ $on != none || $POS_REF == none ]] || on=$(ref_info "$POS_REF" toolchain-reference)
+  runtime_pair "$by" "$on" "tools $TOOLS_REF"
+}
+
+# Die unless toolchain reference $2's gcc-runtime is at least as new as
+# toolchain reference $1's gcc; warn when either cannot be told.
+# Inputs:
+#   $1      toolchain reference the programs were built with
+#   $2      toolchain reference whose gcc-runtime they run on
+#   $3      the programs, for messages
+runtime_pair() {
+  local r need have
+  [[ -n $1 && $1 != none && -n $2 && $2 != none && $1 != "$2" ]] || return 0
+  for r in "$1" "$2"; do
+    if [[ ! -f $refs/$r/info && ! -f $(config reference-dir)/$r/info && -z $(reference_find "$r" toolchain) ]]; then
+      echo "warning: cannot check the gcc-runtime of $3: no toolchain reference $r" >&2
+      return 0
+    fi
+    reference_restore "$r" toolchain
+  done
+  need=$(gcc_runtime_version "$1")
+  have=$(gcc_runtime_version "$2")
+  if [[ -z $need || -z $have ]]; then
+    r=$2
+    [[ -n $need ]] || r=$1
+    echo "warning: cannot check the gcc-runtime of $3: toolchain reference $r records no version" >&2
+    return 0
+  fi
+  [[ $(printf '%s\n' "$need" "$have" | sort -V | head -n1) == "$need" ]] ||
+    die "$3 run on gcc-runtime $have (toolchain reference $2); built with toolchain reference $1, gcc $need, they need $need or newer"
 }
 
 # The store archive of a reference of a kind: pos-ref-<kind>-<ref>.tar.zst.

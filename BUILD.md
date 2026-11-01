@@ -511,6 +511,19 @@ build as an extras reference; builds do not take one yet. The extras
 install in `/apps/pos-extras/<version>` (see "Prefix"); pos-extras's
 `pos-link` links against that prefix and `/pos`.
 
+The extras link the toolchain reference's gcc-runtime when they are
+built, and run on the pos reference's: the one its pos build took from
+its own toolchain reference. A newer gcc's headers need libstdc++ symbols
+an older gcc-runtime lacks (pos-sdk BUILD.md "Run-time coupling"), so an
+extras build is refused when the pos reference ships a gcc-runtime older
+than the toolchain reference's gcc (the `version` of the gcc-runtime
+records). Where either toolchain reference records no version, or the pos
+reference's is not found, it says it cannot check. A gcc update reaches
+the extras after a pos build with it is stored as the pos reference
+(`./build reference`, or the `pos-reference` setting): until then the
+store's pos is one an older gcc built. The build tools are checked the
+same way (see "Build tools").
+
 ## Build tools
 What every step builds with, beyond what a package requires: make, the
 autotools, perl, python, git, the shell and the file tools. The `tools`
@@ -532,8 +545,9 @@ setting picks them when a build is created (`info`: `tools-reference`):
 
 The tools are resolved after a package's own environment (`env_of`,
 `buildsys/resolve.sh`). A tool the environment already provides is not
-added. One it does not is the extras reference's (`<name>@tools`) or the
-pos reference's (`<name>@pos`), never this build's, so a tool never
+added. One it does not is the extras reference's (`<name>@tools`), else
+the toolchain reference's (`<name>@ref`: gcc-runtime) or the pos
+reference's (`<name>@pos`), never this build's, so a tool never
 makes a package wait, also not one the run builds (bash in a pos build).
 A tool's requirements of /pos packages are the environment's where it
 has them, so the tools run on what the build built; those of extras
@@ -542,6 +556,12 @@ its perl. The extras reference's packages stay in their own prefix
 (`/apps/pos-extras/<version>-<release>`, see "Prefix"), so their `#!`
 lines and runpaths hold; it may not be the build's own prefix, where an
 extras build installs its packages.
+
+The C++ tools (gperf, patchelf) run on the build's gcc-runtime: the
+toolchain reference's, or without one the pos reference's. A build is
+refused when that is older than the gcc of the toolchain reference the
+extras reference was built with, as an extras build is on its pos
+reference (see "Extras"): the tools of a newer gcc need a build with it.
 
 The libraries of the tools are in `/pos` without the package requiring
 them, as Fedora's buildroot holds its build group, and a configure
