@@ -550,7 +550,8 @@ provider_ref() {
 }
 
 # The tools' copy of a provider (see the top): the tools reference's
-# (<name>@tools), else the pos reference's (<name>@pos).
+# (<name>@tools), else the toolchain reference's (<name>@ref: gcc-runtime
+# of the C++ tools) or the pos reference's (<name>@pos).
 # Inputs:
 #   $1    capability name
 # Outputs:
@@ -561,6 +562,7 @@ provider_tools() {
     [[ -z ${TOOLSREF[$p]:-} ]] || { PROVIDER=$p@tools; return 0; }
   done
   for p in ${PROVIDERS[$1]:-}; do
+    [[ -z ${REF[$p]:-} ]] || { PROVIDER=$p@ref; return 0; }
     [[ -z ${POSREF[$p]:-} ]] || { PROVIDER=$p@pos; return 0; }
   done
   return 1
@@ -639,7 +641,7 @@ env_of() {
 # a tools package, which its own reference meets.
 # Inputs:
 #   $1        name of the environment map (env_of: inenv)
-#   TOOLSREF, TOOLS_REQ, POSREF, REF_REQ
+#   TOOLSREF, TOOLS_REQ, REF, POSREF, REF_REQ
 # Outputs:
 #   the map, TOOLENV, MISSING
 env_tools() {
@@ -674,7 +676,7 @@ env_tools() {
     TOOLENV[$PROVIDER]=1
     case $PROVIDER in
       *@tools) for q in ${TOOLS_REQ[${PROVIDER%@*}]:-}; do queue+=("own:$q"); done ;;
-      *@pos) for q in ${REF_REQ[${PROVIDER%@*}]:-}; do queue+=("tool:$q"); done ;;
+      *@ref|*@pos) for q in ${REF_REQ[${PROVIDER%@*}]:-}; do queue+=("tool:$q"); done ;;
       *) for q in ${REQ[$PROVIDER]}; do queue+=("tool:$q"); done ;;
     esac
   done
