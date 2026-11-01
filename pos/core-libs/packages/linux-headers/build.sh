@@ -8,6 +8,12 @@ pkg() {
   # No compiler environment is required; kbuild does not read the CFLAGS
   # _pkg_setup exports.
 
-  make -C "$src_dir" O="$build_dir" ARCH=x86_64 \
-       INSTALL_HDR_PATH="${dest_dir}${prefix}" headers_install
+  # headers_install is headers and an rsync of usr/include's *.h; the build
+  # tools have no rsync, so copy them as it does (empty directories pruned,
+  # links kept).
+  make -C "$src_dir" O="$build_dir" ARCH=x86_64 headers
+  mkdir -p "${dest_dir}${prefix}"
+  (cd "$build_dir/usr" &&
+     find include \( -type f -o -type l \) -name '*.h' \
+          -exec cp -P --parents -t "${dest_dir}${prefix}" {} +)
 }
