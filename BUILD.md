@@ -507,18 +507,20 @@ is, by default, the store's (see "Reference builds"): the extras link
 its libraries. A pos
 package outside core-libs and base is not in the pos reference, so an
 extras package cannot require it. `./build reference` stores a complete extras
-build as an extras reference; builds do not take one yet. The extras
+build as an extras reference, the build tools of later builds (see "Build
+tools"). The extras
 install in `/apps/pos-extras/<version>` (see "Prefix"); pos-extras's
 `pos-link` links against that prefix and `/pos`.
 
 The extras link the toolchain reference's gcc-runtime when they are
-built, and run on the pos reference's: the one its pos build took from
-its own toolchain reference. A newer gcc's headers need libstdc++ symbols
-an older gcc-runtime lacks (pos-sdk BUILD.md "Run-time coupling"), so an
-extras build is refused when the pos reference ships a gcc-runtime older
-than the toolchain reference's gcc (the `version` of the gcc-runtime
-records). Where either toolchain reference records no version, or the pos
-reference's is not found, it says it cannot check. A gcc update reaches
+built, and run on the gcc-runtime of the pos the pos reference was built
+as: its pos build's toolchain reference's (a pos reference holds no
+gcc-runtime itself). A newer gcc's headers need libstdc++ symbols an older
+gcc-runtime lacks (pos-sdk BUILD.md "Run-time coupling"), so an extras
+build is refused when that gcc-runtime is older than the toolchain
+reference's gcc (the `version` of the gcc-runtime records). Where a
+reference records no toolchain reference, either toolchain reference
+records no version, or one is not found, it says it cannot check. A gcc update reaches
 the extras after a pos build with it is stored as the pos reference
 (`./build reference`, or the `pos-reference` setting): until then the
 store's pos is one an older gcc built. The build tools are checked the
