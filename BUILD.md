@@ -357,6 +357,12 @@ scripts and proc-macros, links with the host's `cc` instead
 image's glibc, which may be older than POS's. `pkg_cargo` passes an
 explicit `--target` for that, which keeps RUSTFLAGS to the target's crates.
 
+Python modules (pos-extras) build with `pkg_python`: a wheel of the
+source, made by the python3 on PATH with the build backend the recipe
+requires (`build-requires setuptools`, `flit-core`), offline and without
+an isolated build environment, then installed into the prefix with its
+bytecode compiled for the installed paths.
+
 A package is of its project's pipeline (see "Engine", "Toolchain").
 `kind source` is a directory with only what makes a source, a prepare
 recipe or an `archive`, for a source other packages copy into their tree

@@ -270,6 +270,26 @@ pkg_meson() {
   DESTDIR="$dest_dir" meson install -C "$build_dir"
 }
 
+# Standard Python lifecycle: build a wheel of the source with the python3
+# on PATH and the build backend the environment has (no isolation, no
+# index), install it in $prefix under $dest_dir, and compile its bytecode
+# for the installed paths. pip's direct_url.json, which names the build
+# tree, is left out.
+# Inputs:
+#   $@         extra arguments passed to pip wheel
+#   build_dir  scratch build directory (the source is copied there)
+#   nproc      parallel job count
+pkg_python() {
+  local pip=(python3 -m pip --disable-pip-version-check --no-cache-dir)
+  pkg_sync_src
+  "${pip[@]}" wheel --no-deps --no-build-isolation --no-index \
+    -w "$build_dir/dist" "$@" "$build_dir"
+  "${pip[@]}" install --no-deps --no-index --no-compile --root-user-action=ignore \
+    --root "$dest_dir" --prefix "$prefix" "$build_dir"/dist/*.whl
+  find "${dest_dir}${prefix}" -path '*.dist-info/direct_url.json' -delete
+  python3 -m compileall -q -j "$nproc" -s "$dest_dir" -p / "${dest_dir}${prefix}"
+}
+
 # The linker flags of C programs (LDFLAGS: the POS loader, /pos/lib, the
 # hardening and build ID flags) as rustc arguments, for cargo builds.
 # Inputs:
