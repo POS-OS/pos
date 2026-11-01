@@ -37,16 +37,21 @@ host_podman() {
 # The Fedora packages of the tools image: the host-requires and
 # prepare-requires of every package and the host-requires of every output
 # (outputs.sh), so any step of the run finds what it declares. host-base's
-# only with fedora's build tools (reference.sh: tools_choose).
+# only with fedora's build tools (reference.sh: tools_choose); with an
+# extras reference's, none of those the build-tools profile replaces
+# (host-replaces) in packages' requirements. Outputs keep theirs: they
+# run on Fedora's, not the build tools.
 # Inputs:
-#   PKGS, HREQ, PREQ, OUT_HREQ, TOOLS_REF
+#   PKGS, HREQ, PREQ, HREPL, OUT_HREQ, TOOLS_REF
 tools_packages() {
   local p
+  local -a drop=()
+  [[ $TOOLS_REF == none ]] || drop=(${HREPL[build-tools]:-})
   {
     for p in "${PKGS[@]}"; do
       [[ $p != host-base || $TOOLS_REF == none ]] || continue
       echo ${HREQ[$p]} ${PREQ[$p]}
-    done
+    done | xargs -n1 | grep -vxF -f <(printf '%s\n' "${drop[@]}") || true
     echo "${OUT_HREQ[@]}"
   } | xargs -n1 | sort -u
 }

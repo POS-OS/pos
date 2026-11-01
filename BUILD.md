@@ -539,7 +539,12 @@ setting picks them when a build is created (`info`: `tools-reference`):
   (`pos/build-env/packages/build-tools`) lists the tools; its `env.sh`
   puts `<tools prefix>/bin`, `/pos/bin` and `/pos/sbin` on `PATH`, ahead
   of the tools image's, and `pos-link` puts the build's prefix and the sdk
-  in front of them.
+  in front of them. The profile's `host-replaces` names the Fedora
+  packages of recipes' `host-requires` and `prepare-requires` its tools
+  stand for (meson, ninja-build, cmake, python3 and its modules, perl):
+  the tools image leaves them out, so a step runs the extras' copy, not
+  Fedora's. Those recipes keep the Fedora names for `fedora` tools;
+  outputs keep theirs.
 * `fedora`: `host-base`'s Fedora packages, installed in the tools image
   (see "Build containers") and a requirement of every package. The
   default where the store has no extras reference or the build has no pos
@@ -559,9 +564,9 @@ its perl. The extras reference's packages stay in their own prefix
 lines and runpaths hold; it may not be the build's own prefix, where an
 extras build installs its packages.
 
-The C++ tools (gperf, patchelf) run on the build's gcc-runtime: the
-toolchain reference's, or without one the pos reference's. A build is
-refused when that is older than the gcc of the toolchain reference the
+The C++ tools (gperf, patchelf, ninja, cmake) run on the build's
+gcc-runtime: the toolchain reference's, or without one the pos
+reference's. A build is refused when that is older than the gcc of the toolchain reference the
 extras reference was built with, as an extras build is on its pos
 reference (see "Extras"): the tools of a newer gcc need a build with it.
 

@@ -12,3 +12,10 @@ requires perl python3 git diffutils patch patchelf
 # qemu's configure venv), in place of their Fedora host-requires.
 requires python3-setuptools python3-wheel python3-commonmark python3-jinja2
 requires python3-pyyaml python3-pyelftools
+# meson, ninja and cmake: the build systems recipes build with.
+requires meson ninja cmake
+# The Fedora packages of recipes' host-requires and prepare-requires that
+# these tools stand for: with them, the tools image leaves those out.
+host-replaces meson ninja-build cmake python3 perl
+host-replaces python3-setuptools python3-wheel python3-pip python3-CommonMark
+host-replaces python3-jinja2 python3-pyyaml python3-pyelftools

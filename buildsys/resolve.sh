@@ -16,6 +16,10 @@
 #   prepare-requires  Fedora packages for preparing the package's source
 #                   (<source>'s package directory, prepare.sh) in the
 #                   prepare toolbox
+#   host-replaces   Fedora packages of host-requires and prepare-requires
+#                   that the build-tools profile's tools stand for: with
+#                   an extras reference's tools, the tools image leaves
+#                   them out (container.sh)
 #   provides        extra capabilities; every package provides its own name
 #   obsoletes       packages this one replaces. Where both are available,
 #                   the obsoleting package is the one chosen
@@ -111,7 +115,7 @@
 # (pkg.sh: _pkg_linkcheck).
 
 declare -a PKGS=()
-declare -A KIND=() REQ=() BREQ=() HREQ=() PREQ=() PROV=() OBS=() SRC=() WSRC=() OUTS=() PARENT=()
+declare -A KIND=() REQ=() BREQ=() HREQ=() PREQ=() HREPL=() PROV=() OBS=() SRC=() WSRC=() OUTS=() PARENT=()
 declare -A PIPE=() PKGDIR=() SRCPATH=() SRCREFS=() ARCHIVE=() VERSION=() PFX=()
 declare -A PROVIDERS=() BOOTCAP=() TPROV=()
 declare -A BUILT=() REF=() POSREF=() REF_REQ=() FOREIGN=()
@@ -192,7 +196,7 @@ meta_load() {
     PKGDIR[$p]=${dir#"$base"/}
     [[ -f $dir/meta ]] || die "${PKGDIR[$p]}: missing meta"
     PKGS+=("$p")
-    KIND[$p]=package REQ[$p]= BREQ[$p]= HREQ[$p]= PREQ[$p]= PROV[$p]=$p OBS[$p]= SRC[$p]=$p
+    KIND[$p]=package REQ[$p]= BREQ[$p]= HREQ[$p]= PREQ[$p]= HREPL[$p]= PROV[$p]=$p OBS[$p]= SRC[$p]=$p
     WSRC[$p]= OUTS[$p]= PARENT[$p]= PIPE[$p]=$PIPELINE
     while read -r line; do
       line=${line%%#*}
@@ -203,6 +207,7 @@ meta_load() {
         build-requires) BREQ[$p]+=" $vals" ;;
         host-requires) HREQ[$p]+=" $vals" ;;
         prepare-requires) PREQ[$p]+=" $vals" ;;
+        host-replaces) HREPL[$p]+=" $vals" ;;
         provides) PROV[$p]+=" $vals" ;;
         obsoletes) OBS[$p]+=" $vals" ;;
         source) SRC[$p]=$vals ;;
