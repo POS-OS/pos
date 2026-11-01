@@ -133,8 +133,8 @@ $build_config and $project_config; an environment variable overrides one:
   reference-dir   POS_REFERENCE_DIR   the reference store
   toolchain-reference  POS_TOOLCHAIN_REFERENCE  the toolchain reference, or none
   pos-reference   POS_POS_REFERENCE   the pos reference, or none
-  tools           POS_TOOLS           the build tools: fedora (default), or an
-                                      extras reference
+  tools           POS_TOOLS           the build tools: an extras reference
+                                      (default: the store's), or fedora
   release-dir     POS_RELEASE_DIR     the release library publish copies into
   download-dir    POS_DOWNLOAD_DIR    the sources' release archives
                                       (default work/downloads)

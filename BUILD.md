@@ -170,7 +170,7 @@ an unknown key is an error.
 | `reference-dir` | `POS_REFERENCE_DIR` | none: no reference store |
 | `toolchain-reference` | `POS_TOOLCHAIN_REFERENCE` | the store's default (see "Reference builds"); a build ID or `<project>/<release>`; `none`: a build with Fedora's compiler |
 | `pos-reference` | `POS_POS_REFERENCE` | the project file's `pos-reference`; else a pos or extras build: the store's default, else its toolchain reference's; a toolchain build: none, an error (see "Reference builds"); a build ID or `<project>/<release>` |
-| `tools` | `POS_TOOLS` | `fedora`: host-base in the tools image; an extras reference, a build ID or `<project>/<release>`: its tools and the pos reference's base (see "Build tools") |
+| `tools` | `POS_TOOLS` | the store's default extras reference; `fedora` without one or without a pos reference; `fedora`: host-base in the tools image; an extras reference, a build ID or `<project>/<release>`: its tools and the pos reference's base (see "Build tools") |
 | `release-dir` | `POS_RELEASE_DIR` | none: `publish` needs it; the release library of every project, a directory each; read by `publish` and to restore references, not recorded by builds |
 | `download-dir` | `POS_DOWNLOAD_DIR` | `work/downloads`: the sources' release archives (see "Release archives"); not recorded by builds |
 | `engine-checkout` | `POS_ENGINE_CHECKOUT` | none: the pos checkout another project's `./build` takes the engine from (see "Engine"); read by that `./build` |
@@ -438,6 +438,10 @@ them in pos-sdk:
     pos$     ./build run --new                                     # the stages
     pos$     ./build reference                                     # pos reference of later toolchains
 
+The chain builds with Fedora's tools (see "Build tools"): its first pos
+reference has no base stage for extras tools to run on. In a store that
+has an extras reference, it runs with `POS_TOOLS=fedora`.
+
 The second toolchain build is the one released: its gcc is built by a POS
 gcc of the same sources. The bootstrap glibc is only what the first
 toolchains run on; the pos build builds glibc again with the toolchain's
@@ -512,17 +516,19 @@ What every step builds with, beyond what a package requires: make, the
 autotools, perl, python, git, the shell and the file tools. The `tools`
 setting picks them when a build is created (`info`: `tools-reference`):
 
-* `fedora`, the default: `host-base`'s Fedora packages, installed in the
-  tools image (see "Build containers") and a requirement of every package.
-  The from-nothing chain (see "Toolchain") builds with these.
-* an extras reference (see "Reference builds"): a pos-extras build or
-  release, and the base stage of the build's pos reference. `host-base`
+* an extras reference (see "Reference builds"), by default the store's
+  `default-extras`: a pos-extras build or release, and the base stage of
+  the build's pos reference. `host-base`
   is left out of the tools image, which keeps the `host-requires` that
   packages and outputs declare. The `build-tools` profile
   (`pos/build-env/packages/build-tools`) lists the tools; its `env.sh`
   puts `<tools prefix>/bin`, `/pos/bin` and `/pos/sbin` on `PATH`, ahead
   of the tools image's, and `pos-link` puts the build's prefix and the sdk
   in front of them.
+* `fedora`: `host-base`'s Fedora packages, installed in the tools image
+  (see "Build containers") and a requirement of every package. The
+  default where the store has no extras reference or the build has no pos
+  reference: the from-nothing chain (see "Toolchain") builds with these.
 
 The tools are resolved after a package's own environment (`env_of`,
 `buildsys/resolve.sh`). A tool the environment already provides is not

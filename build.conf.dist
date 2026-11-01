@@ -41,7 +41,8 @@
 # toolchain-reference (a pos-extras build ID or <project>/<release>): its
 # packages, at their own prefix, and the base stage of the build's pos
 # reference, as the build-tools profile lists them (BUILD.md "Build
-# tools"). Default: fedora.
+# tools"). Default: the extras reference ./build reference marked last;
+# fedora when there is none, or the build has no pos reference.
 #tools fedora
 
 # Release library (POS_RELEASE_DIR): ./build publish copies a numbered

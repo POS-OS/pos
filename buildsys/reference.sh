@@ -145,15 +145,20 @@ references_choose() {
 # The build tools of a new build (tools setting): fedora, host-base in
 # the tools image (TOOLS_REF none), or an extras reference, restored. Its
 # packages are at their own prefix, which must not be the build's: an
-# extras build installs its own there.
+# extras build installs its own there. Without the setting, the store's
+# default extras reference, and fedora when there is none or the build has
+# no pos reference, whose base stage the tools run on (from nothing).
 # Inputs:
-#   PREFIX, config(tools)
+#   PREFIX, POS_REF, config(tools, reference-dir)
 # Outputs:
 #   TOOLS_REF (reference ID or none)
 tools_choose() {
   local t
   t=$(config tools)
-  if [[ $t == fedora ]]; then
+  if [[ -z $t && $POS_REF != none ]]; then
+    t=$(reference_default extras)
+  fi
+  if [[ -z $t || $t == fedora ]]; then
     TOOLS_REF=none
     return 0
   fi
