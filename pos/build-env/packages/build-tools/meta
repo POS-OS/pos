@@ -8,3 +8,7 @@ requires bash coreutils findutils gawk grep sed tar gzip xz zstd bzip2 cpio file
 requires make m4 autoconf automake autoconf-archive libtool pkgconf
 requires bison flex gperf texinfo help2man gettext-tools
 requires perl python3 git diffutils patch patchelf
+# Python modules of recipes' build steps (rsync's md2man, systemd's meson,
+# qemu's configure venv), in place of their Fedora host-requires.
+requires python3-setuptools python3-wheel python3-commonmark python3-jinja2
+requires python3-pyyaml python3-pyelftools
