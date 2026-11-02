@@ -599,8 +599,12 @@ setting picks them when a build is created (`info`: `tools-reference`):
   brings, the tools image leaves those out of recipes' `host-requires`
   and `prepare-requires`, so a step runs the extras' copy, not Fedora's.
   They are read from the reference, so they follow what it has: an older
-  one replaces less. Recipes keep the Fedora names for `fedora` tools;
-  outputs keep theirs.
+  one replaces less. What the profile requires, though, a reference must
+  have: its wget2 (gnulib bootstrap fetches translations with wget) came
+  to pos-extras after the first extras references, so a build of one of
+  those resolves no build tools ("<package>: needs wget2") and is
+  continued no further; start another with `run --new`. Recipes keep the
+  Fedora names for `fedora` tools; outputs keep theirs.
 * `fedora`: `host-base`'s Fedora packages, installed in the tools image
   (see "Build containers") and a requirement of every package. The
   default where the store has no extras reference or the build has no pos
@@ -1828,8 +1832,9 @@ systemd-resolved configure the network without it.
   starts. No Kerberos, libedit, FIDO security keys or SELinux.
 
 Wi-Fi (iwd, iw, wireless-regdb) and the packet capture tools are not in
-the stage yet. Wget2 and rsync are pos-extras' (curl is the base's). RPM systems have no package of the stage: their network
-tools are Fedora's (see "RPM packages").
+the stage yet. Wget2 and rsync are pos-extras' (curl is the base's). RPM
+systems have no package of the stage: their network tools are Fedora's
+(see "RPM packages").
 
 # Container stage
 The container stage (`pos/container/stage`) is podman and what it runs
