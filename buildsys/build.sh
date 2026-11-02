@@ -632,7 +632,7 @@ load_built() {
 #   $1      package or output name
 #   bdir    active build directory
 #   PREFIX  the build's prefix, PFX
-#   SOURCE_ID, SOURCE_VER, WITH_SOURCE_IDS (build_one)
+#   SOURCE_ID, SOURCE_VER, WITH_SOURCE_IDS, BUILD_KEY (build_one)
 pkg_record() {
   local p=$1 dest=$bdir/dest/$1 dir extra s pre rel
   pre=$(pkg_prefix "$p")
@@ -655,6 +655,7 @@ pkg_record() {
     sed -e 's/#.*//' -e '/^[[:space:]]*$/d' -e '/^version[[:space:]]/d' "$base/${PKGDIR[$p]}/meta"
     [[ -z ${SOURCE_VER:-} ]] || echo "version $SOURCE_VER"
     echo "build $id"
+    echo "build-key $BUILD_KEY"
     echo "build-source ${SRC[$(build_of "$p")]} ${SOURCE_ID:-}"
     for s in "${WITH_SOURCE_IDS[@]}"; do
       echo "build-with-source $s"
@@ -839,6 +840,80 @@ source_of() {
   fi
 }
 
+# The files of a recipe directory with their hashes, as the working tree
+# has them: builds use the recipes of the checkout (tree_state records
+# whether they are committed).
+# Inputs:
+#   $1    recipe directory, relative to base
+recipe_hash() {
+  (cd "$base/$1" && find . -type f -print0 | sort -z | xargs -0 -r sha256sum)
+}
+
+# The identity of an environment entry for a build key (build_key): a
+# reference's package by its reference, this build's by the build-key in
+# its meta; one built before build keys by when it was built, which no
+# other build shares. A profile installs nothing; what it requires is in
+# the environment itself.
+# Inputs:
+#   $1    environment entry (<pkg>, <pkg>@ref, <pkg>@pos or <pkg>@tools)
+#   TOOLCHAIN_REF, POS_REF, TOOLS_REF, bdir
+env_key() {
+  case $1 in
+    *@ref) echo "ref $TOOLCHAIN_REF" ;;
+    *@pos) echo "ref $POS_REF" ;;
+    *@tools) echo "ref $TOOLS_REF" ;;
+    *)
+      [[ ${KIND[$1]} == package || ${KIND[$1]} == output ]] || { echo "${KIND[$1]}"; return; }
+      awk '$1 == "build-key" {k = $2} $1 == "built" {b = $2}
+           END {print (k != "" ? "key " k : "built " b)}' "$(marker "$1")" ;;
+  esac
+}
+
+# The key of a package build: a hash of everything build_one hands the
+# build container (step_run). A build has no network, so two builds with
+# the same key build the same package. Left out: the paths of the
+# checkout and of the build directory (POS_BASE, POS_DEST_DIR), which
+# builds must not depend on (see build_one).
+#   - the source: its tree's key (source_of), its time, the with-sources';
+#   - the recipe: the package's directory, the recipe of its source, which a
+#     bootstrap recipe sources (util-linux-bootstrap), and buildsys/pkg.sh;
+#   - the environment: each entry's identity (env_key), and the env.sh
+#     scripts that set the build up;
+#   - the tools image and reference, and the prefixes it installs into.
+# Inputs:
+#   $1    package name
+#   ENV, SOURCE_ID, WITH_SOURCE_IDS, epoch (build_one), TOOLS_ID, TOOLS_REF, PREFIX
+# Outputs:
+#   the key, 16 hex digits
+build_key() {
+  local p=$1 q d
+  {
+    echo "source ${SRC[$p]} ${SOURCE_ID:-} ${epoch:-}"
+    for q in "${WITH_SOURCE_IDS[@]}"; do
+      echo "with-source $q"
+    done
+    for d in $(printf '%s\n' "${PKGDIR[$p]}" "${PKGDIR[${SRC[$p]}]:-}" | sed '/^$/d' | sort -u); do
+      echo "recipe $d"
+      recipe_hash "$d"
+    done
+    sha256sum <"$engine/buildsys/pkg.sh"
+    for q in "${ENV[@]}"; do
+      echo "env $q $(env_key "$q")"
+    done
+    # A reference's env.sh is in its tree, at the path the container has it.
+    for q in $(env_scripts); do
+      d=
+      ! is_ref "$q" || d=$(env_tree "$q")
+      echo "env-script $q $(sha256sum <"$d$(env_script "$q")")"
+    done
+    echo "tools $TOOLS_ID $TOOLS_REF"
+    echo "prefix $PREFIX $(sdk_prefix) $(tools_prefix)"
+    for q in "$p" ${OUTS[$p]}; do
+      echo "output $q $(pkg_prefix "$q")"
+    done
+  } | sha256sum | cut -c1-16
+}
+
 # Build a single package and its declared outputs inside an isolated build
 # container, then record their installed files and metadata.
 # Inputs:
@@ -887,9 +962,11 @@ build_one() {
     WITH_SOURCE_IDS+=("$s $SOURCE_KEY")
   done
   mounts+=(rw:"$bdir/build:/build" rw:"$bdir/dest" rw:"$bdir/debug")
+  BUILD_KEY=$(build_key "$p") || exit 1
 
   echo "=== $p: setup: ${scripts:-none} ===" | tee "$log"
   echo "env: ${ENV[*]}" | tee -a "$log"
+  echo "build-key: $BUILD_KEY" | tee -a "$log"
   root_compose "$root"
   root_mounts "$root"
   step_run "$p" "${ROOT_MOUNTS[@]}" "${mounts[@]}" -- env \

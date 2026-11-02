@@ -312,6 +312,18 @@ Each package's metadata records the source it was built from:
 `build-source <source> <key>`, the prepared or unpacked tree's key or
 the committed tree's hash.
 
+It also records `build-key <key>`, a hash of everything its build
+container is given (`build_key`): the source's key and time and the
+with-sources' keys; the recipe's directory, the recipe of its source (which
+a bootstrap recipe sources) and `buildsys/pkg.sh`; each package of the
+environment, a reference's by the reference, this build's by its
+`build-key`; the env.sh scripts that set the build up; the tools image and
+tools reference; and the prefixes. A build has no network, so two builds
+of a package with the same key are builds of the same inputs. The paths of
+the checkout and of the build directory are not in it: builds must not
+depend on them. The build key is recorded only, for now; it is what a
+build cache would reuse packages by.
+
 ## Source archives
 `./build run --new --source-archives` creates a build that, after
 assembling the stages, archives every source its packages were built from,
