@@ -1,0 +1,232 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # CI automation repo release for the VM image downloads in ci.sh.
+  # ENV is managed by renovate, do not change the name without
+  # updating the renovate config in the automation repo.
+  AUTOMATION_RELEASE: 20261022t094745z
+
+jobs:
+  path-filter:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      all: ${{ steps.filter.outputs.all }}
+      code: ${{ steps.filter.outputs.code }}
+      docs: ${{ steps.filter.outputs.docs }}
+      AUTOMATION_RELEASE: ${{ steps.automation.outputs.AUTOMATION_RELEASE }}
+      golangci_lint_version: ${{ steps.golangci_lint.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d  # v4.0.3
+        id: filter
+        with:
+          filters: .github/filters.yaml
+          predicate-quantifier: some-with-excludes
+      # For some reason github decided that using ${{ env }} is not valid inside a container image name.
+      # As such we must work around this, using outputs there is valid so we need this job to convert the
+      # env into an output. Since we already have the path-filter job we might as well reuse it.
+      - name: set AUTOMATION_RELEASE output
+        id: automation
+        run: echo "AUTOMATION_RELEASE=${AUTOMATION_RELEASE}" >> $GITHUB_OUTPUT
+      # The Makefile is the single source of truth for this version; it is what Renovate
+      # updates. Read it here once instead of repeating the parsing in every job that
+      # needs to install golangci-lint.
+      - name: set golangci-lint version output
+        id: golangci_lint
+        run: |
+          v=$(awk -F':=' '/^GOLANGCI_LINT_VERSION/ {gsub(/ /,"",$2); print $2; exit}' Makefile)
+          test -n "$v"  # Fail loudly rather than installing an unexpected version.
+          echo "version=v${v}" >> "$GITHUB_OUTPUT"
+
+
+  validate:
+    needs: path-filter
+    runs-on: cncf-ubuntu-4-16-x86
+    timeout-minutes: 45
+    container:
+      image: ghcr.io/podman-container-tools/skopeo_cidev:${{ needs.path-filter.outputs.AUTOMATION_RELEASE }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: fix git safe.directory
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a  # v9.3.0
+        with:
+          version: ${{ needs.path-filter.outputs.golangci_lint_version }}
+          install-only: true
+          skip-cache: true  # cache causes flaky results https://github.com/podman-container-tools/podman/issues/28893
+      - run: make validate-local
+      - name: vendor + tree status
+        run: |
+          make vendor
+          hack/tree_status.sh
+
+  doccheck:
+    needs: [validate, path-filter]
+    runs-on: cncf-ubuntu-4-16-x86
+    timeout-minutes: 45
+    container:
+      image: ghcr.io/podman-container-tools/skopeo_cidev:${{ needs.path-filter.outputs.AUTOMATION_RELEASE }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: fix git safe.directory
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - run: make BUILDTAGS=containers_image_openpgp validate-docs
+
+  cross:
+    needs: [validate, path-filter]
+    if: >-
+      !contains(github.event.pull_request.title || github.event.head_commit.message, '[CI:DOCS]')
+      && (github.event_name != 'pull_request'
+          || needs.path-filter.outputs.all == 'true'
+          || needs.path-filter.outputs.code == 'true')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
+        with:
+          go-version: stable
+      - run: make BUILDTAGS=containers_image_openpgp local-cross
+
+  osx:
+    needs: [validate, path-filter]
+    if: >-
+      !contains(github.event.pull_request.title || github.event.head_commit.message, '[CI:DOCS]')
+      && (github.event_name != 'pull_request'
+          || needs.path-filter.outputs.all == 'true'
+          || needs.path-filter.outputs.code == 'true')
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
+        with:
+          go-version: stable
+      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a  # v9.3.0
+        with:
+          version: ${{ needs.path-filter.outputs.golangci_lint_version }}
+          install-only: true
+          skip-cache: true  # cache causes flaky results https://github.com/podman-container-tools/podman/issues/28893
+      - name: brew install gpgme (CGo dep for github.com/proglottis/gpgme)
+        run: brew install gpgme
+      - run: make validate-local test-unit-local bin/skopeo
+      - run: ./bin/skopeo -v
+
+  test_skopeo:
+    needs: [validate, path-filter]
+    if: >-
+      !contains(github.event.pull_request.title || github.event.head_commit.message, '[CI:DOCS]')
+      && !contains(github.event.pull_request.title || github.event.head_commit.message, '[CI:BUILD]')
+    runs-on: cncf-ubuntu-2-8-x86
+    timeout-minutes: 45
+    name: test_skopeo / ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Skopeo Test
+            buildtags: ""
+          - name: Skopeo Test w/ openpgp
+            buildtags: containers_image_openpgp
+          - name: Skopeo Test w/ Sequoia
+            buildtags: containers_image_sequoia
+    container:
+      image: ghcr.io/podman-container-tools/skopeo_cidev:${{ needs.path-filter.outputs.AUTOMATION_RELEASE }}
+      options: --privileged
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: fix git safe.directory
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: build + install
+        run: |
+          make "BUILDTAGS=${{ matrix.buildtags }}" bin/skopeo
+          make "BUILDTAGS=${{ matrix.buildtags }}" install PREFIX=/usr/local
+      - run: make "BUILDTAGS=${{ matrix.buildtags }}" test-unit-local
+      - run: make "BUILDTAGS=${{ matrix.buildtags }}" test-integration-local
+      - run: make "BUILDTAGS=${{ matrix.buildtags }}" test-system-local
+
+  ostree_rs_ext:
+    needs: [validate, path-filter]
+    if: >-
+      !contains(github.event.pull_request.title || github.event.head_commit.message, '[CI:DOCS]')
+      && (github.event_name != 'pull_request'
+          || needs.path-filter.outputs.all == 'true'
+          || needs.path-filter.outputs.code == 'true')
+    runs-on: cncf-ubuntu-4-16-x86
+    timeout-minutes: 45
+    container:
+      image: quay.io/coreos-assembler/fcos-buildroot:testing-devel
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: fix git safe.directory
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: install rustup stable
+        run: |
+          dnf remove -y rust
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+      - name: build + install skopeo
+        run: |
+          dnf builddep -y skopeo
+          make
+          make install
+      - name: clone ostree-rs-ext + cargo build
+        run: |
+          git clone --depth 1 https://github.com/ostreedev/ostree-rs-ext.git /tmp/ostree-rs-ext
+          cd /tmp/ostree-rs-ext
+          cargo test --no-run
+      - name: cargo test
+        run: |
+          cd /tmp/ostree-rs-ext
+          cargo test -- --nocapture --quiet
+
+  # Merge protection is set up for this job name, do not change it.
+  success:
+    name: "Total Success"
+    needs:
+      - path-filter
+      - validate
+      - doccheck
+      - cross
+      - osx
+      - test_skopeo
+      - ostree_rs_ext
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check all required jobs
+        run: |
+          if [[ "${{ contains(needs.*.result, 'failure') }}" == "true" ]] || \
+             [[ "${{ contains(needs.*.result, 'cancelled') }}" == "true" ]]; then
+            echo "One or more required jobs failed or were cancelled"
+            exit 1
+          fi
+          echo "All required jobs passed or were skipped"

@@ -1,0 +1,29 @@
+# Path filters for .github/workflows/ci.yml, consumed by dorny/paths-filter.
+# When a PR touches none of `all` or `code`, the heavier optional jobs
+# (cross/osx/ostree_rs_ext) are skipped. validate/doccheck/test_skopeo always
+# run regardless.
+
+# Anything that should invalidate every skip decision.
+all:
+  - '.github/workflows/ci.yml'
+  - '.github/filters.yaml'
+  - 'Makefile'
+  - 'hack/**'
+  - 'vendor/**'
+  - 'go.mod'
+  - 'go.sum'
+
+# Production Go source. Tests and bats are excluded so a test-only diff
+# does not force every "code" gated job to run.
+code:
+  - '**/*.go'
+  - '!**/*_test.go'
+  - '!systemtest/**'
+  - '!integration/**'
+
+# Docs-only signal kept for symmetry. Not directly gated on; the run rule is
+# "all OR code matched", so a pure-docs change naturally skips heavy jobs.
+docs:
+  - 'docs/**'
+  - 'docs-experimental/**'
+  - '**/*.md'
