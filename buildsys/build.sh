@@ -55,7 +55,10 @@ source "$engine/buildsys/config.sh"
 source "$engine/buildsys/buildinfo.sh"
 
 builds=$base/work/builds
+# Package builds by build key (build_key), which run reuses: cache_store.
+cache=$base/work/cache
 CHECKS=yes
+NO_CACHE=
 # Who commits VERSION bumps, as the source syncs are committed.
 bot_name=pos-bot bot_email=pos-bot@devzero.dk
 sources=$base/work/sources
@@ -83,7 +86,7 @@ usage() {
   cat >&2 <<EOF
 usage: ./build plan [--new] [<target>...]
                                                print what run would build, in order
-       ./build run [--new [--source-archives]] [--no-checks] [<target>...]
+       ./build run [--new [--source-archives]] [--no-checks] [--no-cache] [<target>...]
                                                build the targets, then assemble stage
                                                archives and make the outputs
        ./build prepare [<target>...]           download and prepare the sources of the
@@ -115,6 +118,9 @@ assembles all the stages it requires, after the outputs it requires.
 source it built from (pos-src-<source>-<key>.tar.zst, or the release
 archive as downloaded, pos-src-<archive>) and of the build recipes
 (<project>-recipes-<stem>.tar.zst, pos-recipes for pos).
+A package whose build key (its inputs) matches one built before is taken
+from the build cache (work/cache); --no-cache compiles every package the
+run builds.
 
 A new build takes the toolchain from a toolchain reference, a stored
 toolchain build, and core-libs and base from a pos reference, a stored
@@ -632,9 +638,9 @@ load_built() {
 #   $1      package or output name
 #   bdir    active build directory
 #   PREFIX  the build's prefix, PFX
-#   SOURCE_ID, SOURCE_VER, WITH_SOURCE_IDS, BUILD_KEY (build_one)
+#   SOURCE_ID, SOURCE_VER, WITH_SOURCE_IDS, BUILD_KEY, CACHED_FROM (build_one)
 pkg_record() {
-  local p=$1 dest=$bdir/dest/$1 dir extra s pre rel
+  local p=$1 dest=$bdir/dest/$1 dir extra s pre rel content
   pre=$(pkg_prefix "$p")
   rel=${pre#/}
   [[ -d $dest$pre ]] || die "$p: nothing installed into $dest$pre"
@@ -650,12 +656,23 @@ pkg_record() {
   [[ -z $extra ]] || die "$p: installed into $(echo "$extra" | xargs -n1 basename | xargs); set libdir to $pre/lib"
   dir=$dest$pre/lib/pos/packages/$p
   mkdir -p "$dir"
-  (cd "$dest" && find "$rel" -mindepth 1 ! -type d ! -path "$rel/lib/pos/packages/*" | sed 's|^|/|' | sort) >"$dir/files"
+  # Files are replaced, not written to: a tree from the cache shares them
+  # with the cache (cache_restore).
+  (cd "$dest" && find "$rel" -mindepth 1 ! -type d ! -path "$rel/lib/pos/packages/*" | sed 's|^|/|' | sort) >"$dir/files.tmp"
+  mv "$dir/files.tmp" "$dir/files"
+  # A build that takes the package from a reference sets up with it.
+  if [[ -f $base/${PKGDIR[$p]}/env.sh ]]; then
+    cp "$base/${PKGDIR[$p]}/env.sh" "$dir/env.sh.tmp"
+    mv "$dir/env.sh.tmp" "$dir/env.sh"
+  fi
+  content=$(content_hash "$p")
   {
     sed -e 's/#.*//' -e '/^[[:space:]]*$/d' -e '/^version[[:space:]]/d' "$base/${PKGDIR[$p]}/meta"
     [[ -z ${SOURCE_VER:-} ]] || echo "version $SOURCE_VER"
     echo "build $id"
     echo "build-key $BUILD_KEY"
+    echo "content $content"
+    [[ -z ${CACHED_FROM:-} ]] || echo "cached-from $CACHED_FROM"
     echo "build-source ${SRC[$(build_of "$p")]} ${SOURCE_ID:-}"
     for s in "${WITH_SOURCE_IDS[@]}"; do
       echo "build-with-source $s"
@@ -668,11 +685,66 @@ pkg_record() {
     echo "built $(date -u +%FT%TZ)"
   } >"$dir/meta.tmp"
   mv "$dir/meta.tmp" "$dir/meta"
-  # A build that takes the package from a reference sets up with it.
-  if [[ -f $base/${PKGDIR[$p]}/env.sh ]]; then
-    cp "$base/${PKGDIR[$p]}/env.sh" "$dir/env.sh"
-  fi
   step_made "package-$p"
+}
+
+# The content of a package's staging tree: every path with its type, mode
+# and link target, and every file's hash; all but the meta, which names
+# the build. Packages built against it are keyed by it (env_key), so a
+# package built again that installs the same files rebuilds nothing.
+# Inputs:
+#   $1    package or output name
+#   bdir, PREFIX, PFX
+# Outputs:
+#   the content hash, 16 hex digits
+content_hash() {
+  local meta
+  meta=.$(pkg_prefix "$1")/lib/pos/packages/$1/meta
+  (cd "$bdir/dest/$1" &&
+     find . -mindepth 1 ! -path "$meta" -printf '%y %m %p %l\n' | sort &&
+     find . -type f ! -path "$meta" -print0 | sort -z | xargs -0 -r sha256sum) |
+    sha256sum | cut -c1-16
+}
+
+# Store a package build in the cache, $cache/<package>/<key>: the
+# staging and debug trees of the package and its outputs (dest/, debug/),
+# hard-linked, its log, and from, the build that compiled it. Staging
+# trees are not changed once recorded (pkg_record replaces its files), so
+# builds and the cache share them. An entry replaces one of the same key.
+# Inputs:
+#   $1    package name
+#   BUILD_KEY, bdir, id
+cache_store() {
+  local p=$1 dir=$cache/$1/$BUILD_KEY q
+  rm -rf "$dir.tmp"
+  mkdir -p "$dir.tmp/dest" "$dir.tmp/debug"
+  for q in "$p" ${OUTS[$p]}; do
+    cp -al "$bdir/dest/$q" "$dir.tmp/dest/"
+    [[ ! -d $bdir/debug/$q ]] || cp -al "$bdir/debug/$q" "$dir.tmp/debug/"
+  done
+  cp "$bdir/logs/$p.log" "$dir.tmp/log"
+  echo "$id" >"$dir.tmp/from"
+  rm -rf "$dir"
+  mv "$dir.tmp" "$dir"
+}
+
+# Take a package build from the cache (cache_store) into the build: the
+# staging and debug trees of the package and its outputs, hard-linked.
+# Returns 1 when the cache has no build of its key, or run --no-cache.
+# Inputs:
+#   $1    package name
+#   BUILD_KEY, bdir, NO_CACHE
+# Outputs:
+#   CACHED_FROM (the build that compiled it)
+cache_restore() {
+  local p=$1 dir=$cache/$1/$BUILD_KEY q
+  [[ -z $NO_CACHE && -f $dir/from ]] || return 1
+  for q in "$p" ${OUTS[$p]}; do
+    rm -rf "${bdir:?}/dest/$q" "${bdir:?}/debug/$q"
+    cp -al "$dir/dest/$q" "$bdir/dest/"
+    [[ ! -d $dir/debug/$q ]] || cp -al "$dir/debug/$q" "$bdir/debug/"
+  done
+  CACHED_FROM=$(<"$dir/from")
 }
 
 # The staging tree of a package in the environment, a root holding its
@@ -850,10 +922,11 @@ recipe_hash() {
 }
 
 # The identity of an environment entry for a build key (build_key): a
-# reference's package by its reference, this build's by the build-key in
-# its meta; one built before build keys by when it was built, which no
-# other build shares. A profile installs nothing; what it requires is in
-# the environment itself.
+# reference's package by its reference, this build's by the content in its
+# meta (content_hash); one built before content hashes by its build-key,
+# and one built before build keys by when it was built, which no other
+# build shares. A profile installs nothing; what it requires is in the
+# environment itself.
 # Inputs:
 #   $1    environment entry (<pkg>, <pkg>@ref, <pkg>@pos or <pkg>@tools)
 #   TOOLCHAIN_REF, POS_REF, TOOLS_REF, bdir
@@ -864,8 +937,8 @@ env_key() {
     *@tools) echo "ref $TOOLS_REF" ;;
     *)
       [[ ${KIND[$1]} == package || ${KIND[$1]} == output ]] || { echo "${KIND[$1]}"; return; }
-      awk '$1 == "build-key" {k = $2} $1 == "built" {b = $2}
-           END {print (k != "" ? "key " k : "built " b)}' "$(marker "$1")" ;;
+      awk '$1 == "content" {c = $2} $1 == "build-key" {k = $2} $1 == "built" {b = $2}
+           END {print (c != "" ? "content " c : k != "" ? "key " k : "built " b)}' "$(marker "$1")" ;;
   esac
 }
 
@@ -963,7 +1036,18 @@ build_one() {
   done
   mounts+=(rw:"$bdir/build:/build" rw:"$bdir/dest" rw:"$bdir/debug")
   BUILD_KEY=$(build_key "$p") || exit 1
+  CACHED_FROM=
 
+  # A build of the same key in the cache is this build.
+  if cache_restore "$p"; then
+    echo "=== $p: from the cache, built by $CACHED_FROM ===" | tee "$log"
+    echo "build-key: $BUILD_KEY (log: $cache/$p/$BUILD_KEY/log)" | tee -a "$log"
+    for q in "$p" ${OUTS[$p]}; do
+      pkg_record "$q"
+      BUILT[$q]=1
+    done
+    return 0
+  fi
   echo "=== $p: setup: ${scripts:-none} ===" | tee "$log"
   echo "env: ${ENV[*]}" | tee -a "$log"
   echo "build-key: $BUILD_KEY" | tee -a "$log"
@@ -991,6 +1075,7 @@ build_one() {
     pkg_record "$q"
     BUILT[$q]=1
   done
+  cache_store "$p"
   # Kept when the build fails, to look at.
   rm -rf "$root"
 }
@@ -1180,6 +1265,7 @@ cmd_run() {
       --new) new=1 ;;
       --source-archives) archives=yes ;;
       --no-checks) CHECKS=no ;;
+      --no-cache) NO_CACHE=1 ;;
       -*) usage ;;
       *) args+=("$t") ;;
     esac

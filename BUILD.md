@@ -46,6 +46,11 @@ otherwise takes util-linux-bootstrap's place in systemd's environment
 (their `info` has no `tools-image`) cannot be continued; `status` and
 `reference` still work on them.
 
+A package whose inputs are those of a package built before is not
+compiled again: `run` takes it from the build cache (see "Build cache"), so
+`rebuild` of a package whose recipe, source and environment did not change
+gives it back as it was. `run --no-cache` compiles every package it builds.
+
 ## Build numbers
 A build is identified by its ID, the timestamp it was created with. An OS
 build, one that ships, also gets a BUILD number: `VERSION` holds the
@@ -312,17 +317,34 @@ Each package's metadata records the source it was built from:
 `build-source <source> <key>`, the prepared or unpacked tree's key or
 the committed tree's hash.
 
-It also records `build-key <key>`, a hash of everything its build
-container is given (`build_key`): the source's key and time and the
-with-sources' keys; the recipe's directory, the recipe of its source (which
-a bootstrap recipe sources) and `buildsys/pkg.sh`; each package of the
-environment, a reference's by the reference, this build's by its
-`build-key`; the env.sh scripts that set the build up; the tools image and
+## Build cache
+Each package's metadata records `build-key <key>`, a hash of everything
+its build container is given (`build_key`): the source's key and time and
+the with-sources' keys; the recipe's directory, the recipe of its source
+(which a bootstrap recipe sources) and `buildsys/pkg.sh`; each package of
+the environment, a reference's by the reference, this build's by its
+`content`; the env.sh scripts that set the build up; the tools image and
 tools reference; and the prefixes. A build has no network, so two builds
 of a package with the same key are builds of the same inputs. The paths of
 the checkout and of the build directory are not in it: builds must not
-depend on them. The build key is recorded only, for now; it is what a
-build cache would reuse packages by.
+depend on them.
+
+`content <hash>` is a hash of what the package installed (every path, its
+type, mode and contents), all but its meta, which names the build.
+Packages built against it are keyed by it, not by its build key, so a
+package built again that installs the same files, after a change to its
+recipe that changes nothing it installs, rebuilds nothing built against it.
+
+A compiled package, with its outputs, is kept in `work/cache/<package>/<key>`:
+its staging and debug trees, its log, and `from`, the build that compiled
+it. A later build of the same key, in this build or another, takes the
+trees from there, hard-linked, records the package with `cached-from <id>`
+and logs where the compiled log is. Staging trees are not changed once a
+package is recorded, so builds and the cache share their files.
+`run --no-cache` compiles every package it builds, and stores it in the
+cache in place of what was there; a package compiled again with a
+different `content` is one whose build depends on more than its inputs.
+Cached packages go into every build, numbered or not.
 
 ## Source archives
 `./build run --new --source-archives` creates a build that, after
