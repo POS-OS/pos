@@ -1,0 +1,6 @@
+build-requires gcc pos-link
+# cgo: libsubid (rootless ranges), sqlite (the image store's database). It
+# reads the registries and the signature policy of containers-common.
+requires glibc sqlite shadow containers-common
+# go-md2man makes the man pages.
+host-requires golang golang-github-cpuguy83-md2man

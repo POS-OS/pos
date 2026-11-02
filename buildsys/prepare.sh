@@ -136,6 +136,21 @@ prep_cargo_vendor() {
   rm -rf .cargo-home
 }
 
+# Vendor a Go module's dependencies, as a committed vendor/ directory has
+# them (podman, buildah): go mod vendor downloads the modules go.sum names
+# into vendor/ next to go.mod, so the build (pkg_go_env in buildsys/pkg.sh,
+# -mod=vendor) runs offline. The module cache is a scratch directory,
+# removed afterwards. prepare-requires golang.
+# Inputs:
+#   [$1]      the module's directory in the tree (default: its top)
+#   prep_dir
+prep_go_vendor() {
+  local cache=$prep_dir/.gomodcache
+  (cd "${1:-.}" && GOMODCACHE=$cache GOFLAGS=-mod=mod GOTOOLCHAIN=local go mod vendor)
+  chmod -R u+w "$cache"
+  rm -rf "$cache"
+}
+
 # The prepared tree has to stand alone, as a release tarball does. Some
 # packages have gnulib-tool link imported files to gnulib whatever
 # bootstrap is told (coreutils: --symlink in bootstrap.conf); those links

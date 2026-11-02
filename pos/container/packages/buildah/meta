@@ -1,0 +1,8 @@
+build-requires gcc pos-link
+# cgo: libseccomp, libsystemd (journald), sqlite (the image store's
+# database), libsubid (rootless ranges). It runs containers with the
+# helpers podman uses and reads the same configuration (containers-common).
+requires glibc libseccomp systemd sqlite shadow
+requires containers-common crun netavark aardvark-dns passt
+# go-md2man makes the man pages.
+host-requires golang golang-github-cpuguy83-md2man

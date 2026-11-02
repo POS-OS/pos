@@ -11,6 +11,12 @@ catatonit
 passt
 netavark
 aardvark-dns
-# podman and the configuration it reads.
+# podman (with podman-remote and the docker command) and the configuration
+# it reads.
 containers-common
 podman
+# Images: buildah builds them, skopeo copies and inspects them in
+# registries. toolbox: interactive development containers.
+buildah
+skopeo
+toolbox

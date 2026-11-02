@@ -91,6 +91,9 @@ if [[ -f /pos/lib/pos/stages/pos-network.raw ]]; then
     pos-stage list | grep -qx "network enabled" || { systemd-sysext status; false; }'
   check "network stage tools" bash -c 'ip -br link && ping -c 1 127.0.0.1 &&
     ssh -V && nft --version'
+  # iptables writes its rules as an nftables table, which nft lists.
+  check "iptables over nftables" bash -c 'iptables -N SMOKE && nft list table ip filter | grep -q SMOKE &&
+    iptables -X SMOKE && iptables -V | grep -q nf_tables'
 fi
 # The storage stage: on a loop device, an LVM volume group with a LUKS2
 # volume holding XFS, and a Btrfs volume.
@@ -126,6 +129,16 @@ if [[ -f /pos/lib/pos/stages/pos-container.raw ]]; then
   # (write: Message too large) where getent, musl's resolver, skips it.
   check "podman network" bash -c 'podman network create smoke &&
     podman run --rm --network smoke --name smoke-dns docker.io/library/alpine getent hosts smoke-dns'
+  # The image tools share podman's storage: buildah commits an image podman
+  # runs; skopeo reads a registry's manifest. docker is podman, and
+  # podman-remote talks to podman's service.
+  check "buildah and skopeo" bash -c 'ctr=$(buildah from docker.io/library/alpine) &&
+    buildah run "$ctr" -- touch /smoke && buildah commit -q "$ctr" localhost/smoke >/dev/null &&
+    podman run --rm localhost/smoke test -e /smoke &&
+    skopeo inspect --format "{{.Digest}}" docker://docker.io/library/alpine'
+  check "docker and podman-remote" bash -c 'docker --version | grep -q podman &&
+    systemctl start podman.socket && podman-remote info >/dev/null'
+  check "toolbox" toolbox --version
 fi
 
 exit "$failed"
