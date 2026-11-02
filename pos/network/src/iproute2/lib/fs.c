@@ -187,7 +187,7 @@ out:
 #define FILEID_INO32_GEN 1
 
 /* caller needs to free string returned */
-char *get_cgroup2_path(__u64 id, bool full)
+char *get_cgroup2_path(__u64 id)
 {
 	char fh_buf[sizeof(struct file_handle) + sizeof(__u64)] = { 0 };
 	struct file_handle *fhp = (struct file_handle *)fh_buf;
@@ -201,6 +201,7 @@ char *get_cgroup2_path(__u64 id, bool full)
 	char fd_path[64];
 	int link_len;
 	char *mnt = NULL;
+	size_t mnt_len;
 
 	if (!id) {
 		fprintf(stderr, "Invalid cgroup2 ID\n");
@@ -238,10 +239,14 @@ char *get_cgroup2_path(__u64 id, bool full)
 	}
 	link_buf[link_len] = '\0';
 
-	if (full)
-		path = strdup(link_buf);
-	else
-		path = strdup(link_buf + strlen(mnt));
+	/* A cgroup outside our cgroup namespace is not under the
+	 * mount and the link reads as just "/".
+	 */
+	mnt_len = strlen(mnt);
+	if (strncmp(link_buf, mnt, mnt_len) != 0)
+		goto out;
+
+	path = strdup(link_buf + mnt_len);
 	if (!path)
 		fprintf(stderr,
 			"Failed to allocate memory for cgroup2 path\n");
@@ -338,7 +343,11 @@ int get_command_name(const char *pid, char *comm, size_t len)
 	return 0;
 }
 
-int get_task_name(pid_t pid, char *name, size_t len)
+/*
+ * Read task name from <root>/<pid>/comm.
+ * If root is NULL, use /proc.
+ */
+int get_task_name(const char *root, pid_t pid, char *name, size_t len)
 {
 	char path[PATH_MAX];
 	FILE *f;
@@ -346,7 +355,8 @@ int get_task_name(pid_t pid, char *name, size_t len)
 	if (!pid)
 		return -1;
 
-	if (snprintf(path, sizeof(path), "/proc/%d/comm", pid) >= sizeof(path))
+	if (snprintf(path, sizeof(path), "%s/%d/comm",
+		     root ? : "/proc", pid) >= sizeof(path))
 		return -1;
 
 	f = fopen(path, "r");
