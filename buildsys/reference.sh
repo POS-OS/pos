@@ -409,20 +409,22 @@ reference_restore() {
 # the tools. A toolchain reference from before pos references also holds
 # glibc, which is not taken from it. The tools' packages have requirements
 # of their own (TOOLS_REQ): in an extras build they have the names of the
-# build's packages, in another prefix.
+# build's packages, in another prefix. TOOLS_HREPL: the Fedora packages
+# each stands for (replaces-host-rpm), as the reference has it.
 # Inputs:
 #   TOOLCHAIN_REF, POS_REF, TOOLS_REF, refs
 # Outputs:
-#   REF[], POSREF[], REF_REQ[], TOOLSREF[], TOOLS_REQ[]
+#   REF[], POSREF[], REF_REQ[], TOOLSREF[], TOOLS_REQ[], TOOLS_HREPL[]
 load_references() {
   local ref from meta p
-  REF=() POSREF=() REF_REQ=() TOOLSREF=() TOOLS_REQ=() HOSTAVAIL=()
+  REF=() POSREF=() REF_REQ=() TOOLSREF=() TOOLS_REQ=() TOOLS_HREPL=() HOSTAVAIL=()
   if [[ $TOOLS_REF != none ]]; then
     while read -r meta; do
       p=$(basename "$(dirname "$meta")")
       [[ -n ${KIND[$p]:-} && ${PIPE[$p]} == extras ]] || continue
       TOOLSREF[$p]=1
       TOOLS_REQ[$p]=$(awk '$1 == "requires" {$1 = ""; print}' "$meta" | xargs)
+      TOOLS_HREPL[$p]=$(awk '$1 == "replaces-host-rpm" {$1 = ""; print}' "$meta" | xargs)
     done < <(ref_metas "$TOOLS_REF")
   fi
   for ref in "$TOOLCHAIN_REF" "$POS_REF"; do

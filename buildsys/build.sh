@@ -215,6 +215,7 @@ build_new() {
   version=$(version_info HEAD "$branch" "$id") || exit 1
   PREFIX=$(project_prefix "$version")
   references_choose
+  load_references
   from=$(tools_base)
   bdir=$builds/$id
   mkdir -p "$bdir"/{dest,debug,build,logs}

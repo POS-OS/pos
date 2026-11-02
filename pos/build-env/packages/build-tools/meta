@@ -16,11 +16,3 @@ requires python3-pyelftools
 requires meson ninja cmake
 # wget: gnulib bootstrap fetches translations with it.
 requires wget2
-# The Fedora packages of recipes' host-requires and prepare-requires that
-# these tools stand for: with them, the tools image leaves those out.
-host-replaces meson ninja-build cmake python3 perl
-host-replaces python3-setuptools python3-wheel python3-pip python3-jinja2
-host-replaces python3-pyyaml python3-pyelftools
-# git's, texinfo's and wget2's: qemu's and smartmontools' prepare clone,
-# gnulib bootstrap checks for texi2pdf and fetches translations.
-host-replaces git-core texinfo-tex wget

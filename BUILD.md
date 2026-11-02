@@ -539,12 +539,13 @@ setting picks them when a build is created (`info`: `tools-reference`):
   (`pos/build-env/packages/build-tools`) lists the tools; its `env.sh`
   puts `<tools prefix>/bin`, `/pos/bin` and `/pos/sbin` on `PATH`, ahead
   of the tools image's, and `pos-link` puts the build's prefix and the sdk
-  in front of them. The profile's `host-replaces` names the Fedora
-  packages of recipes' `host-requires` and `prepare-requires` its tools
-  stand for (meson, ninja-build, cmake, python3 and its modules, perl,
-  git-core, texinfo-tex, wget):
-  the tools image leaves them out, so a step runs the extras' copy, not
-  Fedora's. Those recipes keep the Fedora names for `fedora` tools;
+  in front of them. A pos-extras package names the Fedora packages it
+  stands for as a build tool in its meta (`replaces-host-rpm`: meson's
+  meson, wget2's wget). Of the tools reference's packages the profile
+  brings, the tools image leaves those out of recipes' `host-requires`
+  and `prepare-requires`, so a step runs the extras' copy, not Fedora's.
+  They are read from the reference, so they follow what it has: an older
+  one replaces less. Recipes keep the Fedora names for `fedora` tools;
   outputs keep theirs.
 * `fedora`: `host-base`'s Fedora packages, installed in the tools image
   (see "Build containers") and a requirement of every package. The
