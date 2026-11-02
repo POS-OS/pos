@@ -570,8 +570,9 @@ _pkg_linkcheck() {
 # Split the debug info off the ELF programs and libraries of a staging
 # tree and strip them, as Fedora's debuginfo packages do. The debug info
 # goes to <debug><prefix>/lib/debug/.build-id/<xx>/<rest>.debug, where gdb and
-# debuginfod look it up by build ID. The loader keeps its symbol table
-# (valgrind needs it) and static libraries lose only their debug info.
+# debuginfod look it up by build ID, its DWARF sections compressed with
+# zlib (the toolchain's binutils has no zstd). The loader keeps its symbol
+# table (valgrind needs it) and static libraries lose only their debug info.
 # strip writes archives deterministically (-D: members with zero dates and
 # owners), whichever binutils it is; the tools image's, Fedora's, writes
 # the current date otherwise.
@@ -603,7 +604,7 @@ _pkg_strip() {
           dbg=$debug${pre}/lib/debug/.build-id/${id:0:2}/${id:2}.debug
           if [[ ! -e $dbg ]]; then
             mkdir -p "$(dirname "$dbg")"
-            objcopy --only-keep-debug "$f" "$dbg"
+            objcopy --only-keep-debug --compress-debug-sections=zlib "$f" "$dbg"
             chmod 0644 "$dbg"
           fi
         else
