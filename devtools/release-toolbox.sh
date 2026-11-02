@@ -50,7 +50,7 @@ archive=$release/pos-container-fs-dnf-$name.tar.zst
 from=localhost/$(meta container-fs-dnf tag):$name
 to=localhost/$(meta fedora-toolbox tag)
 path=/usr/local/bin:/usr/bin:/pos/bin:/pos/sbin
-[[ $(meta container-fs-dnf path-priority) != pos ]] || path=/pos/bin:/pos/sbin:/usr/local/bin:/usr/bin
+[[ $(meta container-fs-dnf path-priority) == pos ]] && path=/pos/bin:/pos/sbin:/usr/local/bin:/usr/bin
 podman import --change "ENV PATH=$path" \
   --change 'CMD ["/usr/bin/bash"]' \
   --change "LABEL pos.build=$(info_get "$release" id)" --change "LABEL pos.version=$(build_identifier "$release")" \

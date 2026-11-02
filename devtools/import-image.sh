@@ -53,7 +53,7 @@ name=$(meta tag)
 # host) link most of them into /usr/bin, except where a Fedora package has
 # the path, so /usr/bin comes first there.
 path=/usr/local/bin:/usr/bin:/pos/bin:/pos/sbin
-[[ $(meta path-priority) != pos ]] || path=/pos/bin:/pos/sbin:/usr/local/bin:/usr/bin
+[[ $(meta path-priority) == pos ]] && path=/pos/bin:/pos/sbin:/usr/local/bin:/usr/bin
 
 if [[ -f $base/outputs/$output/containerfile ]]; then
   podman image exists "localhost/${name}:${id}" || {

@@ -1107,7 +1107,7 @@ rpm-pos-fedora; fedora-toolbox from container-fs-dnf).
 
 | output | requires | makes |
 | --- | --- | --- |
-| `container-fs` | core-libs, base, system | `pos-container-fs-<stem>.tar.zst` |
+| `container-fs` | core-libs, base, system, network | `pos-container-fs-<stem>.tar.zst` |
 | `stage-images` | core-libs, base, system, network, container, storage | `pos-<stage>-<stem>.raw` and `.requires` of network, container and storage |
 | `vm-disk` | core-libs, base, system, stage-images | `pos-vm-disk-<stem>.qcow2` |
 | `rpm-pos` | core-libs, base, system | `rpm/pos`, `rpm/pos-debuginfo` |
@@ -1155,8 +1155,10 @@ runs through the image's own loader, `pos/lib/ld-linux-x86-64.so.2
 Everything is owned by root in the archive. Group write, which build trees
 pick up from the build directory, is removed except on sticky directories.
 
-`container-fs` is core-libs, base and system, for `podman import` or
-`docker import`. It has no `/etc/pos/ld.so.cache`; the loader searches
+`container-fs` is core-libs, base, system and the network stage, for
+`podman import` or `docker import`: a container to work in has its
+network tools in `/pos` (a container has no systemd-sysext to enable an
+optional stage with). It has no `/etc/pos/ld.so.cache`; the loader searches
 `/pos/lib`. Programs are in `/pos/bin` and `/pos/sbin`, which are not in
 a container engine's default `PATH`, so the import sets it:
 
@@ -1745,7 +1747,8 @@ policy for units no preset names is systemd's default, enable; Fedora's
 The network stage (`pos/network/stage`) is the network tools, optional
 on a system: it is not in `/pos` until enabled (see "Stage images"). It
 builds on core-libs, base and system, whose systemd-networkd and
-systemd-resolved configure the network without it.
+systemd-resolved configure the network without it. container-fs has
+it in `/pos` (see "Images").
 
 * iproute2 (ip, ss, bridge, tc, devlink and the rest) with libmnl, libelf
   for tc's eBPF loader (no libbpf) and libcap; no arpd (Berkeley DB). Its
