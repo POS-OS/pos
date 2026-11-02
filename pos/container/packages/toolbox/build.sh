@@ -13,6 +13,12 @@ pkg() {
   # POS's LDFLAGS name the loader too; cgo gets them without it, so the
   # one toolbox's build sets is the program's.
   #
+  # The completions are made by running toolbox (go run . completion).
+  # In the build container, which has /run/.containerenv, toolbox takes
+  # itself for a container's entry point, which refuses to start without
+  # TOOLBOX_PATH, the path of the host's toolbox it is given there: the
+  # build sets it to the program it makes.
+  #
   # The profile.d file goes to /etc/profile.d (factory), which
   # pos-integration's /etc/profile reads. The test suite, which meson
   # installs, is left out.
@@ -35,7 +41,7 @@ pkg() {
         -Dfish_completions_dir="${prefix}/share/fish/vendor_completions.d" \
         -Dprofile_dir="${sysconfdir}/profile.d" \
         -Dtmpfiles_dir="${prefix}/lib/tmpfiles.d"
-  meson compile -C "$build_dir/build" -j "$nproc"
+  TOOLBOX_PATH="$build_dir/build/src/toolbox" meson compile -C "$build_dir/build" -j "$nproc"
   DESTDIR="$dest_dir" meson install -C "$build_dir/build"
   rm -rf "${dest_dir:?}${prefix}/share/toolbox/test"
 }
