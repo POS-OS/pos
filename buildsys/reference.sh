@@ -423,6 +423,7 @@ load_references() {
   local ref from meta p
   REF=() POSREF=() REF_REQ=() TOOLSREF=() TOOLS_REQ=() TOOLS_HREPL=() HOSTAVAIL=()
   TOOLSMEMO=() TOOLSMISS=() TOOLSKEY=() REFPFX=()
+  next_reset
   for ref in "$TOOLCHAIN_REF" "$POS_REF" "$TOOLS_REF"; do
     [[ $ref == none ]] || REFPFX[$ref]=$(ref_prefix "$ref")
   done

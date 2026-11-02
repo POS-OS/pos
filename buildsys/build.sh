@@ -764,11 +764,17 @@ cache_restore() {
 #   $1    environment entry (<pkg>, <pkg>@ref, <pkg>@pos or <pkg>@tools)
 #   TOOLCHAIN_REF, POS_REF, TOOLS_REF
 env_tree() {
+  env_tree_v "$1"
+  echo "$ENVTREE"
+}
+
+# env_tree into ENVTREE, without a subshell (env_script, for each entry).
+env_tree_v() {
   case $1 in
-    *@ref) echo "$refs/$TOOLCHAIN_REF/dest/${1%@ref}" ;;
-    *@pos) echo "$refs/$POS_REF/dest/${1%@pos}" ;;
-    *@tools) echo "$refs/$TOOLS_REF/dest/${1%@tools}" ;;
-    *) echo "$bdir/dest/$1" ;;
+    *@ref) ENVTREE=$refs/$TOOLCHAIN_REF/dest/${1%@ref} ;;
+    *@pos) ENVTREE=$refs/$POS_REF/dest/${1%@pos} ;;
+    *@tools) ENVTREE=$refs/$TOOLS_REF/dest/${1%@tools} ;;
+    *) ENVTREE=$bdir/dest/$1 ;;
   esac
 }
 
@@ -778,17 +784,25 @@ env_tree() {
 #   $1    environment entry (<pkg>, <pkg>@ref, <pkg>@pos or <pkg>@tools)
 #   TOOLCHAIN_REF, POS_REF, TOOLS_REF, PREFIX, PFX
 env_prefix() {
-  local p=${1%@*}
+  env_prefix_v "$1"
+  echo "$ENVPFX"
+}
+
+# env_prefix into ENVPFX, without a subshell for the build's references
+# (REFPFX).
+env_prefix_v() {
+  local p=${1%@*} ref
   if [[ -n ${PFX[$p]:-} ]]; then
-    echo "${PFX[$p]}"
+    ENVPFX=${PFX[$p]}
     return
   fi
   case $1 in
-    *@ref) ref_prefix "$TOOLCHAIN_REF" ;;
-    *@pos) ref_prefix "$POS_REF" ;;
-    *@tools) ref_prefix "$TOOLS_REF" ;;
-    *) echo "$PREFIX" ;;
+    *@ref) ref=$TOOLCHAIN_REF ;;
+    *@pos) ref=$POS_REF ;;
+    *@tools) ref=$TOOLS_REF ;;
+    *) ENVPFX=$PREFIX; return ;;
   esac
+  ENVPFX=${REFPFX[$ref]:-$(ref_prefix "$ref")}
 }
 
 # The prefix of the build tools from an extras reference, or nothing

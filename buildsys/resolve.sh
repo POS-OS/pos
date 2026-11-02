@@ -130,6 +130,8 @@ declare -A TOOLSREF=() TOOLS_REQ=() TOOLS_HREPL=() TOOLENV=()
 # load_references).
 declare -A HOSTAVAIL=() SELFPROV=() TOOLSMEMO=() TOOLSMISS=()
 declare -a TOOLSKEY=()
+# next_package's environments (next_built).
+declare -A NEXTENV=() NEXTREV=() NEXTBUILT=() PROVMEMO=()
 declare -a TARGETS=()
 PIPELINE=pos
 # The prefix the build's packages install in (build.sh: project_prefix).
@@ -507,6 +509,21 @@ obsoleted_by_any() {
 # Outputs:
 #   PROVIDER (shell variable)
 provider() {
+  local key="$1 ${2:-}"
+  [[ -z ${ENVDEPS_ON:-} ]] || ENVDEPS[$1]=1
+  [[ -n ${PROVMEMO_ON:-} ]] || { provider_find "$@"; return; }
+  if [[ -z ${PROVMEMO[$key]+set} ]]; then
+    PROVMEMO[$key]=
+    provider_find "$@" && PROVMEMO[$key]=$PROVIDER
+  fi
+  PROVIDER=${PROVMEMO[$key]}
+  [[ -n $PROVIDER ]]
+}
+
+# provider, which within next_package keeps its answers (PROVMEMO, by
+# capability and ref) until a provider of the capability is built
+# (next_built).
+provider_find() {
   local cap=$1 ref=${2:-} p
   local -a cands=() chosen=()
   for p in ${PROVIDERS[$cap]:-}; do
@@ -786,8 +803,9 @@ env_scripts() {
 #   [$2]    host path of base (default base)
 env_script() {
   local q=$1 p=${1%@*} pre
-  pre=$(env_prefix "$q")
-  if is_ref "$q" && [[ -f $(env_tree "$q")$pre/lib/pos/packages/$p/env.sh ]]; then
+  env_prefix_v "$q"
+  pre=$ENVPFX
+  if is_ref "$q" && env_tree_v "$q" && [[ -f $ENVTREE$pre/lib/pos/packages/$p/env.sh ]]; then
     echo "$pre/lib/pos/packages/$p/env.sh"
   elif [[ -n ${PKGDIR[$p]:-} && -f $base/${PKGDIR[$p]}/env.sh ]]; then
     echo "${2:-$base}/${PKGDIR[$p]}/env.sh"
@@ -830,6 +848,7 @@ targets_expand() {
   done
   mapfile -t TARGETS < <(printf '%s\n' "${!set[@]}" | sed '/^$/d' | sort)
   TPROV=() HOSTAVAIL=()
+  next_reset
   for t in "${TARGETS[@]}"; do
     for p in $(self_provides "$(build_of "$t")"); do
       TPROV[$p]=1
@@ -943,26 +962,48 @@ wanted() {
 # waits while another is ready: a package built with the toolchain
 # reference's gcc gets the build's glibc, which gcc requires, once it is
 # built, not the pos reference's. Returns 1 when nothing can be built.
+# What a candidate's environment comes to (NEXTENV: whether it resolves,
+# and the packages it takes a reference's copy of) is kept from pick to
+# pick: it changes only when a provider of a capability the resolution
+# asked about (provider) is built, or a package is dropped (next_built).
 # Inputs:
 #   $@    target package names
 # Outputs:
 #   NEXT (package name ready to build), WANTED (array of remaining unbuilt packages)
 next_package() {
-  local p e q ENV_UNSORTED=1
-  local -a ready=() first=()
-  local -A want=()
+  local p e q ENV_UNSORTED=1 ENVDEPS_ON= PROVMEMO_ON=1
+  local -a ready=() first=() rec=()
+  local -A want=() owners=() ENVDEPS=()
   wanted "$@"
   for p in "${WANTED[@]}"; do
     want[$p]=1
   done
+  next_built
   for p in "${WANTED[@]}"; do
-    env_of "$p" || continue
+    if [[ -z ${NEXTENV[$p]+set} ]]; then
+      ENVDEPS=() ENVDEPS_ON=1
+      if env_of "$p"; then
+        owners=()
+        for e in "${ENV[@]}"; do
+          [[ -z ${TOOLENV[$e]:-} ]] || continue
+          is_ref "$e" || continue
+          q=${e%@*}
+          [[ ${KIND[$q]} != output ]] || q=${PARENT[$q]}
+          owners[$q]=1
+        done
+        NEXTENV[$p]="ok ${!owners[*]}"
+      else
+        NEXTENV[$p]=missing
+      fi
+      for q in "${!ENVDEPS[@]}"; do
+        NEXTREV[$q]+=" $p"
+      done
+      ENVDEPS_ON=
+    fi
+    rec=(${NEXTENV[$p]})
+    [[ ${rec[0]} == ok ]] || continue
     ready+=("$p")
-    for e in "${ENV[@]}"; do
-      [[ -z ${TOOLENV[$e]:-} ]] || continue
-      is_ref "$e" || continue
-      q=${e%@*}
-      [[ ${KIND[$q]} != output ]] || q=${PARENT[$q]}
+    for q in "${rec[@]:1}"; do
       [[ -z ${want[$q]:-} ]] || continue 2
     done
     first+=("$p")
@@ -974,4 +1015,38 @@ next_package() {
     fi
   done
   return 1
+}
+
+# Forget what next_package keeps that a change of BUILT since the last
+# pick touches: for each capability of a package built since, the
+# provider answers (PROVMEMO) and the environments of the packages whose
+# resolution asked about it (NEXTREV); all of it when one was dropped.
+# Inputs:
+#   BUILT, NEXTBUILT (BUILT as of the last pick), NEXTREV
+# Outputs:
+#   NEXTENV, NEXTBUILT, NEXTREV, PROVMEMO
+next_built() {
+  local b p cap
+  for b in "${!BUILT[@]}"; do
+    [[ -z ${NEXTBUILT[$b]:-} ]] || continue
+    NEXTBUILT[$b]=1
+    for cap in ${PROV[$b]:-}; do
+      unset "PROVMEMO[$cap ]" "PROVMEMO[$cap 1]"
+      for p in ${NEXTREV[$cap]:-}; do
+        unset "NEXTENV[$p]"
+      done
+    done
+  done
+  if ((${#NEXTBUILT[@]} != ${#BUILT[@]})); then
+    next_reset
+    for b in "${!BUILT[@]}"; do
+      NEXTBUILT[$b]=1
+    done
+  fi
+}
+
+# Forget all next_package keeps, when what resolution reads besides BUILT
+# changes (load_references, targets_expand).
+next_reset() {
+  NEXTENV=() NEXTREV=() NEXTBUILT=() PROVMEMO=()
 }
