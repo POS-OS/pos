@@ -1,0 +1,84 @@
+#!/bin/bash
+
+command -v socat >/dev/null 2>&1 || { echo "skip: socat not available"; exit 0; }
+
+sfx=$(mktemp -u "XXXXXXXX")
+ns_server="nss-$sfx"
+ns_client="nsc-$sfx"
+
+SERVER_IP="10.10.42.1"
+CLIENT_IP="10.10.42.2"
+PORT1=12380
+PORT2=12381
+
+ret=0
+
+cleanup() {
+	ip netns del "$ns_server" 2>/dev/null
+	ip netns del "$ns_client" 2>/dev/null
+}
+trap cleanup EXIT
+
+ip netns add "$ns_server"
+ip netns add "$ns_client"
+ip link add veth_s netns "$ns_server" type veth peer name veth_c netns "$ns_client"
+
+ip netns exec "$ns_server" ip addr add "${SERVER_IP}/24" dev veth_s
+ip netns exec "$ns_server" ip link set veth_s up
+ip netns exec "$ns_server" ip link set lo up
+ip netns exec "$ns_client" ip addr add "${CLIENT_IP}/24" dev veth_c
+ip netns exec "$ns_client" ip link set veth_c up
+ip netns exec "$ns_client" ip link set lo up
+
+# Allow at most 2 simultaneous connections per source IP per destination port.
+ip netns exec "$ns_server" $XT_MULTI iptables -A INPUT -p tcp --dport $PORT1 \
+	-m connlimit --connlimit-above 2 -j REJECT
+ip netns exec "$ns_server" $XT_MULTI iptables -A INPUT -p tcp --dport $PORT2 \
+	-m connlimit --connlimit-above 2 -j REJECT
+
+# Start two socat servers, one per port.
+timeout 30 ip netns exec "$ns_server" socat TCP-LISTEN:$PORT1,fork,reuseaddr EXEC:'sleep 30' 2>/dev/null &
+SRV1_PID=$!
+timeout 30 ip netns exec "$ns_server" socat TCP-LISTEN:$PORT2,fork,reuseaddr EXEC:'sleep 30' 2>/dev/null &
+SRV2_PID=$!
+sleep 1
+
+# Open two persistent connections to PORT1; each socat keeps the connection
+# alive for 30 seconds via the exec'd sleep.
+timeout 30 ip netns exec "$ns_client" socat TCP:"$SERVER_IP":$PORT1 EXEC:'sleep 30' 2>/dev/null &
+CONN1_PID=$!
+timeout 30 ip netns exec "$ns_client" socat TCP:"$SERVER_IP":$PORT1 EXEC:'sleep 30' 2>/dev/null &
+CONN2_PID=$!
+sleep 0.2
+
+# Third connection to PORT1 must be rejected by connlimit.
+ip netns exec "$ns_client" socat TCP:"$SERVER_IP":$PORT1,connect-timeout=3 /dev/null 2>/dev/null
+if [ $? -eq 0 ]; then
+	echo "FAILED: 3rd connection to port $PORT1 should have been rejected"
+	ret=1
+fi
+
+# Connection to PORT2 (different destination port) must succeed because it has
+# its own independent connlimit counter.
+ip netns exec "$ns_client" socat TCP:"$SERVER_IP":$PORT2,connect-timeout=3 \
+	/dev/null 2>/dev/null
+if [ $? -ne 0 ]; then
+	echo "FAILED: connection to port $PORT2 should have succeeded"
+	ret=1
+fi
+
+kill $CONN1_PID 2>/dev/null
+wait $CONN1_PID
+
+sleep 1
+
+ip netns exec "$ns_client" socat TCP:"$SERVER_IP":$PORT1,connect-timeout=3 \
+	/dev/null 2>/dev/null
+if [ $? -ne 0 ]; then
+	echo "FAILED: connection to port $PORT2 should have succeeded after exit of other clients"
+	ret=1
+fi
+kill $CONN2_PID $SRV1_PID $SRV2_PID 2>/dev/null
+wait
+
+exit $ret
