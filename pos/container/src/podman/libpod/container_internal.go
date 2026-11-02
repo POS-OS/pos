@@ -285,7 +285,7 @@ func (c *Container) handleRestartPolicy(ctx context.Context) (_ bool, retErr err
 
 	if c.config.HealthCheckConfig != nil {
 		if err := c.removeTransientFiles(ctx,
-			c.config.StartupHealthCheckConfig != nil && !c.state.StartupHCPassed,
+			c.startupHealthCheckActive(),
 			c.state.HCUnitName); err != nil {
 			return false, err
 		}
@@ -1126,12 +1126,13 @@ func (c *Container) init(ctx context.Context, retainRetries bool) error {
 		return err
 	}
 
-	if c.config.HealthCheckConfig != nil {
+	isStartupHC := c.startupHealthCheckActive()
+	if c.HasHealthCheck() || isStartupHC {
 		timer := c.config.HealthCheckConfig.Interval.String()
-		if c.config.StartupHealthCheckConfig != nil {
+		if isStartupHC {
 			timer = c.config.StartupHealthCheckConfig.Interval.String()
 		}
-		if err := c.createTimer(timer, c.config.StartupHealthCheckConfig != nil); err != nil {
+		if err := c.createTimer(timer, isStartupHC); err != nil {
 			return fmt.Errorf("create healthcheck: %w", err)
 		}
 	}
@@ -1259,7 +1260,8 @@ func (c *Container) initAndStart(ctx context.Context) (retErr error) {
 // Internal function to start a container without taking the pod lock.
 // Please note that this DOES take the container lock.
 // Intended to be used in pod-related functions.
-func (c *Container) startNoPodLock(ctx context.Context, recursive bool) (finalErr error) {
+// The returned PID has the same meaning as for Start.
+func (c *Container) startNoPodLock(ctx context.Context, recursive bool) (_ int, finalErr error) {
 	if !c.batched {
 		c.lock.Lock()
 		defer c.lock.Unlock()
@@ -1275,19 +1277,27 @@ func (c *Container) startNoPodLock(ctx context.Context, recursive bool) (finalEr
 		}()
 
 		if err := c.syncContainer(); err != nil {
-			return err
+			return 0, err
 		}
 	}
 
 	if err := c.prepareToStart(ctx, recursive); err != nil {
-		return err
+		if errors.Is(err, define.ErrCtrStateRunning) {
+			return c.state.PID, err
+		}
+		return 0, err
 	}
 
 	// Start the container
 	if err := c.start(); err != nil {
-		return err
+		return 0, err
 	}
-	return c.waitForHealthy(ctx)
+	// waitForHealthy can release the lock, so read the PID before calling it.
+	pid := c.state.PID
+	if err := c.waitForHealthy(ctx); err != nil {
+		return 0, err
+	}
+	return pid, nil
 }
 
 // Internal, non-locking function to start a container
@@ -1311,7 +1321,7 @@ func (c *Container) start() error {
 			payload += "\n"
 			payload += daemon.SdNotifyReady
 		}
-		if err := notifyproxy.SendMessage(c.config.SdNotifySocket, payload); err != nil {
+		if err := notifyproxy.SendMessageWithBarrier(c.config.SdNotifySocket, payload); err != nil {
 			logrus.Errorf("Notifying systemd of Conmon PID: %s", err.Error())
 		} else {
 			logrus.Debugf("Notify sent successfully")
@@ -1400,14 +1410,14 @@ func (c *Container) waitForHealthy(ctx context.Context) error {
 		}()
 	}
 
-	if _, err := c.WaitForConditionWithInterval(ctx, DefaultWaitInterval, define.HealthCheckHealthy); err != nil {
+	if _, err := c.WaitForConditionWithInterval(ctx, nil, DefaultWaitInterval, define.HealthCheckHealthy); err != nil {
 		if errors.Is(err, define.ErrNoSuchCtr) {
 			return nil
 		}
 		return err
 	}
 
-	if err := notifyproxy.SendMessage(c.config.SdNotifySocket, daemon.SdNotifyReady); err != nil {
+	if err := notifyproxy.SendMessageWithBarrier(c.config.SdNotifySocket, daemon.SdNotifyReady); err != nil {
 		logrus.Errorf("Sending READY message after turning healthy: %s", err.Error())
 	} else {
 		logrus.Debugf("Notify sent successfully")
@@ -1617,7 +1627,7 @@ func (c *Container) pause() error {
 
 	if c.state.HCUnitName != "" {
 		if err := c.removeTransientFiles(context.Background(),
-			c.config.StartupHealthCheckConfig != nil && !c.state.StartupHCPassed,
+			c.startupHealthCheckActive(),
 			c.state.HCUnitName); err != nil {
 			return fmt.Errorf("failed to remove HealthCheck timer: %w", err)
 		}
@@ -1647,9 +1657,8 @@ func (c *Container) unpause() error {
 		return err
 	}
 
-	isStartupHealthCheck := c.config.StartupHealthCheckConfig != nil && !c.state.StartupHCPassed
-	isHealthCheckEnabled := c.config.HealthCheckConfig != nil &&
-		(len(c.config.HealthCheckConfig.Test) != 1 || c.config.HealthCheckConfig.Test[0] != "NONE")
+	isStartupHealthCheck := c.startupHealthCheckActive()
+	isHealthCheckEnabled := c.HasHealthCheck()
 	if isHealthCheckEnabled || isStartupHealthCheck {
 		timer := c.config.HealthCheckConfig.Interval.String()
 		if isStartupHealthCheck {
@@ -1700,7 +1709,7 @@ func (c *Container) restartWithTimeout(ctx context.Context, timeout uint) (retEr
 
 		if c.config.HealthCheckConfig != nil {
 			if err := c.removeTransientFiles(context.Background(),
-				c.config.StartupHealthCheckConfig != nil && !c.state.StartupHCPassed,
+				c.startupHealthCheckActive(),
 				c.state.HCUnitName); err != nil {
 				logrus.Error(err.Error())
 			}
@@ -2236,7 +2245,7 @@ func (c *Container) cleanup(ctx context.Context) error {
 	// Remove healthcheck unit/timer file if it execs
 	if c.config.HealthCheckConfig != nil {
 		if err := c.removeTransientFiles(ctx,
-			c.config.StartupHealthCheckConfig != nil && !c.state.StartupHCPassed,
+			c.startupHealthCheckActive(),
 			c.state.HCUnitName); err != nil {
 			logrus.Errorf("Removing timer for container %s healthcheck: %v", c.ID(), err)
 		}
@@ -2953,7 +2962,7 @@ func (c *Container) resetHealthCheckTimers(noHealthCheck bool, changedTimer bool
 	}
 	if noHealthCheck {
 		if err := c.removeTransientFiles(context.Background(),
-			c.config.StartupHealthCheckConfig != nil && !c.state.StartupHCPassed,
+			c.startupHealthCheckActive(),
 			c.state.HCUnitName); err != nil {
 			return err
 		}
@@ -3016,7 +3025,7 @@ func (c *Container) updateHealthCheck(newHealthCheckConfig IHealthCheckConfig, c
 		changedTimer = newHealthCheckConfig.IsTimeChanged(oldInterval)
 	}
 
-	noHealthCheck := c.config.HealthCheckConfig != nil && slices.Contains(c.config.HealthCheckConfig.Test, "NONE")
+	noHealthCheck := !c.HasHealthCheck()
 
 	if err := c.resetHealthCheckTimers(noHealthCheck, changedTimer, !oldHealthCheckConfig.IsNil(), newHealthCheckConfig.IsStartup()); err != nil {
 		return err

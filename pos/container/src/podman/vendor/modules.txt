@@ -259,7 +259,7 @@ github.com/docker/go-plugins-helpers/volume
 # github.com/docker/go-units v0.5.0
 ## explicit
 github.com/docker/go-units
-# github.com/ebitengine/purego v0.11.1
+# github.com/ebitengine/purego v0.11.2
 ## explicit; go 1.25.0
 github.com/ebitengine/purego
 github.com/ebitengine/purego/internal/cgo
@@ -275,7 +275,7 @@ github.com/fsnotify/fsnotify/internal
 # github.com/fsouza/go-dockerclient v1.13.2
 ## explicit; go 1.25.5
 github.com/fsouza/go-dockerclient
-# github.com/go-jose/go-jose/v4 v4.1.5
+# github.com/go-jose/go-jose/v4 v4.1.6
 ## explicit; go 1.24.0
 github.com/go-jose/go-jose/v4
 github.com/go-jose/go-jose/v4/cipher
@@ -401,11 +401,11 @@ github.com/mattn/go-shellwords
 # github.com/mattn/go-sqlite3 v1.14.52
 ## explicit; go 1.21
 github.com/mattn/go-sqlite3
-# github.com/mdlayher/socket v0.6.0
-## explicit; go 1.25.0
+# github.com/mdlayher/socket v0.8.0
+## explicit; go 1.26.0
 github.com/mdlayher/socket
-# github.com/mdlayher/vsock v1.3.0
-## explicit; go 1.25.0
+# github.com/mdlayher/vsock v1.4.0
+## explicit; go 1.26.0
 github.com/mdlayher/vsock
 # github.com/miekg/pkcs11 v1.1.2
 ## explicit; go 1.12
@@ -460,8 +460,8 @@ github.com/moby/moby/client/pkg/versions
 # github.com/moby/patternmatcher v0.6.1
 ## explicit; go 1.19
 github.com/moby/patternmatcher
-# github.com/moby/sys/capability v0.4.0
-## explicit; go 1.21
+# github.com/moby/sys/capability v0.5.0
+## explicit; go 1.24
 github.com/moby/sys/capability
 # github.com/moby/sys/devices v0.1.0
 ## explicit; go 1.24
@@ -472,8 +472,8 @@ github.com/moby/sys/mountinfo
 # github.com/moby/sys/sequential v0.7.0
 ## explicit; go 1.24.0
 github.com/moby/sys/sequential
-# github.com/moby/sys/user v0.4.1
-## explicit; go 1.18
+# github.com/moby/sys/user v0.5.0
+## explicit; go 1.24
 github.com/moby/sys/user
 # github.com/moby/sys/userns v0.2.1
 ## explicit; go 1.21
@@ -558,7 +558,7 @@ github.com/opencontainers/runc/libcontainer/apparmor
 # github.com/opencontainers/runtime-spec v1.3.0
 ## explicit
 github.com/opencontainers/runtime-spec/specs-go
-# github.com/opencontainers/runtime-tools v0.9.1-0.20260316125833-8a4db579f5c8
+# github.com/opencontainers/runtime-tools v0.9.1-0.20261017090856-bd3b0bd00f44
 ## explicit; go 1.21
 github.com/opencontainers/runtime-tools/generate
 github.com/opencontainers/runtime-tools/generate/seccomp
@@ -616,7 +616,7 @@ github.com/seccomp/libseccomp-golang
 # github.com/secure-systems-lab/go-securesystemslib v0.11.1
 ## explicit; go 1.25.0
 github.com/secure-systems-lab/go-securesystemslib/encrypted
-# github.com/shirou/gopsutil/v4 v4.26.9
+# github.com/shirou/gopsutil/v4 v4.26.10
 ## explicit; go 1.26.0
 github.com/shirou/gopsutil/v4/common
 github.com/shirou/gopsutil/v4/cpu
@@ -691,6 +691,10 @@ github.com/ulikunitz/xz
 github.com/ulikunitz/xz/internal/hash
 github.com/ulikunitz/xz/internal/xlog
 github.com/ulikunitz/xz/lzma
+# github.com/varlink/go v0.4.1-0.20261015173642-c935be0c53f7
+## explicit; go 1.21
+github.com/varlink/go/varlink
+github.com/varlink/go/varlink/internal/ctxio
 # github.com/vbatts/tar-split v0.12.3
 ## explicit; go 1.22.0
 github.com/vbatts/tar-split/archive/tar
@@ -759,7 +763,7 @@ go.opentelemetry.io/otel/trace
 go.opentelemetry.io/otel/trace/embedded
 go.opentelemetry.io/otel/trace/internal/telemetry
 go.opentelemetry.io/otel/trace/noop
-# go.podman.io/buildah v1.45.1-0.20261019132740-4264a838f214
+# go.podman.io/buildah v1.46.0
 ## explicit; go 1.26.8
 go.podman.io/buildah
 go.podman.io/buildah/bind
@@ -800,7 +804,7 @@ go.podman.io/buildah/pkg/tmpdir
 go.podman.io/buildah/pkg/util
 go.podman.io/buildah/pkg/volumes
 go.podman.io/buildah/util
-# go.podman.io/common v0.69.3-0.20261016121351-f85704f3e0c4
+# go.podman.io/common v0.70.0
 ## explicit; go 1.26.0
 go.podman.io/common/internal
 go.podman.io/common/libimage
@@ -867,7 +871,7 @@ go.podman.io/common/pkg/umask
 go.podman.io/common/pkg/util
 go.podman.io/common/pkg/version
 go.podman.io/common/version
-# go.podman.io/image/v5 v5.41.3-0.20261016121351-f85704f3e0c4
+# go.podman.io/image/v5 v5.42.0
 ## explicit; go 1.26.0
 go.podman.io/image/v5/copy
 go.podman.io/image/v5/directory
@@ -944,7 +948,7 @@ go.podman.io/image/v5/transports
 go.podman.io/image/v5/transports/alltransports
 go.podman.io/image/v5/types
 go.podman.io/image/v5/version
-# go.podman.io/storage v1.64.3-0.20261016121351-f85704f3e0c4
+# go.podman.io/storage v1.65.0
 ## explicit; go 1.26.0
 go.podman.io/storage
 go.podman.io/storage/drivers
@@ -961,6 +965,7 @@ go.podman.io/storage/internal/dedup
 go.podman.io/storage/internal/driver
 go.podman.io/storage/internal/rawfilelock
 go.podman.io/storage/internal/rootlookupcache
+go.podman.io/storage/internal/splitfdstreamserver
 go.podman.io/storage/internal/staging_lockfile
 go.podman.io/storage/internal/stat
 go.podman.io/storage/internal/tempdir
@@ -1034,7 +1039,7 @@ golang.org/x/crypto/xts
 # golang.org/x/mod v0.42.0
 ## explicit; go 1.26.0
 golang.org/x/mod/semver
-# golang.org/x/net v0.61.0
+# golang.org/x/net v0.62.0
 ## explicit; go 1.26.0
 golang.org/x/net/bpf
 golang.org/x/net/html
@@ -1117,8 +1122,8 @@ google.golang.org/genproto/googleapis/api/annotations
 # google.golang.org/genproto/googleapis/rpc v0.0.0-20260825221802-da73d73af1c5
 ## explicit; go 1.25.0
 google.golang.org/genproto/googleapis/rpc/status
-# google.golang.org/grpc v1.84.0
-## explicit; go 1.25.0
+# google.golang.org/grpc v1.85.0
+## explicit; go 1.26.0
 google.golang.org/grpc
 google.golang.org/grpc/attributes
 google.golang.org/grpc/backoff

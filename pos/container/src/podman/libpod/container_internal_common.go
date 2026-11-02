@@ -904,8 +904,6 @@ func (c *Container) generateSpec(ctx context.Context) (s *spec.Spec, cleanupFunc
 		g.AddProcessRlimits("RLIMIT_NPROC", uint64(max), uint64(current))
 	}
 
-	c.addMaskedPaths(&g)
-
 	return g.Config, cleanupFunc, nil
 }
 
@@ -1411,9 +1409,12 @@ func (c *Container) checkpoint(ctx context.Context, options ContainerCheckpointO
 		return nil, 0, err
 	}
 
-	// Setting CheckpointLog early in case there is a failure.
+	// Save checkpoint paths in case checkpointing fails.
 	c.state.CheckpointLog = path.Join(c.bundlePath(), "dump.log")
 	c.state.CheckpointPath = c.CheckpointPath()
+	if err := c.save(); err != nil {
+		return nil, 0, err
+	}
 
 	// Freeze a live checkpoint so its file system is captured at the same
 	// instant as the memory image; the deferred thaw runs once the checkpoint

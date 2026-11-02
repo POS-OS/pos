@@ -503,7 +503,7 @@ func teardown(ctx context.Context, body io.Reader, options entities.PlayKubeDown
 		}
 	}
 	lastSecretRmError := secRmErrors.PrintErrors()
-	if lastPodRmError != nil {
+	if lastSecretRmError != nil {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", lastSecretRmError)
 	}
 
