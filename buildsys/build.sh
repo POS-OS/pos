@@ -224,17 +224,18 @@ bootstrap_check() {
 #   id, bdir    the new build's ID and directory
 #   PREFIX      the prefix its packages install in (project_prefix)
 build_new() {
-  local archives=$1 from branch version
+  local archives=$1 from branch version state
   id=$(date +%Y%m%d%H%M)
   [[ ! -e $builds/$id ]] || die "build $id already exists; wait a minute"
   branch=$(git -C "$base" rev-parse --abbrev-ref HEAD)
   version=$(version_info HEAD "$branch" "$id") || exit 1
-  PREFIX=$(project_prefix "$version")
+  PREFIX=$(project_prefix "$version") || exit 1
   references_choose
   load_references
-  from=$(tools_base)
+  from=$(tools_base) || exit 1
+  state=$(tree_state) || exit 1
   bdir=$builds/$id
-  mkdir -p "$bdir"/{dest,debug,build,logs}
+  mkdir -p "$bdir"/{dest,debug,build,logs} || exit 1
   tools_build "$from"
   {
     echo "id $id"
@@ -247,7 +248,7 @@ build_new() {
     echo "pos-reference $POS_REF"
     echo "tools-reference $TOOLS_REF"
     echo "branch $branch"
-    tree_state | awk '{print "commit", $1; print "tree", $2} NF > 2 {print "engine", $4}'
+    awk '{print "commit", $1; print "tree", $2} NF > 2 {print "engine", $4}' <<<"$state"
     echo "$version"
     echo "started $(date -u +%FT%TZ)"
     echo "source-archives $archives"
@@ -333,16 +334,21 @@ build_info() {
 #   base    path to the POS checkout
 #   engine  path to the engine's checkout
 tree_state() {
-  local dirty state=clean
-  dirty=$(git -C "$base" --no-optional-locks status --porcelain --untracked-files=no
-          git -C "$base" --no-optional-locks status --porcelain -- VERSION outputs buildsys devtools "${RECIPES[@]}")
-  [[ $engine == "$base" ]] ||
-    dirty+=$(git -C "$engine" --no-optional-locks status --porcelain -- buildsys)
+  local dirty state=clean head ehead
+  dirty=$(git -C "$base" --no-optional-locks status --porcelain --untracked-files=no &&
+          git -C "$base" --no-optional-locks status --porcelain -- VERSION outputs buildsys devtools "${RECIPES[@]}") ||
+    die "$base: git status failed"
+  if [[ $engine != "$base" ]]; then
+    dirty+=$(git -C "$engine" --no-optional-locks status --porcelain -- buildsys) ||
+      die "$engine: git status failed"
+  fi
   [[ -z $dirty ]] || state=dirty
+  head=$(git -C "$base" rev-parse HEAD) || die "$base: no commit"
   if [[ $engine == "$base" ]]; then
-    echo "$(git -C "$base" rev-parse HEAD) $state"
+    echo "$head $state"
   else
-    echo "$(git -C "$base" rev-parse HEAD) $state engine $(git -C "$engine" rev-parse HEAD)"
+    ehead=$(git -C "$engine" rev-parse HEAD) || die "$engine: no commit"
+    echo "$head $state engine $ehead"
   fi
 }
 
@@ -366,8 +372,10 @@ step_start() {
 #   [$2]    optional status tag (e.g. "unchecked")
 #   bdir    active build directory
 step_made() {
+  local state
+  state=$(tree_state) || exit 1
   mkdir -p "$bdir/made"
-  echo "$(tree_state)${2:+ $2}" >"$bdir/made/$1"
+  echo "$state${2:+ $2}" >"$bdir/made/$1"
 }
 
 # Load the build in bdir: its pipeline (pos for builds from before
@@ -1295,7 +1303,7 @@ cmd_plan() {
     fi
   else
     id="<new>"
-    PREFIX=$(project_prefix "$(version_info HEAD - 000000000000)")
+    PREFIX=$(project_prefix "$(version_info HEAD - 000000000000)") || exit 1
     references_choose
     load_references
   fi

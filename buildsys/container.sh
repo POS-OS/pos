@@ -85,6 +85,7 @@ tools_build() {
     --label "pos.build=$id" -t "$(tools_image)" \
     -f "$(host_path "$engine/buildsys/tools.containerfile")" "$(host_path "$engine/buildsys")" 2>&1 |
     tee -a "$log" >&2
+  ((PIPESTATUS[0] == 0)) || die "tools image $(tools_image) failed (log: $log)"
   mv "$bdir/tools-packages.tmp" "$bdir/tools-packages"
 }
 
