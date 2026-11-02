@@ -40,7 +40,7 @@ gen_in_range_time()
 
 gen_out_of_range_time()
 {
-	echo \"$(date -d "+10 seconds" +%G-%m-%d" "%H:%M:%S)\"-\"$(date -d "+20 seconds" +%G-%m-%d" "%H:%M:%S)\"
+	echo \"$(date -d "-20 seconds" +%G-%m-%d" "%H:%M:%S)\"-\"$(date -d "-10 seconds" +%G-%m-%d" "%H:%M:%S)\"
 }
 
 $NFT -f - <<-EOF

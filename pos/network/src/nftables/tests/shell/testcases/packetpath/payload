@@ -47,9 +47,11 @@ run_test()
 	if [ $1 -eq 6 ]; then
 		nsx1_addr="["$ns1_addr"]"
 		nsx2_addr="["$ns2_addr"]"
+		addropt="nodad"
 	else
 		nsx1_addr="$ns1_addr"
 		nsx2_addr="$ns2_addr"
+		addropt=
 	fi
 
 	ip netns add "$ns1" || exit 111
@@ -62,10 +64,8 @@ run_test()
 
 	ip -net "$ns1" link set veth0 up
 	ip -net "$ns2" link set veth0 up
-	ip -net "$ns1" addr add $ns1_addr/$cidr dev veth0
-	ip -net "$ns2" addr add $ns2_addr/$cidr dev veth0
-
-	sleep 3
+	ip -net "$ns1" addr add $ns1_addr/$cidr $addropt dev veth0
+	ip -net "$ns2" addr add $ns2_addr/$cidr $addropt dev veth0
 
 RULESET="table netdev payload_netdev {
        counter ingress {}
@@ -121,17 +121,17 @@ table inet payload_inet {
 
 	case $l4proto in
 	"tcp")
-		ip netns exec "$ns1" socat -u STDIN TCP:$nsx2_addr:8887,connect-timeout=4 < /dev/null > /dev/null
-		ip netns exec "$ns1" socat -u STDIN TCP:$nsx2_addr:8888,connect-timeout=4 < /dev/null > /dev/null
+		ip netns exec "$ns1" socat -u STDIN TCP:$nsx2_addr:8887,connect-timeout=0.1 < /dev/null > /dev/null
+		ip netns exec "$ns1" socat -u STDIN TCP:$nsx2_addr:8888,connect-timeout=0.1 < /dev/null > /dev/null
 
-		ip netns exec "$ns1" socat -u STDIN TCP:$nsx2_addr:8880,connect-timeout=4 < /dev/null > /dev/null
-		ip netns exec "$ns1" socat -u STDIN TCP:$nsx2_addr:8881,connect-timeout=4 < /dev/null > /dev/null
+		ip netns exec "$ns1" socat -u STDIN TCP:$nsx2_addr:8880,connect-timeout=0.1 < /dev/null > /dev/null
+		ip netns exec "$ns1" socat -u STDIN TCP:$nsx2_addr:8881,connect-timeout=0.1 < /dev/null > /dev/null
 
-		ip netns exec "$ns2" socat -u STDIN TCP:$nsx1_addr:7777,connect-timeout=4 < /dev/null > /dev/null
-		ip netns exec "$ns2" socat -u STDIN TCP:$nsx1_addr:7778,connect-timeout=4 < /dev/null > /dev/null
+		ip netns exec "$ns2" socat -u STDIN TCP:$nsx1_addr:7777,connect-timeout=0.1 < /dev/null > /dev/null
+		ip netns exec "$ns2" socat -u STDIN TCP:$nsx1_addr:7778,connect-timeout=0.1 < /dev/null > /dev/null
 
-		ip netns exec "$ns2" socat -u STDIN TCP:$nsx1_addr:7770,connect-timeout=4 < /dev/null > /dev/null
-		ip netns exec "$ns2" socat -u STDIN TCP:$nsx1_addr:7771,connect-timeout=4 < /dev/null > /dev/null
+		ip netns exec "$ns2" socat -u STDIN TCP:$nsx1_addr:7770,connect-timeout=0.1 < /dev/null > /dev/null
+		ip netns exec "$ns2" socat -u STDIN TCP:$nsx1_addr:7771,connect-timeout=0.1 < /dev/null > /dev/null
 		;;
 	"udp")
 		ip netns exec "$ns1" bash -c "echo 'AA' | socat -u STDIN UDP:$nsx2_addr:8887 > /dev/null"
@@ -176,12 +176,10 @@ table inet payload_inet {
 
 	ip -net "$ns1" addr del $ns1_addr/$cidr dev veth0
 
-	ip -net "$ns1" link add name br0 type bridge
+	ip -net "$ns1" link add name br0 type bridge forward_delay 0 stp_state 0
 	ip -net "$ns1" link set veth0 master br0
-	ip -net "$ns1" addr add $ns1_addr/$cidr dev br0
+	ip -net "$ns1" addr add $ns1_addr/$cidr $addropt dev br0
 	ip -net "$ns1" link set up dev br0
-
-	sleep 3
 
 RULESET="table bridge payload_bridge {
        counter input {}
@@ -212,11 +210,11 @@ RULESET="table bridge payload_bridge {
 
 	case $l4proto in
 	"tcp")
-		ip netns exec "$ns1" socat -u STDIN TCP:$nsx2_addr:8880,connect-timeout=4 < /dev/null > /dev/null
-		ip netns exec "$ns1" socat -u STDIN TCP:$nsx2_addr:8881,connect-timeout=4 < /dev/null > /dev/null
+		ip netns exec "$ns1" socat -u STDIN TCP:$nsx2_addr:8880,connect-timeout=0.1 < /dev/null > /dev/null
+		ip netns exec "$ns1" socat -u STDIN TCP:$nsx2_addr:8881,connect-timeout=0.1 < /dev/null > /dev/null
 
-		ip netns exec "$ns2" socat -u STDIN TCP:$nsx1_addr:7770,connect-timeout=4 < /dev/null > /dev/null
-		ip netns exec "$ns2" socat -u STDIN TCP:$nsx1_addr:7771,connect-timeout=4 < /dev/null > /dev/null
+		ip netns exec "$ns2" socat -u STDIN TCP:$nsx1_addr:7770,connect-timeout=0.1 < /dev/null > /dev/null
+		ip netns exec "$ns2" socat -u STDIN TCP:$nsx1_addr:7771,connect-timeout=0.1 < /dev/null > /dev/null
 		;;
 	"udp")
 		ip netns exec "$ns1" bash -c "echo 'AA' | socat -u STDIN UDP:$nsx2_addr:8880 > /dev/null"

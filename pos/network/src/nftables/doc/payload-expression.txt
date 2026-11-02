@@ -805,6 +805,32 @@ TCP option matching also supports raw expression syntax to access arbitrary opti
 [verse]
 *tcp option* *@*'number'*,*'offset'*,*'length'
 
+.MPTCP subtypes
+[options="header"]
+|============================
+|Keyword| Description
+|mp-capable|
+Multipath capable
+|mp-join|
+Join connection
+|dss|
+Data sequence signal
+|add-addr|
+Add address
+|remove-addr|
+Remove address
+|mp-prio|
+Change subflow priority
+|mp-fail|
+Fallback to single-path TCP
+|mp-fastclose|
+Fast close
+|mp-tcprst|
+Subflow reset
+|============================
+
+Data types can be queried with 'nft describe tcp option mptcp subtype'.
+
 .IP Options
 [options="header"]
 |==================
@@ -832,6 +858,21 @@ filter input tcp option sack-perm exists counter
 --------------------
 filter input tcp option maxseg size lt 536
 --------------------
+
+.matching MPTCP suboptions
+--------------------
+filter input tcp option mptcp subtype mp-join drop
+--------------------
+
+[NOTE]
+====================
+Netfilter currently evaluates only the first MPTCP option found in the TCP
+header. If a packet contains multiple MPTCP options, a rule attempting to match
+the second option will never match. Having multiple MPTCP options in the same
+packet is valid, e.g the Linux MPTCP stack inserts 'remove-addr', 'mp-prio' and
+'mp-fail' after an MPTCP 'dss' option; 'mp-tcprst' can also be inserted after
+an 'mp-fastclose'.
+====================
 
 .matching IPv6 exthdr
 ---------------------
