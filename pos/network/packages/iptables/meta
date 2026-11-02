@@ -1,0 +1,3 @@
+build-requires gcc pos-link
+# The nft backend writes rules through libnftnl and libmnl, as nft does.
+requires glibc libmnl libnftnl

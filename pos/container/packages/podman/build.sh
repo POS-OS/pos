@@ -13,6 +13,14 @@ pkg() {
   # The man pages are made with Fedora's go-md2man; -o skips
   # .install.md2man, which builds podman's copy from test/tools, not in the
   # synced source.
+  #
+  # podman-remote is the client of a podman service (podman system
+  # service, or podman.socket), here or on another machine, built with
+  # podman's remote tags. docker is podman's Docker CLI emulation: a script
+  # that runs podman, the docker man pages (links to podman's), a
+  # profile.d file pointing DOCKER_HOST at podman's socket, and a
+  # tmpfiles.d link from /run/docker.sock to it, for the system and for
+  # each user's runtime directory.
   pkg_sync_src
   pkg_go_env
   local -a vars=(
@@ -27,7 +35,8 @@ pkg() {
     BUILDTAGS="grpcnotrace seccomp systemd libsqlite3 libsubid containers_image_openpgp exclude_graphdriver_btrfs"
     EXTRA_LDFLAGS="-linkmode=external -X go.podman.io/storage/pkg/configfile.systemConfigPath=${prefix}/share/containers -X go.podman.io/common/pkg/subscriptions.DefaultMountsFile=${prefix}/share/containers/mounts.conf"
   )
-  pkg_compile "${vars[@]}" podman rootlessport quadlet docs
-  # Not make install: it installs podman-remote too, which is not built.
-  make DESTDIR="$dest_dir" "${vars[@]}" install.bin install.man install.systemd install.completions
+  pkg_compile "${vars[@]}" podman podman-remote rootlessport quadlet docs
+  make "${vars[@]}" docker-docs
+  make DESTDIR="$dest_dir" "${vars[@]}" install.bin install.remote install.man install.systemd \
+    install.completions install.docker-full
 }

@@ -291,7 +291,9 @@ the release preparation itself. A source goes through three steps:
    `prep_pull` runs gnulib bootstrap's pull phase or `autopull.sh`
    (translations, submodule hooks), `prep_gen` generates the build system,
    `prep_version` writes `.tarball-version`, `prep_cargo_vendor` vendors
-   a Rust source's crates (`cargo vendor`). Files gnulib-tool links to
+   a Rust source's crates (`cargo vendor`), `prep_go_vendor` a Go
+   module's (`go mod vendor`), for a source without a committed `vendor/`.
+   Files gnulib-tool links to
    gnulib (`pos/common/src/gnulib`) are copied, so the prepared tree stands
    alone. Prepare runs in a build container with network access, which has
    the recipes, the committed source, gnulib and the tree to prepare, into which the package's
@@ -1862,9 +1864,14 @@ systemd-resolved configure the network without it.
   clockdiff need root.
 * ethtool, with netlink (libmnl). nftables with libnftnl and libmnl,
   readline for `nft -i` and JSON (jansson) for `nft -j`, which netavark
-  writes its rules with (see "Container stage"); no iptables
-  compatibility. nftables.service loads `/etc/nftables/rules/main.nft`
-  where there is one.
+  writes its rules with (see "Container stage"). nftables.service loads
+  `/etc/nftables/rules/main.nft` where there is one.
+* iptables over nftables (`xtables-nft-multi`): iptables, ip6tables,
+  arptables, ebtables, their save and restore, and the translators, for
+  tools that still write iptables rules; the rules are nftables tables.
+  No legacy backend (`xtables-legacy-multi`, iptables-xml): the plain
+  names link to the nft one. Extensions in `/pos/lib/xtables`; no
+  connlabel (libnetfilter_conntrack) or libpcap tools.
 * OpenSSH (ssh, sshd, scp, sftp, ssh-agent, ssh-keygen): configuration in
   `/etc/ssh` (factory), PAM on (the shipped `sshd_config`, edited in
   prepare) with pam's vendor file `sshd`, the privilege separation user
@@ -1891,8 +1898,22 @@ with Fedora's compilers (see "Packages").
   signatures (no GPGME); no btrfs or AppArmor. The `/usr/share/containers`
   of podman's libraries, where vendor configuration is read, is
   `/pos/share/containers` (`configfile.systemConfigPath` at link time);
-  `/etc/containers` stays the machine's. No podman-remote or docker
-  compatibility script.
+  `/etc/containers` stays the machine's. podman-remote, the client of a
+  podman service (`podman.socket`), built with podman's remote tags. The
+  docker command, podman's: a script running podman, with docker man
+  pages linking to podman's, a profile.d file setting `DOCKER_HOST` to
+  podman's socket and a tmpfiles.d link `/run/docker.sock` to it (for the
+  system and for users' runtime directories).
+* buildah and skopeo, with podman's storage and signature tags and its
+  vendor configuration directory; skopeo's own policy.json and
+  registries.d default are containers-common's, not installed again.
+* toolbox: development containers (Fedora's toolbox images by default).
+  It is also the entry point in its containers, bind-mounted from the
+  host: its loader and runpath are POS's under `/run/host`
+  (`/run/host/pos/lib/ld-linux-x86-64.so.2`, `/run/host/pos/lib`), where
+  a toolbox container has the host's root, and on the host its
+  tmpfiles.d line links `/run/host` to `/`. Its Go modules are vendored
+  in prepare (`prep_go_vendor`).
 * containers-common, the configuration Fedora's package of that name has,
   from the container-libs tree (synced as a subset): the defaults of
   containers.conf, storage.conf, registries.conf, policy.json,
@@ -1914,9 +1935,9 @@ with Fedora's compilers (see "Packages").
   user a range, and newuidmap and newgidmap are set-uid. A user made
   before needs `usermod --add-subuids --add-subgids`.
 
-Not in the stage: buildah and skopeo (podman build and podman image cover
-most of their use), toolbox, podman-remote, slirp4netns, fuse-overlayfs
-and iptables, which podman's current defaults do without.
+Not in the stage: slirp4netns, whose support podman 6 removed (pasta
+replaces it), and fuse-overlayfs with libfuse3: the kernel's overlay
+mounts in user namespaces cover rootless storage.
 
 # Storage stage
 The storage stage (`pos/storage/stage`) is file system, volume,

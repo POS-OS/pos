@@ -1,0 +1,7 @@
+build-requires gcc pos-link
+# It runs containers with podman and copies images with skopeo; libsubid
+# (shadow) is dlopened to check a user's subordinate ranges.
+requires glibc shadow podman skopeo
+# go-md2man makes the man pages.
+host-requires golang golang-github-cpuguy83-md2man meson ninja-build
+prepare-requires golang

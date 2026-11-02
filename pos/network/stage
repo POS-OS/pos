@@ -11,8 +11,10 @@ iproute2
 iputils
 # Wired device settings: link speed, offloads.
 ethtool
-# Packet filtering; jansson for its JSON mode.
+# Packet filtering; jansson for its JSON mode. iptables over nftables, for
+# tools that write iptables rules.
 jansson
 nftables
+iptables
 # Remote shell: ssh, sshd, scp, sftp.
 openssh
