@@ -14,8 +14,9 @@ pkg() {
     --enable-nftables \
     --disable-libnfnetlink \
     --disable-connlabel
-  rm "$sbin/xtables-legacy-multi" "$sbin"/*-legacy* "${dest_dir}${prefix}/bin/iptables-xml"
-  rm "$share/man/man8/xtables-legacy.8" "$share/man/man1/iptables-xml.1" "$share/iptables/iptables.xslt"
+  # The glob is xtables-legacy-multi and its *-legacy links.
+  rm "$sbin"/*-legacy* "${dest_dir}${prefix}/bin/iptables-xml"
+  rm "$share/man/man8/xtables-legacy.8" "$share/man/man1/iptables-xml.1" "$share/xtables/iptables.xslt"
   for n in iptables iptables-restore iptables-save ip6tables ip6tables-restore ip6tables-save; do
     ln -sf xtables-nft-multi "$sbin/$n"
   done
