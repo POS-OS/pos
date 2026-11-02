@@ -1,7 +1,6 @@
 # Container image: a root filesystem around /pos, for podman import or
-# docker import. BUILD.md "Images". The network stage is in its /pos:
-# a container has no systemd-sysext to enable it with pos-stage.
-requires core-libs base system network
+# docker import. BUILD.md "Images".
+requires core-libs base system
 host-requires tar zstd
 # Its name in podman, with POS's programs first in PATH.
 tag pos
