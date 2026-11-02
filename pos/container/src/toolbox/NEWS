@@ -1,0 +1,134 @@
+0.3
+===
+
+### Security fixes
+
+* Bumped the minimum github.com/go-viper/mapstructure/v2 version to 2.4.0 for
+  GHSA-2464-8j7c-4cjm
+
+### Bug fixes
+
+* Deprecated all containers that need the org.freedesktop.Flatpak.SessionHelper
+  D-Bus interface to keep /etc/localtime and /etc/timezone synchronized with
+  the host
+* Started using a configuration file for the 'p11-kit server' socket on the
+  host, used to access the CA certificates, with p11-kit >= 0.25.6.  Older
+  p11-kit versions will continue to work using the P11_KIT_SERVER_ADDRESS
+  environment variable.
+* Unbroke access to CA certificates in su(1) and sudo(8) sessions (regression
+  in 0.1.2)
+
+### Tests
+
+* Fixed the DNS resolver written in Python, used by the runtime environment
+  tests for networking, to correctly request IPv4 addresses
+* Made the the commands and options tests stricter
+
+
+0.2
+===
+
+### Security fixes
+
+* Bumped the minimum github.com/go-viper/mapstructure/v2 version to 2.3.0 for
+  GHSA-fv92-fjc5-jj9h or GO-2025-3787
+* Bumped the minimum github.com/NVIDIA/nvidia-container-toolkit version to
+  1.17.8 for CVE-2025-23266 and CVE-2025-23267
+
+### Bug fixes
+
+* Improved error handling when creating symbolic links inside the container to
+  initialize it
+* Preserved environment variables set by a KDE session and Konsole
+* Unbroke access to CA certificates in sshd(8) sessions (regression in 0.1.2)
+* Unbroke overriding the HOME variable (regression in 0.0.90)
+
+### Dependencies
+
+* Bumped the minimum Go version to 1.22
+
+### Tests
+
+* Enabled the runtime environment tests for the Container Device Interface
+  specification and resource limits on Ubuntu 22.04
+* Isolated the host's HOME from the system tests
+* Unbroke the missing subordinate ID ranges (regression in Fedora Rawhide)
+* Unbroke the 'toolbox run /etc' tests with Bash >= 5.3 (regression in Fedora
+  Rawhide)
+
+
+0.1.2
+=====
+
+### Security fixes
+
+* Bumped the minimum github.com/briandowns/spinner version to 1.23.2 for
+  CVE-2022-29526 or GHSA-p782-xgp4-8hr8, and other bug fixes
+* Bumped the minimum github.com/NVIDIA/nvidia-container-toolkit version to
+  1.17.4 for CVE-2024-0134 or GHSA-7jm9-xpwx-v999, CVE-2024-0135 or
+  GHSA-9v84-cc9j-pxr6, CVE-2024-0136 or GHSA-vcfp-63cx-4h59, CVE-2024-0137 or
+  GHSA-frhw-w3wm-6cw4, and CVE-2025-23359 or GHSA-4hmh-pm5p-9j7j
+
+### Enhancements
+
+* Added ubuntu-toolbox image definitions for Ubuntu 25.04
+* Gave access to the CA certificates from the host operating system — requires
+  new Toolbx images and 'p11-kit server' on the host.  Note that the UBI-based
+  images for RHEL haven't yet been updated, and this feature is currently
+  disabled for those containers.
+
+### Bug fixes
+
+* Optimized getting the runtime directory
+* Replaced links to the code repository with the website
+* Updated fallback release to 42 for non-fedora hosts
+
+### Dependencies
+
+* Added a new weak dependency on 'p11-kit server'
+* Bumped the minimum github.com/NVIDIA/go-nvlib version to 0.7.1
+* Bumped the minimum github.com/spf13/viper version to 1.20.1 to reduce the
+  number of indirect dependencies
+* Bumped the minimum github.com/stretchr/testify version to 1.10.0
+* Bumped the minimum Go version to 1.21
+
+### Tests
+
+* Added runtime environment tests for the Kerberos and RPM configuration
+* Added unit tests for utils.PathExists()
+* Dropped the PODMAN and SKOPEO environment variables
+* Enabled the commands and options tests for 'list' on Arch and Ubuntu 22.04
+* Enabled the system tests for 'create' and networking on Arch Linux
+* Isolated the storage directory from the host's XDG_CACHE_HOME or HOME —
+  bumped the minimum Linux kernel version to 6.6
+* Made the the commands and options tests for 'create' stricter
+* Optimized the system tests by avoiding a lot of disk I/O
+* Restored the generation and installation of the Bash completions on the CI
+  (regression from Fedora 41)
+
+
+0.1.1
+=====
+
+### Security fixes
+
+* Bumped the minimum github.com/NVIDIA/nvidia-container-toolkit version to
+  1.16.2 for CVE-2024-0132 or GHSA-mjjw-553x-87pq, and CVE-2024-0133 or
+  GHSA-f748-7hpg-88ch
+
+### Bug fixes
+
+* Unbroke 'enter' if the NVIDIA Persistence Daemon is used (regression in
+  0.0.99.6)
+* Unbroke 'enter' if the proprietary NVIDIA driver is installed, but not used
+  (regression in 0.0.99.6)
+
+
+----
+
+Copyright © 2024 – 2026 Red Hat, Inc.
+All rights reserved.
+
+Copying and distribution of this file, with or without modification,
+are permitted in any medium without royalty provided the copyright
+notice and this notice are preserved.

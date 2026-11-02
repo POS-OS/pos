@@ -1,0 +1,49 @@
+option(
+  'bash_completions',
+  description: 'Install Bash completion scripts',
+  type: 'feature',
+)
+
+option(
+  'bash_completions_dir',
+  description: 'Directory for Bash completion scripts',
+  type: 'string',
+)
+
+option(
+  'fish_completions',
+  description: 'Install fish completion scripts',
+  type: 'feature',
+)
+
+option(
+  'fish_completions_dir',
+  description: 'Directory for fish completion scripts',
+  type: 'string',
+)
+
+option(
+  'zsh_completions_dir',
+  description: 'Directory for Z shell completion scripts (default=$datadir/zsh/site-functions)',
+  type: 'string',
+)
+
+option(
+  'migration_path_for_coreos_toolbox',
+  description: 'Offer a migration path to users of github.com/coreos/toolbox',
+  type: 'boolean',
+  value: false
+)
+
+option(
+  'profile_dir',
+  description: 'Directory for profile.d files to be read by the shell on start-up',
+  type: 'string',
+  value: '/usr/share/profile.d'
+)
+
+option(
+  'tmpfiles_dir',
+  description: 'Directory for system-wide tmpfiles.d(5) files',
+  type: 'string',
+)

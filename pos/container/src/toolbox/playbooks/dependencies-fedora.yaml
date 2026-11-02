@@ -1,0 +1,51 @@
+#
+# Copyright © 2022 – 2026 Red Hat, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+- name: Install RPM packages
+  become: yes
+  package:
+    update_cache: "{{ true if zuul.attempts > 1 else false }}"
+    name:
+      - ShellCheck
+      - bats
+      - codespell
+      - fish
+      - flatpak-session-helper
+      - gcc
+      - golang
+      - golang-github-cpuguy83-md2man
+      - httpd-tools
+      - meson
+      - ninja-build
+      - openssl
+      - pkgconfig(bash-completion)
+      - podman
+      - shadow-utils-subid-devel
+      - skopeo
+      - systemd
+      - udisks2
+    use: "{{ 'dnf' if zuul.attempts > 1 else 'auto' }}"
+
+- name: Ensure that 'p11-kit server' is absent
+  become: yes
+  package:
+    name:
+      - p11-kit-server
+    state: absent
+    update_cache: "{{ true if zuul.attempts > 1 else false }}"
+    use: "{{ 'dnf' if zuul.attempts > 1 else 'auto' }}"
+
+- include_tasks: dependencies-common.yaml
