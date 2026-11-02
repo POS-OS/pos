@@ -36,9 +36,12 @@ points at the build that `run` continues. `run --new` starts another, of
 the project's pipeline: a pos build in pos, a toolchain build in pos-sdk,
 an extras build in pos-extras (`info`: `pipeline`; see "Toolchain",
 "Extras"). A
-package is built once per build; `./build rebuild <package>` drops it
-from the current build so the next `run` builds it again. Packages that were
-built against it are not rebuilt. A package that a bootstrap package
+package is built once for its inputs: `run` builds again every package of
+the build whose inputs changed, and every package built against one (see
+"Build cache"), whatever its targets. `./build rebuild <package>` drops a
+package from the current build so the next `run` builds it again, with
+the packages built against it, which come from the cache when it installs
+the same files as before. A package that a bootstrap package
 stands in for is rebuilt with what replaced the bootstrap package:
 `rebuild systemd util-linux`, since util-linux, built against systemd,
 otherwise takes util-linux-bootstrap's place in systemd's environment
@@ -47,9 +50,10 @@ otherwise takes util-linux-bootstrap's place in systemd's environment
 `reference` still work on them.
 
 A package whose inputs are those of a package built before is not
-compiled again: `run` takes it from the build cache (see "Build cache"), so
-`rebuild` of a package whose recipe, source and environment did not change
-gives it back as it was. `run --no-cache` compiles every package it builds.
+compiled again: `run` takes it from the build cache, so `rebuild` of a
+package whose recipe, source and environment did not change gives it back
+as it was. `run --no-cache` compiles every package it builds. `plan` lists
+the stale packages of the current build and why.
 
 ## Build numbers
 A build is identified by its ID, the timestamp it was created with. An OS
@@ -319,15 +323,29 @@ the committed tree's hash.
 
 ## Build cache
 Each package's metadata records `build-key <key>`, a hash of everything
-its build container is given (`build_key`): the source's key and time and
-the with-sources' keys; the recipe's directory, the recipe of its source
-(which a bootstrap recipe sources) and `buildsys/pkg.sh`; each package of
-the environment, a reference's by the reference, this build's by its
-`content`; the env.sh scripts that set the build up; the tools image and
-tools reference; and the prefixes. A build has no network, so two builds
-of a package with the same key are builds of the same inputs. The paths of
-the checkout and of the build directory are not in it: builds must not
-depend on them.
+its build container is given (`build_key`): the source's key and time
+(a release archive's key fixes its time) and the with-sources' keys; the
+recipe's directory, the recipe of its source (which a bootstrap recipe
+sources) and `buildsys/pkg.sh`; each package of the environment, a
+reference's by the reference, this build's by its `content` and its
+recipe's env.sh; the tools image, by its base and the Fedora packages
+installed on it, since every build makes an image of its own; the tools
+reference; and the prefixes. A build has no network, so two builds of a
+package with the same key are builds of the same inputs. The paths of the
+checkout and of the build directory are not in it: builds must not depend
+on them. The key is computed from what the checkout holds, without
+preparing or downloading sources.
+
+`run` first checks the packages the build has: one is stale when its key
+is not the key it was built with, or when it was built against a package
+of the build that is stale or dropped (`rebuild`). Its key is computed with the environment it was
+built with (`build-env`), not the one it would resolve now, so a package
+built against a bootstrap package (systemd against util-linux-bootstrap)
+stays as it is; what changes what it requires is its meta, in its key. A
+package built before build keys is kept. `run` drops the stale packages
+and builds them along with its targets. A tools image made again (after
+`clean`, or for a package's new `host-requires`) with other Fedora packages
+makes every package stale.
 
 `content <hash>` is a hash of what the package installed (every path, its
 type, mode and contents), all but its meta, which names the build.

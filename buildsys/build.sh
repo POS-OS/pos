@@ -59,6 +59,8 @@ builds=$base/work/builds
 cache=$base/work/cache
 CHECKS=yes
 NO_CACHE=
+# The stale packages of the build (stale_check) and why.
+declare -A STALE=() CHECKED=()
 # Who commits VERSION bumps, as the source syncs are committed.
 bot_name=pos-bot bot_email=pos-bot@devzero.dk
 sources=$base/work/sources
@@ -926,7 +928,7 @@ recipe_hash() {
 # meta (content_hash); one built before content hashes by its build-key,
 # and one built before build keys by when it was built, which no other
 # build shares. A profile installs nothing; what it requires is in the
-# environment itself.
+# environment itself. A package no longer in the trees is gone.
 # Inputs:
 #   $1    environment entry (<pkg>, <pkg>@ref, <pkg>@pos or <pkg>@tools)
 #   TOOLCHAIN_REF, POS_REF, TOOLS_REF, bdir
@@ -936,10 +938,47 @@ env_key() {
     *@pos) echo "ref $POS_REF" ;;
     *@tools) echo "ref $TOOLS_REF" ;;
     *)
-      [[ ${KIND[$1]} == package || ${KIND[$1]} == output ]] || { echo "${KIND[$1]}"; return; }
+      [[ ${KIND[$1]:-} == package || ${KIND[$1]:-} == output ]] || { echo "${KIND[$1]:-gone}"; return; }
       awk '$1 == "content" {c = $2} $1 == "build-key" {k = $2} $1 == "built" {b = $2}
            END {print (c != "" ? "content " c : k != "" ? "key " k : "built " b)}' "$(marker "$1")" ;;
   esac
+}
+
+# The key of a source tree as source_of gives it, without preparing,
+# downloading or unpacking it, and its time when the key does not fix it:
+# the time of a release archive is the archive's, which its key names.
+# Inputs:
+#   $1    source name
+# Outputs:
+#   prints "<key> <time>"
+source_id() {
+  local s=$1
+  if [[ -n ${ARCHIVE[$s]:-} ]]; then
+    echo "$(unpack_key "$s") -"
+    return
+  fi
+  if has_prepare "$s"; then
+    printf '%s ' "$(prepare_key "$s")"
+  elif [[ -d $base/${SRCPATH[$s]} ]]; then
+    printf '%s ' "$(source_tree "$s")"
+  else
+    printf -- '- '
+  fi
+  git -C "$base" log -1 --format=%ct HEAD -- "${SRCPATH[$s]}"
+}
+
+# The tools image by what it holds, for build keys: its base and the
+# Fedora packages installed on it. Each build makes an image of its own,
+# whose ID no other build shares, so the ID would key no build alike.
+# Inputs:
+#   bdir    active build directory
+# Outputs:
+#   the key, 16 hex digits
+tools_key() {
+  {
+    build_info tools-base
+    host_podman run --rm --network=none "$(build_info tools-image)" rpm -qa --qf '%{NEVRA}\n' | sort
+  } | sha256sum | cut -c1-16
 }
 
 # The key of a package build: a hash of everything build_one hands the
@@ -947,23 +986,25 @@ env_key() {
 # the same key build the same package. Left out: the paths of the
 # checkout and of the build directory (POS_BASE, POS_DEST_DIR), which
 # builds must not depend on (see build_one).
-#   - the source: its tree's key (source_of), its time, the with-sources';
+#   - the source: its tree's key and time (source_id), the with-sources';
 #   - the recipe: the package's directory, the recipe of its source, which a
 #     bootstrap recipe sources (util-linux-bootstrap), and buildsys/pkg.sh;
 #   - the environment: each entry's identity (env_key), and the env.sh
-#     scripts that set the build up;
-#   - the tools image and reference, and the prefixes it installs into.
+#     scripts of this build's packages in it;
+#   - the tools image (tools_key) and reference, and the prefixes it
+#     installs into.
 # Inputs:
 #   $1    package name
-#   ENV, SOURCE_ID, WITH_SOURCE_IDS, epoch (build_one), TOOLS_ID, TOOLS_REF, PREFIX
+#   ENV (env_of, or as the package was built: stale_check), TOOLS_KEY,
+#   TOOLS_REF, PREFIX
 # Outputs:
 #   the key, 16 hex digits
 build_key() {
   local p=$1 q d
   {
-    echo "source ${SRC[$p]} ${SOURCE_ID:-} ${epoch:-}"
-    for q in "${WITH_SOURCE_IDS[@]}"; do
-      echo "with-source $q"
+    echo "source ${SRC[$p]} $(source_id "${SRC[$p]}")"
+    for q in ${WSRC[$p]}; do
+      echo "with-source $q $(source_id "$q")"
     done
     for d in $(printf '%s\n' "${PKGDIR[$p]}" "${PKGDIR[${SRC[$p]}]:-}" | sed '/^$/d' | sort -u); do
       echo "recipe $d"
@@ -973,18 +1014,107 @@ build_key() {
     for q in "${ENV[@]}"; do
       echo "env $q $(env_key "$q")"
     done
-    # A reference's env.sh is in its tree, at the path the container has it.
-    for q in $(env_scripts); do
-      d=
-      ! is_ref "$q" || d=$(env_tree "$q")
-      echo "env-script $q $(sha256sum <"$d$(env_script "$q")")"
+    # The env.sh of this build's packages (env_script), their recipes'; a
+    # reference's is in its tree, which the reference names.
+    for q in "${ENV[@]}"; do
+      d=$base/${PKGDIR[$q]:-}/env.sh
+      is_ref "$q" || [[ -z ${PKGDIR[$q]:-} || ! -f $d ]] || echo "env-script $q $(sha256sum <"$d")"
     done
-    echo "tools $TOOLS_ID $TOOLS_REF"
+    echo "tools $TOOLS_KEY $TOOLS_REF"
     echo "prefix $PREFIX $(sdk_prefix) $(tools_prefix)"
     for q in "$p" ${OUTS[$p]}; do
       echo "output $q $(pkg_prefix "$q")"
     done
   } | sha256sum | cut -c1-16
+}
+
+# Whether a package of this build is stale: built before its inputs
+# changed, or against a package of this build that is stale. Its key is
+# computed with the environment it was built with (its meta's build-env),
+# not the one it would resolve now: a package built against a bootstrap
+# package (systemd against util-linux-bootstrap) stays built against it.
+# A change to what it requires changes its meta, which is in its key. Kept:
+# one built before build keys, which cannot be checked. Packages of the
+# environment are checked first; a stale one makes the package stale even
+# when its key matches, since that key names what it installed before.
+# Inputs:
+#   $1      package name
+#   BUILT, bdir, TOOLS_KEY
+# Outputs:
+#   STALE[$1] (why), CHECKED[$1]
+stale_one() {
+  local p=$1 meta key e q
+  [[ -z ${CHECKED[$p]:-} ]] || return 0
+  CHECKED[$p]=1
+  meta=$(marker "$p")
+  key=$(awk '$1 == "build-key" {print $2}' "$meta")
+  [[ -n $key ]] || return 0
+  local -a ENV
+  read -ra ENV < <(awk '$1 == "build-env" {$1 = ""; print}' "$meta")
+  for e in "${ENV[@]}"; do
+    [[ $e != *@* ]] || continue
+    q=$e
+    [[ ${KIND[$q]:-} != output ]] || q=${PARENT[$q]}
+    [[ ${KIND[$q]:-} == package ]] || continue
+    # Dropped (rebuild): built again, and what it installs is not known yet.
+    if [[ -z ${BUILT[$q]:-} ]]; then
+      STALE[$p]="built against $q, which is built again"
+      return 0
+    fi
+    stale_one "$q"
+    if [[ -n ${STALE[$q]:-} ]]; then
+      STALE[$p]="built against $q"
+      return 0
+    fi
+  done
+  [[ $(build_key "$p") == "$key" ]] || STALE[$p]="its inputs changed"
+}
+
+# The stale packages of this build (stale_one), which run builds again:
+# they are not built (BUILT), and neither are their outputs.
+# Inputs:
+#   BUILT, bdir, TOOLS_KEY
+# Outputs:
+#   STALE (package -> why), BUILT
+stale_check() {
+  local p q
+  STALE=() CHECKED=()
+  for p in "${!BUILT[@]}"; do
+    [[ ${KIND[$p]:-} != package ]] || stale_one "$p"
+  done
+  for p in "${!STALE[@]}"; do
+    for q in "$p" ${OUTS[$p]}; do
+      unset "BUILT[$q]"
+    done
+  done
+}
+
+# Drop a package and its outputs from the build: their trees and records,
+# and what was made from packages (stages, outputs, complete).
+# Inputs:
+#   $1      package name
+#   bdir, id
+drop_package() {
+  local q
+  for q in "$1" ${OUTS[$1]}; do
+    rm -rf "${bdir:?}/dest/$q" "${bdir:?}/debug/$q" "${bdir:?}/made/package-$q"
+    unset "BUILT[$q]"
+  done
+  find "$bdir/made" -mindepth 1 -maxdepth 1 ! -name 'package-*' -delete 2>/dev/null || true
+}
+
+# Drop the stale packages of this build (stale_check), so run builds them
+# again, from the cache when a build of their key is there. run adds them
+# to its targets: what was built in the build stays built in it.
+# Inputs:
+#   BUILT, bdir, id, TOOLS_KEY
+stale_drop() {
+  local p
+  stale_check
+  for p in $(printf '%s\n' "${!STALE[@]}" | sort); do
+    echo "$p: ${STALE[$p]}; building it again"
+    drop_package "$p"
+  done
 }
 
 # Build a single package and its declared outputs inside an isolated build
@@ -1108,6 +1238,17 @@ cmd_plan() {
   if [[ -z $id ]] && id=$(current_id); then
     bdir=$builds/$id
     build_load
+    # The stale packages, which run builds again; the tools image is
+    # needed for their keys.
+    if host_podman image exists "$(build_info tools-image)"; then
+      TOOLS_KEY=$(tools_key)
+      stale_check
+      for t in $(printf '%s\n' "${!STALE[@]}" | sort); do
+        echo "$t: ${STALE[$t]}"
+      done
+    else
+      echo "tools image $(build_info tools-image) is gone: stale packages not checked"
+    fi
   else
     id="<new>"
     PREFIX=$(project_prefix "$(version_info HEAD - 000000000000)")
@@ -1118,6 +1259,7 @@ cmd_plan() {
   bootstrap_check "${args[@]}"
   targets_expand "${args[@]}"
   targets_check "${TARGETS[@]}"
+  TARGETS+=("${!STALE[@]}")
   echo "build $id ($PIPELINE)"
   echo "toolchain reference $TOOLCHAIN_REF (${#REF[@]} packages), pos reference $POS_REF (${#POSREF[@]} packages)," \
        "tools $(tools_name)"
@@ -1293,6 +1435,9 @@ cmd_run() {
   targets_check "${TARGETS[@]}"
   tools_ensure
   TOOLS_ID=$(host_podman image inspect --format '{{.Id}}' "$(build_info tools-image)")
+  TOOLS_KEY=$(tools_key)
+  stale_drop
+  TARGETS+=("${!STALE[@]}")
 
   title_init
   build_os "${args[@]}"
@@ -1349,13 +1494,11 @@ cmd_rebuild() {
       output) die "$p is an output of ${PARENT[$p]}; rebuild ${PARENT[$p]}" ;;
       *) die "not a package: $p" ;;
     esac
+    drop_package "$p"
     for q in "$p" ${OUTS[$p]}; do
-      rm -rf "${bdir:?}/dest/$q" "${bdir:?}/debug/$q" "${bdir:?}/made/package-$q"
       echo "$q: dropped from build $id"
     done
   done
-  # What was made from the packages is made again by run.
-  find "$bdir/made" -mindepth 1 -maxdepth 1 ! -name 'package-*' -delete 2>/dev/null || true
 }
 
 # Print the current build's info, built packages, and pending packages.
