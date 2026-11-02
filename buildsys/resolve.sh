@@ -125,8 +125,11 @@ declare -A TOOLSREF=() TOOLS_REQ=() TOOLS_HREPL=() TOOLENV=()
 # every capability of every package, again for each package it picks):
 # whether a host or profile package is available (TARGETS and REF; reset
 # by targets_expand and load_references), and the capabilities of a
-# package's build.
-declare -A HOSTAVAIL=() SELFPROV=()
+# package's build. TOOLSMEMO: the build tools env_tools adds, by what of
+# their closure (TOOLSKEY) the environment already has (reset by
+# load_references).
+declare -A HOSTAVAIL=() SELFPROV=() TOOLSMEMO=() TOOLSMISS=()
+declare -a TOOLSKEY=()
 declare -a TARGETS=()
 PIPELINE=pos
 # The prefix the build's packages install in (build.sh: project_prefix).
@@ -595,6 +598,7 @@ is_ref() {
 # Inputs:
 #   $1    package name, or nothing for the tools alone (prepare)
 #   TOOLS_REF
+#   ENV_UNSORTED  set: ENV unsorted (next_package, which only looks)
 # Outputs:
 #   ENV (array of resolved package names), TOOLENV, MISSING (array of
 #   unresolved capabilities)
@@ -637,14 +641,22 @@ env_of() {
     fi
   done
   [[ $TOOLS_REF == none ]] || env_tools inenv
-  mapfile -t ENV < <(printf '%s\n' "${!inenv[@]}" | sed '/^$/d' | sort)
+  if [[ -n ${ENV_UNSORTED:-} ]]; then
+    ENV=("${!inenv[@]}")
+  else
+    mapfile -t ENV < <(printf '%s\n' "${!inenv[@]}" | sort)
+  fi
   ((${#MISSING[@]} == 0))
 }
 
 # Add the build tools to an environment (env_of): the build-tools
 # profile, with what it requires and what that requires, as the top says.
 # An entry is tool:<capability>, or own:<capability> for a requirement of
-# a tools package, which its own reference meets.
+# a tools package, which its own reference meets. A capability the
+# environment provides is not looked for, and an entry already in it not
+# followed, so what is added depends only on which of the closure's
+# capabilities and providers (TOOLSKEY, env_tools_walk with no
+# environment) the environment has: memoized by that.
 # Inputs:
 #   $1        name of the environment map (env_of: inenv)
 #   TOOLSREF, TOOLS_REQ, REF, POSREF, REF_REQ
@@ -652,12 +664,62 @@ env_of() {
 #   the map, TOOLENV, MISSING
 env_tools() {
   local -n env=$1
-  local entry cap e q
+  local e q key=
+  local -A has=()
+  if ((${#TOOLSKEY[@]} == 0)); then
+    local -A none=() once=()
+    env_tools_walk none
+    for e in "${TOOLSKEY[@]}"; do
+      [[ -n ${once[$e]:-} ]] || once[$e]=1
+    done
+    TOOLSKEY=("${!once[@]}")
+  fi
+  for e in "${!env[@]}"; do
+    for q in ${PROV[${e%@*}]}; do has[$q]=1; done
+  done
+  for e in "${TOOLSKEY[@]}"; do
+    if [[ $e == cap:* ]]; then
+      key+=${has[${e#cap:}]:+1}.
+    else
+      key+=${env[$e]:+1}.
+    fi
+  done
+  if [[ -z ${TOOLSMEMO[$key]+set} ]]; then
+    local -a added=() missing=("${MISSING[@]}")
+    MISSING=()
+    env_tools_walk env has
+    TOOLSMEMO[$key]="${added[*]}"
+    TOOLSMISS[$key]="${MISSING[*]}"
+    MISSING=("${missing[@]}")
+  fi
+  for e in ${TOOLSMEMO[$key]}; do
+    env[$e]=1
+    TOOLENV[$e]=1
+  done
+  MISSING+=(${TOOLSMISS[$key]})
+}
+
+# The walk of env_tools. Without an environment (has not given), it
+# follows every entry and records in TOOLSKEY each capability it would
+# look for (cap:<capability>) and each provider it would add.
+# Inputs:
+#   $1        name of the environment map
+#   $2        name of the map of the capabilities it provides, if any
+# Outputs:
+#   the map, added (array, of the caller), MISSING; TOOLSKEY
+env_tools_walk() {
+  local -n wenv=$1
+  local entry cap q i=0 all=1
   local -a queue=(tool:build-tools)
-  local -A seen=()
-  while ((${#queue[@]})); do
-    entry=${queue[0]}
-    queue=("${queue[@]:1}")
+  local -A seen=() nohas=()
+  if [[ -n ${2:-} ]]; then
+    local -n whas=$2
+    all=
+  else
+    local -n whas=nohas
+  fi
+  while ((i < ${#queue[@]})); do
+    entry=${queue[i++]}
     [[ -z ${seen[$entry]:-} ]] || continue
     seen[$entry]=1
     cap=${entry#*:}
@@ -672,14 +734,17 @@ env_tools() {
       done
     fi
     if [[ -z $PROVIDER ]]; then
-      for e in "${!env[@]}"; do
-        [[ " ${PROV[${e%@*}]} " != *" $cap "* ]] || continue 2
-      done
-      provider_tools "$cap" || { MISSING+=("$cap"); continue; }
+      [[ -z $all ]] || TOOLSKEY+=("cap:$cap")
+      [[ -z ${whas[$cap]:-} ]] || continue
+      provider_tools "$cap" || { [[ -n $all ]] || MISSING+=("$cap"); continue; }
     fi
-    [[ -z ${env[$PROVIDER]:-} ]] || continue
-    env[$PROVIDER]=1
-    TOOLENV[$PROVIDER]=1
+    [[ -z $all ]] || TOOLSKEY+=("$PROVIDER")
+    [[ -z ${wenv[$PROVIDER]:-} ]] || continue
+    wenv[$PROVIDER]=1
+    if [[ -z $all ]]; then
+      added+=("$PROVIDER")
+      for q in ${PROV[${PROVIDER%@*}]}; do whas[$q]=1; done
+    fi
     case $PROVIDER in
       *@tools) for q in ${TOOLS_REQ[${PROVIDER%@*}]:-}; do queue+=("own:$q"); done ;;
       *@ref|*@pos) for q in ${REF_REQ[${PROVIDER%@*}]:-}; do queue+=("tool:$q"); done ;;
@@ -883,7 +948,7 @@ wanted() {
 # Outputs:
 #   NEXT (package name ready to build), WANTED (array of remaining unbuilt packages)
 next_package() {
-  local p e q
+  local p e q ENV_UNSORTED=1
   local -a ready=() first=()
   local -A want=()
   wanted "$@"

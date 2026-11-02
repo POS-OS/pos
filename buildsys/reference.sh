@@ -53,12 +53,16 @@ ref_info() {
 }
 
 # The prefix a restored reference's packages are installed in, from its
-# info; /pos for references from before prefixes.
+# info; /pos for references from before prefixes. REFPFX: those of the
+# build's references (load_references), which resolution asks for each
+# environment entry.
 # Inputs:
 #   $1      reference ID
 #   refs    work/references directory
+declare -A REFPFX=()
 ref_prefix() {
   local p
+  [[ -z ${REFPFX[$1]:-} ]] || { echo "${REFPFX[$1]}"; return; }
   p=$(ref_info "$1" prefix)
   echo "${p:-/pos}"
 }
@@ -418,6 +422,10 @@ reference_restore() {
 load_references() {
   local ref from meta p
   REF=() POSREF=() REF_REQ=() TOOLSREF=() TOOLS_REQ=() TOOLS_HREPL=() HOSTAVAIL=()
+  TOOLSMEMO=() TOOLSMISS=() TOOLSKEY=() REFPFX=()
+  for ref in "$TOOLCHAIN_REF" "$POS_REF" "$TOOLS_REF"; do
+    [[ $ref == none ]] || REFPFX[$ref]=$(ref_prefix "$ref")
+  done
   if [[ $TOOLS_REF != none ]]; then
     while read -r meta; do
       p=$(basename "$(dirname "$meta")")
