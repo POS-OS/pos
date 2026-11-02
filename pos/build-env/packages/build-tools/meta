@@ -16,3 +16,6 @@ requires python3-pyelftools
 requires meson ninja cmake
 # wget: gnulib bootstrap fetches translations with it.
 requires wget2
+# Man page tools: groff (gettext, less), asciidoctor (util-linux,
+# cryptsetup).
+requires groff asciidoctor

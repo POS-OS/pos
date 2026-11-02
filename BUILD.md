@@ -635,13 +635,14 @@ setting picks them when a build is created (`info`: `tools-reference`):
   of the tools image's, and `pos-link` puts the build's prefix and the sdk
   in front of them. A pos-extras package names the Fedora packages it
   stands for as a build tool in its meta (`replaces-host-rpm`: meson's
-  meson, wget2's wget). Of the tools reference's packages the profile
-  brings, the tools image leaves those out of recipes' `host-requires`
-  and `prepare-requires`, so a step runs the extras' copy, not Fedora's.
-  They are read from the reference, so they follow what it has: an older
-  one replaces less. What the profile requires, though, a reference must
-  have: its wget2 (gnulib bootstrap fetches translations with wget) came
-  to pos-extras after the first extras references, so a build of one of
+  meson, wget2's wget, asciidoctor's rubygem-asciidoctor). Of the tools
+  reference's packages the profile brings, the tools image leaves those
+  out of recipes' `host-requires` and `prepare-requires`, so a step runs
+  the extras' copy, not Fedora's. They are read from the reference, so
+  they follow what it has: an older one replaces less. What the profile
+  requires, though, a reference must have: wget2 (gnulib bootstrap
+  fetches translations with wget), groff and asciidoctor came to
+  pos-extras after the first extras references, so a build of one of
   those resolves no build tools ("<package>: needs wget2") and is
   continued no further; start another with `run --new`. Recipes keep the
   Fedora names for `fedora` tools; outputs keep theirs.
@@ -1035,8 +1036,7 @@ outside `/pos` (`buildsys/build.sh` warns on it).
   `pos/system/packages/qemu/prepare.sh` points them at `/pos/sbin`.
 * logrotate: `--with-compress-command=/pos/bin/gzip`. Tool paths found by
   configure are the general case: a build container finds `/usr/bin`
-  tools and records those unless told otherwise (man-db's recipe shows the
-  `--with-nroff=/pos/bin/nroff` pattern).
+  tools and records those unless told otherwise.
 * systemd unit, tmpfiles and sysusers directories for packages built before
   systemd (util-linux): given explicitly as `/pos/lib/systemd/system`,
   `/pos/lib/tmpfiles.d`, `/pos/lib/sysusers.d`.
@@ -1751,20 +1751,19 @@ differently; POS follows Fedora except where noted.
 | privilege | sudo, systemd run0, su | sudo shipped as planned; run0 comes with systemd anyway |
 | scheduled jobs | cronie, systemd timers | both. cronie needs a `run-parts` for cron.hourly, which no listed package provides (Fedora: crontabs, Debian: debianutils) |
 | log rotation | logrotate, journald | journald handles the journal; logrotate for other files |
-| man | man-db + groff + gdbm, mandoc | neither in the base (Scope). If a viewer is ever added, mandoc is one package where man-db is four |
+| man | man-db + groff + gdbm, mandoc | neither in the base (Scope); man-db and groff are pos-extras', groff also a build tool |
 | rmt | tar, cpio (both from paxutils) | tar; cpio's deleted, it runs tar's at the same path |
 | zic, zdump, tzselect | glibc, tzdata | glibc (Fedora); tzdata's deleted, it ships the data |
-| passwd.5, getspnam.3, crypt.3 | man-pages, shadow, libxcrypt | man-pages (deferred, with man-db) for the first two, shadow's deleted; libxcrypt for crypt, man-pages' deleted |
+| passwd.5, getspnam.3, crypt.3 | man-pages, shadow, libxcrypt | man-pages (deferred) for the first two, shadow's deleted; libxcrypt for crypt, man-pages' deleted |
 
 # System stage
 The system stage (`pos/system/stage`) is init and the service manager,
 with what boots a system: kmod, dbus, cron and log rotation, the root's
 file system tools and the initramfs. It builds on core-libs and base.
 
-* Left out for now: man-db with its groff, gdbm and libpipeline
-  dependencies (a page viewer that costs four packages; each package still
-  installs its man pages under `/pos/share/man`). Their recipes remain in
-  `pos/system/packages/` for reuse.
+* No page viewer: man-db with its groff, gdbm and libpipeline is
+  pos-extras'. Each package still installs its man pages under
+  `/pos/share/man`, which the extras' man finds.
 * e2fsprogs and dosfstools, the tools of the root's ext4 and the ESP's
   FAT: systemd-fsck checks them at boot with fsck.ext4 and fsck.vfat, and
   they resize and repair without a stage enabled. Other file systems are

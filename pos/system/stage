@@ -20,11 +20,8 @@ qemu-guest-agent
 pos-integration
 # Developer tools (diffutils, patch) are pos-extras'.
 # Deferred for later:
-#man-db       page viewer; needs groff, gdbm, libpipeline for that alone
 #man-pages    the pages of the Linux and C library interfaces
-#groff
-#gdbm
-#libpipeline
+# The page viewer (man-db, groff, gdbm, libpipeline) is pos-extras'.
 # Deferred for technical reasons, see BUILD.md:
 #duktape      git tree needs Python 2 to generate sources
 #polkit       needs glib and duktape
