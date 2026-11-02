@@ -32,6 +32,7 @@ config_keys=(
   "release-dir POS_RELEASE_DIR -"
   "download-dir POS_DOWNLOAD_DIR -"
   "engine-checkout POS_ENGINE_CHECKOUT -"
+  "keep-builds POS_KEEP_BUILDS 2"
 )
 
 declare -A CONFIG=()

@@ -61,3 +61,8 @@
 # the commit its project file pins (POS_ENGINE_CHECKOUT). Read by that
 # ./build, not by the engine; set it in the project's <project>.conf.
 #engine-checkout /path/to/pos
+
+# Builds ./build prune keeps besides the current one, the newest
+# (POS_KEEP_BUILDS). The others are removed, with their images and what
+# only they needed (references, source trees, cache entries).
+#keep-builds 2

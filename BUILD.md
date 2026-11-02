@@ -14,7 +14,7 @@ reaches through `flatpak-spawn --host` from inside a toolbox, as the
     $ ./build run zlib             # one package (and what it needs)
     $ ./build prepare              # download and prepare sources ahead of a run
     $ ./build status
-    $ ./build prune -n             # what prune would remove from the build cache
+    $ ./build prune -n             # what prune would remove: old builds, their images, ...
     $ ./build output               # make the outputs of the current build again
     $ ./build output rpm-pos       # one output: the pos RPM package
     $ devtools/install.sh          # install the archives as /pos
@@ -162,6 +162,39 @@ product version:
     $ devtools/release-toolbox.sh 1.0-3.main.20261017-1524
     $ toolbox create -i localhost/pos-fedora-toolbox:1.0 <name>
 
+## Cleanup
+A checkout keeps every build it makes, the references builds restored,
+the source trees they were prepared or unpacked into, and the build cache;
+podman keeps each build's tools image and the images of its outputs.
+`./build prune` removes what the current build and the newest
+`keep-builds` others (2 by default) do not need; `-n` lists it and removes
+nothing:
+
+* the other builds, `work/builds/<id>`; a build's ID is the time it was
+  made, so the newest are the last made. Numbered builds are not kept for
+  their number: a published one is in the release library, and a tag
+  names a commit;
+* the removed builds' images: their outputs' `<tag>:<id>` (a `<tag>:<product
+  version>` on the same image keeps it) and their tools image; and the
+  tools image of every kept build but the current one, which `run` makes
+  again when the build is continued;
+* the restored references (`work/references`) that no kept build names
+  and that are not the store's defaults: the store has them;
+* the source trees (`work/sources`) that no kept build's packages were
+  built from and that the checkout's sources at `HEAD` are not prepared
+  or unpacked into (with the current build's tools reference), which
+  `./build prepare` may have made ahead of a run;
+* the build cache's entries that no kept build holds, and what an
+  interrupted store left (see "Build cache").
+
+Images are removed by the IDs of the checkout's builds only: other
+checkouts of the project make images of the same names. Images of builds
+removed by hand, and dangling images, are left to podman. What a step made
+as root in its container (an output's work tree a failed step left) is
+removed in podman's user namespace. A `run` while prune runs may find
+what it needs gone; prune between runs. The reference store and the
+release library are not pruned.
+
 ## Settings
 Settings of `./build` are lines of `<key> <value>` in
 `~/.config/pos/build.conf`, or in the file `POS_BUILD_CONFIG` names, and
@@ -184,6 +217,7 @@ an unknown key is an error.
 | `release-dir` | `POS_RELEASE_DIR` | none: `publish` needs it; the release library of every project, a directory each; read by `publish` and to restore references, not recorded by builds |
 | `download-dir` | `POS_DOWNLOAD_DIR` | `work/downloads`: the sources' release archives (see "Release archives"); not recorded by builds |
 | `engine-checkout` | `POS_ENGINE_CHECKOUT` | none: the pos checkout another project's `./build` takes the engine from (see "Engine"); read by that `./build` |
+| `keep-builds` | `POS_KEEP_BUILDS` | 2: the builds `prune` keeps besides the current one, the newest (see "Cleanup") |
 
 ## Engine
 `buildsys/` is the engine: it resolves, runs the steps in containers,
@@ -367,13 +401,10 @@ cache in place of what was there; a package compiled again with a
 different `content` is one whose build depends on more than its inputs.
 Cached packages go into every build, numbered or not.
 
-`./build prune` removes the entries that no build in `work/builds` holds
-(no package meta there records their key), and what an interrupted store
-left; `-n` lists them and removes nothing. An entry a build holds shares
-its files with it, so removing it would free nothing; what prune removes
-is what superseded keys and changes taken back left. Removing a build lets
-go of what it holds. A `run` taking a package from the cache while prune
-runs may find it gone; prune between runs.
+`./build prune` removes the entries no kept build holds (see "Cleanup").
+An entry a build holds shares its files with it, so removing it would
+free nothing; what takes space is what superseded keys, changes taken back
+and removed builds left.
 
 ## Source archives
 `./build run --new --source-archives` creates a build that, after

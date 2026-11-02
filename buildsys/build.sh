@@ -103,8 +103,10 @@ usage: ./build plan [--new] [<target>...]
                                                a pos build's core-libs and base, as the
                                                default reference of its kind
        ./build clean [<id>]                    remove the tools image of a build
-       ./build prune [-n]                      remove the build cache's entries that no
-                                               build holds (-n: list them)
+       ./build prune [-n]                      remove the builds but the current and newest
+                                               keep-builds others, and what they alone
+                                               needed: images, references, source trees,
+                                               cache entries (-n: list them)
        ./build validate [--unchecked] [<id>]   check that a build is an OS build
        ./build tag [--unchecked]               number the current build: validate it,
                                                tag its commit main-<BUILD>, then bump
@@ -152,6 +154,8 @@ $build_config and $project_config; an environment variable overrides one:
                                       (default work/downloads)
   engine-checkout POS_ENGINE_CHECKOUT the pos checkout another project's
                                       ./build takes the engine from
+  keep-builds     POS_KEEP_BUILDS     builds prune keeps besides the current
+                                      one, the newest (default 2)
 EOF
   exit 1
 }
@@ -1559,64 +1563,230 @@ cmd_clean() {
   echo "outputs are kept in $builds/$id"
 }
 
-# The build keys the builds of the checkout hold: those of the package
-# metas in their staging trees, in the build's prefix or /pos (as
-# ref_metas finds a reference's).
+# The builds prune keeps: the current one and the newest keep-builds
+# others, by ID (a build's ID is the time it was created).
 # Inputs:
-#   builds
+#   builds, config(keep-builds)
 # Outputs:
-#   the keys, one per line
-held_keys() {
-  local b pre f
-  # shellcheck disable=SC2016
-  for b in "$builds"/*/; do
-    b=${b%/}
-    [[ ! -L $b && -f $b/info ]] || continue
-    pre=$(awk '$1 == "prefix" {print $2}' "$b/info")
-    for f in "$b"/dest/*"${pre:-/pos}"/lib/pos/packages/*/meta "$b"/dest/*/pos/lib/pos/packages/*/meta; do
-      [[ ! -f $f ]] || echo "$f"
-    done
-  done | sort -u | xargs -r awk '$1 == "build-key" {print $2}' | sort -u
+#   KEEP (build ID -> 1)
+prune_keep() {
+  local n b cur
+  n=$(config keep-builds)
+  [[ $n =~ ^[0-9]+$ ]] || die "keep-builds: not a number: $n"
+  KEEP=()
+  cur=$(current_id) && KEEP[$cur]=1
+  for b in $(prune_builds_all | sort -r); do
+    ((n > 0)) || break
+    [[ -z ${KEEP[$b]:-} ]] || continue
+    KEEP[$b]=1
+    n=$((n - 1))
+  done
 }
 
-# Remove the cache entries no build holds (cache_store), and those an
-# interrupted store left (<key>.tmp). An entry a build holds shares its
-# files with the build: removing it would free nothing, and the build's
-# packages would be compiled again when it is continued after a change.
-# What is removed is what superseded keys and changes taken back left.
-# Removing a build (work/builds/<id>) lets go of what it holds.
+# The IDs of the checkout's builds, work/builds/<id> (not current).
+# Inputs:
+#   builds
+prune_builds_all() {
+  local b
+  for b in "$builds"/*/; do
+    b=${b%/}
+    [[ -L $b ]] || echo "${b##*/}"
+  done
+}
+
+# What prune removes, listed and counted; removed unless -n. Sizes count
+# files a build or the cache shares too, which removing one frees not, and
+# leave out what the user cannot read (made as root in a container).
+# Inputs:
+#   $1      what (builds, references, sources, cache)
+#   $@      the paths
+#   DRY     -n
+prune_remove() {
+  local what=$1 f
+  local -a host=()
+  shift
+  if (($# == 0)); then
+    echo "$what: nothing to remove"
+    return 0
+  fi
+  printf '  %s\n' "${@#"$base"/work/}"
+  echo "$what: $# to remove, $(du -sch "$@" 2>/dev/null | tail -n 1 | cut -f1)${DRY:+ (not removed: -n)}"
+  [[ -z $DRY ]] || return 0
+  # What a step made as root in its container (an output's work tree a
+  # failed step left) is a subordinate user's: removed in podman's user
+  # namespace.
+  rm -rf "$@" 2>/dev/null && return 0
+  for f; do
+    host+=("$(host_path "$f")")
+  done
+  host_podman unshare rm -rf "${host[@]}"
+}
+
+# Remove podman images by name; a name another tag shares only goes. One
+# a container uses stays, with a warning.
+# Inputs:
+#   $@      image names
+#   DRY     -n
+prune_images() {
+  local i
+  local -a found=()
+  for i in "$@"; do
+    host_podman image exists "$i" && found+=("$i")
+  done
+  if ((${#found[@]} == 0)); then
+    echo "images: nothing to remove"
+    return 0
+  fi
+  printf '  %s\n' "${found[@]}"
+  echo "images: ${#found[@]} to remove${DRY:+ (not removed: -n)}"
+  [[ -z $DRY ]] || return 0
+  for i in "${found[@]}"; do
+    host_podman rmi "$i" >/dev/null || echo "warning: $i stays (in use?)" >&2
+  done
+}
+
+# The package metas of builds: in each one's prefix, or /pos (as
+# ref_metas finds a reference's).
+# Inputs:
+#   $@      build IDs
+#   builds
+build_metas() {
+  local b d pre f
+  for b in "$@"; do
+    d=$builds/$b
+    pre=$(info_get "$d" prefix)
+    for f in "$d"/dest/*"${pre:-/pos}"/lib/pos/packages/*/meta "$d"/dest/*/pos/lib/pos/packages/*/meta; do
+      [[ ! -f $f ]] || echo "$f"
+    done
+  done | sort -u
+}
+
+# The prepared and unpacked source trees prune keeps, as <source>/<key>:
+# those the kept builds' packages were built from (build-source,
+# build-with-source), and those the checkout's HEAD gives (source_id),
+# which a run prepares, or ./build prepare did ahead of it, with the
+# current build's tools reference.
+# Inputs:
+#   $@      kept build IDs
+#   sources, builds
+prune_sources_kept() {
+  local s cur
+  # shellcheck disable=SC2016
+  build_metas "$@" | xargs -r awk '$1 == "build-source" || $1 == "build-with-source" {print $2 "/" $3}'
+  cur=$(current_id) || return 0
+  TOOLS_REF=$(info_get "$builds/$cur" tools-reference)
+  TOOLS_REF=${TOOLS_REF:-none}
+  for s in "$sources"/*/; do
+    s=${s%/}
+    s=${s##*/}
+    [[ -n ${SRCPATH[$s]:-} || -n ${ARCHIVE[$s]:-} ]] || continue
+    echo "$s/$(source_id "$s" 2>/dev/null | cut -d' ' -f1)"
+  done
+}
+
+# Remove what the checkout's builds no longer need: the builds but the
+# kept ones (prune_keep), their tools images and their outputs' images
+# (<tag>:<id>), the tools images of the kept builds but the current one
+# (run makes it again), the restored references no kept build names and
+# the store does not default to, the source trees no kept build and HEAD
+# need (prune_sources_kept), and the cache entries no kept build holds,
+# and what an interrupted store left (<key>.tmp). An entry a build holds
+# shares its files with the build: removing it would free nothing. Images
+# are removed by the IDs of this checkout's builds only: other checkouts
+# of the project (the agents') name theirs alike.
 # Inputs:
 #   [-n]    list what would be removed, remove nothing
-#   builds, cache
+#   builds, cache, sources, refs
 cmd_prune() {
-  local dry='' d k
-  local -a gone=()
-  local -A held=()
+  local b d k o cur
+  local -a gone=() images=() kept=() beside=()
+  local -A held=() keep=()
+  local -A KEEP=()
+  DRY=
   case ${1:-} in
-    -n) dry=1 ;;
+    -n) DRY=1 ;;
     '') ;;
     *) usage ;;
   esac
+  cur=$(current_id) || cur=
+  prune_keep
+  kept=("${!KEEP[@]}")
+  echo "keeping builds: $(printf '%s\n' "${kept[@]}" | sort | xargs)${cur:+ (current $cur)}"
+
+  for b in $(prune_builds_all | sort); do
+    [[ -z ${KEEP[$b]:-} ]] || continue
+    gone+=("$builds/$b")
+    for o in "${OUTPUTS[@]}"; do
+      [[ -z $(output_meta "$o" tag) ]] || images+=("localhost/$(output_meta "$o" tag):$b")
+    done
+  done
+  for b in $(prune_builds_all); do
+    # A build without info (a broken one) is removed, and names no image.
+    [[ $b != "$cur" && -f $builds/$b/info ]] || continue
+    k=$(info_get "$builds/$b" tools-image)
+    [[ -z $k ]] || images+=("$k")
+  done
+  prune_remove builds "${gone[@]}"
+  prune_images "${images[@]}"
+
+  # References: the kept builds' and the store's defaults.
+  while read -r k; do
+    [[ -z $k ]] || keep[$k]=1
+  done < <(for b in "${kept[@]}"; do
+             info_get "$builds/$b" toolchain-reference
+             info_get "$builds/$b" pos-reference
+             info_get "$builds/$b" tools-reference
+           done
+           for o in toolchain pos extras; do
+             reference_default "$o"
+           done)
+  gone=()
+  for d in "$refs"/*/; do
+    d=${d%/}
+    [[ -n ${keep[${d##*/}]:-} ]] || gone+=("$d")
+  done
+  prune_remove references "${gone[@]}"
+
+  # Source trees: <source>/<key>, listed, with its .done, .upstream and
+  # .epoch, and <key>.tmp, which an interrupted prepare or unpack left.
+  keep=()
+  while read -r k; do
+    keep[$k]=1
+  done < <(prune_sources_kept "${kept[@]}")
+  gone=()
+  for d in "$sources"/*/*; do
+    [[ -e $d ]] || continue
+    k=${d#"$sources"/}
+    for o in .done .upstream .epoch; do
+      k=${k%"$o"}
+    done
+    [[ -z ${keep[${k%.tmp}]:-} || $k == *.tmp ]] || continue
+    if [[ $d == "$sources/$k" ]]; then
+      gone+=("$d")
+    else
+      beside+=("$d")
+    fi
+  done
+  prune_remove sources "${gone[@]}"
+  [[ -n $DRY ]] || rm -f "${beside[@]}"
+
+  # The cache: entries no kept build holds.
+  # shellcheck disable=SC2016
   while read -r k; do
     held[$k]=1
-  done < <(held_keys)
+  done < <(build_metas "${kept[@]}" | xargs -r awk '$1 == "build-key" {print $2}')
+  gone=()
   for d in "$cache"/*/*/; do
     d=${d%/}
     [[ -d $d ]] || continue
     k=${d##*/}
     [[ $k == *.tmp || -z ${held[$k]:-} ]] && gone+=("$d")
   done
-  if ((${#gone[@]} == 0)); then
-    echo "cache: nothing to remove (${#held[@]} keys held by builds)"
-    return 0
-  fi
-  printf '%s\n' "${gone[@]#"$cache"/}"
-  # Files a build shares are counted, though removing the entry frees them not.
-  echo "cache: ${#gone[@]} entries, $(du -sch "${gone[@]}" | tail -n 1 | cut -f1)${dry:+ (not removed: -n)}"
-  [[ -n $dry ]] && return 0
-  rm -rf "${gone[@]}"
-  # Package directories left without an entry.
-  find "$cache" -mindepth 1 -maxdepth 1 -type d -empty -delete
+  prune_remove cache "${gone[@]}"
+  # Package and source directories left empty.
+  [[ -n $DRY ]] || for d in "$cache" "$sources"; do
+    [[ ! -d $d ]] || find "$d" -mindepth 1 -maxdepth 1 -type d -empty -delete
+  done
 }
 
 
