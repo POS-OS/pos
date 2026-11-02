@@ -1,0 +1,26 @@
+package noop
+
+import (
+	"context"
+	"syscall"
+
+	"go.podman.io/buildah/internal/rpc/noop/pb"
+	"google.golang.org/grpc"
+)
+
+type noopServer struct {
+	pb.UnimplementedNoopServer
+}
+
+func (n *noopServer) Noop(_ context.Context, req *pb.NoopRequest) (*pb.NoopResponse, error) {
+	if req == nil {
+		return nil, syscall.EINVAL
+	}
+	resp := &pb.NoopResponse{}
+	resp.Ignored = req.GetIgnored()
+	return resp, nil
+}
+
+func Register(s grpc.ServiceRegistrar) {
+	pb.RegisterNoopServer(s, &noopServer{})
+}

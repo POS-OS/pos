@@ -1,0 +1,162 @@
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+
+	"github.com/sirupsen/logrus"
+	"github.com/spf13/cobra"
+	buildahcli "go.podman.io/buildah/pkg/cli"
+)
+
+type jsonMount struct {
+	Container  string `json:"container,omitempty"`
+	MountPoint string `json:"mountPoint"`
+}
+
+type mountOptions struct {
+	json bool
+}
+
+func mountInit() {
+	var (
+		mountDescription = `buildah mount
+  mounts a working container's root filesystem for manipulation.
+
+  Note:  In rootless mode you need to first execute buildah unshare, to put you
+  into the usernamespace. Afterwards you can buildah mount the container and
+  view/modify the content in the containers root file system.
+`
+		opts       mountOptions
+		noTruncate bool
+	)
+	mountCommand := &cobra.Command{
+		Use:   "mount",
+		Short: "Mount a working container's root filesystem",
+		Long:  mountDescription,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return mountCmd(cmd, args, opts)
+		},
+		Example: `buildah mount
+  buildah mount containerID
+  buildah mount containerID1 containerID2
+
+  In rootless mode you must use buildah unshare first.
+  buildah unshare
+  buildah mount containerID
+`,
+		GroupID: groupContainers,
+	}
+	mountCommand.SetUsageTemplate(UsageTemplate())
+
+	flags := mountCommand.Flags()
+	flags.SetInterspersed(false)
+	flags.BoolVar(&opts.json, "json", false, "output in JSON format")
+	flags.BoolVar(&noTruncate, "notruncate", false, "do not truncate output")
+	rootCmd.AddCommand(mountCommand)
+	if err := flags.MarkHidden("notruncate"); err != nil {
+		logrus.Fatalf("error marking notruncate as hidden: %v", err)
+	}
+}
+
+func mountCmd(c *cobra.Command, args []string, opts mountOptions) error {
+	if err := buildahcli.VerifyFlagsArgsOrder(args); err != nil {
+		return err
+	}
+
+	store, err := getStore(c)
+	if err != nil {
+		return err
+	}
+	var jsonMounts []jsonMount
+	var lastError error
+	if len(args) > 0 {
+		// Do not allow to mount a graphdriver that is not vfs if we are creating the userns as part
+		// of the mount command.
+		// Differently, allow the mount if we are already in a userns, as the mount point will still
+		// be accessible once "buildah mount" exits.
+		if os.Geteuid() != 0 && store.GraphDriverName() != "vfs" {
+			return fmt.Errorf("cannot mount using driver %s in rootless mode. You need to run it in a `buildah unshare` session", store.GraphDriverName())
+		}
+
+		for _, name := range args {
+			builder, err := openBuilder(getContext(), store, name)
+			if err != nil {
+				if lastError != nil {
+					fmt.Fprintln(os.Stderr, lastError)
+				}
+				lastError = fmt.Errorf("reading build container %q: %w", name, err)
+				continue
+			}
+			container, err := store.Container(builder.ContainerID)
+			if err == nil {
+				dd, err := store.ContainerDirectory(container.ID)
+				if err != nil {
+					if lastError != nil {
+						fmt.Fprintln(os.Stderr, lastError)
+					}
+					lastError = fmt.Errorf("determining data directory for %q container %q: %w", name, builder.Container, err)
+					continue
+				}
+				if err := flagServingSFTP(dd); err != nil {
+					if lastError != nil {
+						fmt.Fprintln(os.Stderr, lastError)
+					}
+					lastError = fmt.Errorf("mounting %q container %q: %w", name, builder.Container, err)
+					continue
+				}
+			}
+			mountPoint, err := builder.Mount(builder.MountLabel)
+			if err != nil {
+				if lastError != nil {
+					fmt.Fprintln(os.Stderr, lastError)
+				}
+				lastError = fmt.Errorf("mounting %q container %q: %w", name, builder.Container, err)
+				continue
+			}
+			if len(args) > 1 {
+				if opts.json {
+					jsonMounts = append(jsonMounts, jsonMount{Container: name, MountPoint: mountPoint})
+					continue
+				}
+				fmt.Printf("%s %s\n", name, mountPoint)
+			} else {
+				if opts.json {
+					jsonMounts = append(jsonMounts, jsonMount{MountPoint: mountPoint})
+					continue
+				}
+				fmt.Printf("%s\n", mountPoint)
+			}
+		}
+	} else {
+		builders, err := openBuilders(store)
+		if err != nil {
+			return fmt.Errorf("reading build containers: %w", err)
+		}
+
+		for _, builder := range builders {
+			mounted, err := builder.Mounted()
+			if err != nil {
+				return err
+			}
+			if mounted {
+				if opts.json {
+					jsonMounts = append(jsonMounts, jsonMount{Container: builder.Container, MountPoint: builder.MountPoint})
+					continue
+				}
+				fmt.Printf("%s %s\n", builder.Container, builder.MountPoint)
+			}
+		}
+	}
+
+	if opts.json {
+		data, err := json.MarshalIndent(jsonMounts, "", "    ")
+		if err != nil {
+			return err
+		}
+		fmt.Printf("%s\n", data)
+	}
+
+	return lastError
+}

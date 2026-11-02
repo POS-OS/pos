@@ -1,0 +1,59 @@
+name: lima
+
+on:
+  workflow_call:
+    inputs:
+      distro:
+        required: true
+        type: string
+      test:
+        required: true
+        type: string
+      priv:
+        required: false
+        type: string
+      storage:
+        required: false
+        type: string
+      runner:
+        required: true
+        type: string
+      timeout:
+        required: false
+        type: number
+
+permissions: {}
+
+env:
+  # CI automation repo release for the VM image downloads in ci.sh.
+  # ENV is managed by renovate, do not change the name without
+  # updating the renovate config in the automation repo.
+  AUTOMATION_RELEASE: 20261022t094745z
+
+jobs:
+  lima:
+    name: lima # main name is set by who spawns this job
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: ${{ inputs.timeout || 20 }}
+    permissions: {}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: lima-vm/lima-actions/setup@55627e31b78637bf254a8b2a14da8ea7d12564e5  # v1.1.0
+        id: lima
+        with:
+          version: v2.1.1
+
+      - name: Run test on lima
+        run: | # zizmor: ignore[template-injection]
+          ./hack/ci/ci.sh ${{ inputs.test }} ${{ inputs.storage }} ${{ inputs.priv }} ${{ inputs.distro }}
+
+      - name: Upload journal as artifact
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: "journal-${{ inputs.test }}-${{ inputs.storage }}-${{ inputs.priv }}-${{ inputs.distro }}.log"
+          path: "./hack/ci/journal.log"
+          if-no-files-found: ignore
