@@ -103,6 +103,8 @@ usage: ./build plan [--new] [<target>...]
                                                a pos build's core-libs and base, as the
                                                default reference of its kind
        ./build clean [<id>]                    remove the tools image of a build
+       ./build prune [-n]                      remove the build cache's entries that no
+                                               build holds (-n: list them)
        ./build validate [--unchecked] [<id>]   check that a build is an OS build
        ./build tag [--unchecked]               number the current build: validate it,
                                                tag its commit main-<BUILD>, then bump
@@ -1557,6 +1559,66 @@ cmd_clean() {
   echo "outputs are kept in $builds/$id"
 }
 
+# The build keys the builds of the checkout hold: those of the package
+# metas in their staging trees, in the build's prefix or /pos (as
+# ref_metas finds a reference's).
+# Inputs:
+#   builds
+# Outputs:
+#   the keys, one per line
+held_keys() {
+  local b pre f
+  # shellcheck disable=SC2016
+  for b in "$builds"/*/; do
+    b=${b%/}
+    [[ ! -L $b && -f $b/info ]] || continue
+    pre=$(awk '$1 == "prefix" {print $2}' "$b/info")
+    for f in "$b"/dest/*"${pre:-/pos}"/lib/pos/packages/*/meta "$b"/dest/*/pos/lib/pos/packages/*/meta; do
+      [[ ! -f $f ]] || echo "$f"
+    done
+  done | sort -u | xargs -r awk '$1 == "build-key" {print $2}' | sort -u
+}
+
+# Remove the cache entries no build holds (cache_store), and those an
+# interrupted store left (<key>.tmp). An entry a build holds shares its
+# files with the build: removing it would free nothing, and the build's
+# packages would be compiled again when it is continued after a change.
+# What is removed is what superseded keys and changes taken back left.
+# Removing a build (work/builds/<id>) lets go of what it holds.
+# Inputs:
+#   [-n]    list what would be removed, remove nothing
+#   builds, cache
+cmd_prune() {
+  local dry='' d k
+  local -a gone=()
+  local -A held=()
+  case ${1:-} in
+    -n) dry=1 ;;
+    '') ;;
+    *) usage ;;
+  esac
+  while read -r k; do
+    held[$k]=1
+  done < <(held_keys)
+  for d in "$cache"/*/*/; do
+    d=${d%/}
+    [[ -d $d ]] || continue
+    k=${d##*/}
+    [[ $k == *.tmp || -z ${held[$k]:-} ]] && gone+=("$d")
+  done
+  if ((${#gone[@]} == 0)); then
+    echo "cache: nothing to remove (${#held[@]} keys held by builds)"
+    return 0
+  fi
+  printf '%s\n' "${gone[@]#"$cache"/}"
+  # Files a build shares are counted, though removing the entry frees them not.
+  echo "cache: ${#gone[@]} entries, $(du -sch "${gone[@]}" | tail -n 1 | cut -f1)${dry:+ (not removed: -n)}"
+  [[ -n $dry ]] && return 0
+  rm -rf "${gone[@]}"
+  # Package directories left without an entry.
+  find "$cache" -mindepth 1 -maxdepth 1 -type d -empty -delete
+}
+
 
 
 meta_load
@@ -1574,6 +1636,7 @@ case $cmd in
   status) cmd_status ;;
   reference) cmd_reference "$@" ;;
   clean) cmd_clean "$@" ;;
+  prune) cmd_prune "$@" ;;
   validate) cmd_validate "$@" ;;
   tag) cmd_tag "$@" ;;
   publish) cmd_publish "$@" ;;

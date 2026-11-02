@@ -14,6 +14,7 @@ reaches through `flatpak-spawn --host` from inside a toolbox, as the
     $ ./build run zlib             # one package (and what it needs)
     $ ./build prepare              # download and prepare sources ahead of a run
     $ ./build status
+    $ ./build prune -n             # what prune would remove from the build cache
     $ ./build output               # make the outputs of the current build again
     $ ./build output rpm-pos       # one output: the pos RPM package
     $ devtools/install.sh          # install the archives as /pos
@@ -365,6 +366,14 @@ package is recorded, so builds and the cache share their files.
 cache in place of what was there; a package compiled again with a
 different `content` is one whose build depends on more than its inputs.
 Cached packages go into every build, numbered or not.
+
+`./build prune` removes the entries that no build in `work/builds` holds
+(no package meta there records their key), and what an interrupted store
+left; `-n` lists them and removes nothing. An entry a build holds shares
+its files with it, so removing it would free nothing; what prune removes
+is what superseded keys and changes taken back left. Removing a build lets
+go of what it holds. A `run` taking a package from the cache while prune
+runs may find it gone; prune between runs.
 
 ## Source archives
 `./build run --new --source-archives` creates a build that, after
