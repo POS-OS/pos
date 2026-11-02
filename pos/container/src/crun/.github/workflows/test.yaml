@@ -93,8 +93,6 @@ jobs:
           - test: bindings
           - test: checkpoint-restore
           - test: fuzzing
-          - test: codespell
-          - test: ruff
           - test: wasmedge-build
           - test: krun-build
     steps:
@@ -111,13 +109,16 @@ jobs:
 
           sudo add-apt-repository -y ppa:criu/ppa
           # add-apt-repository runs apt-get update so we don't have to.
-          sudo apt-get install -q -y criu automake libtool autotools-dev libseccomp-dev git make libcap-dev cmake pkg-config gcc wget libsystemd-dev gperf clang-format libjson-c-dev containerd runc libasan6 libubsan1 libprotobuf-c-dev mawk python3-dev lua5.4 liblua5.4-dev
+          sudo apt-get install -q -y criu libcriu-dev automake libtool autotools-dev libseccomp-dev git make libcap-dev cmake pkg-config gcc wget libsystemd-dev gperf clang-format libjson-c-dev containerd runc libasan6 libubsan1 libprotobuf-c-dev mawk python3-dev lua5.4 liblua5.4-dev
           # Fedora (used by maintainers as well as for packaging) has newer
           # md2man than in Ubuntu, so we have to install it from source.
           GOBIN=~/.local/bin go install github.com/cpuguy83/go-md2man/v2@latest
 
       - name: run autogen.sh
         run: |
+          # Tests run inside a container do this themselves.
+          test -f "tests/${{ matrix.test }}/Dockerfile" && exit 0
+
           git clean -fdx .
           find "$(pwd)" -name '.git' -exec bash -c 'git config --global --add safe.directory ${0%/.git}' {} \;
           ./autogen.sh
@@ -165,7 +166,7 @@ jobs:
         run: |
           sudo add-apt-repository -y ppa:criu/ppa
           # add-apt-repository runs apt-get update so we don't have to.
-          sudo apt-get install -q -y criu automake libtool autotools-dev libseccomp-dev git make libcap-dev pkg-config gcc libsystemd-dev gperf libjson-c-dev libprotobuf-c-dev mawk sshfs uidmap
+          sudo apt-get install -q -y criu libcriu-dev automake libtool autotools-dev libseccomp-dev git make libcap-dev pkg-config gcc libsystemd-dev gperf libjson-c-dev libprotobuf-c-dev mawk sshfs uidmap
 
       - name: install bats
         uses: bats-core/bats-action@77d6fb60505b4d0d1d73e48bd035b55074bbfb43 # 4.0.0
@@ -211,21 +212,29 @@ jobs:
           sha256sum --strict --check - <<<"$SHA256 *$HOME/.local/bin/shellcheck"
           # make sure to remove the old version
           sudo rm -f /usr/bin/shellcheck
-      - name: install dependencies
-        run: |
-          sudo apt-get update -q -y
-          sudo apt-get install -q -y automake libtool autotools-dev libseccomp-dev git make libcap-dev cmake pkg-config gcc wget go-md2man libsystemd-dev gperf clang-format libjson-c-dev libprotobuf-c-dev mawk
       - uses: lumaxis/shellcheck-problem-matchers@bf6e0860fd06e4910738c6160dcd2889146ce824 # v2.3.1
       - name: shellcheck
-        run: |
-          find "$(pwd)" -name '.git' -exec bash -c 'git config --global --add safe.directory ${0%/.git}' {} \;
-          ./autogen.sh
-          ./configure --enable-embedded-blake3
-          make shellcheck
+        run: build-aux/sh-files.sh shellcheck
       - name: shfmt
         run: |
-          make shfmt
+          build-aux/sh-files.sh shfmt -w
           git diff --ignore-submodules --exit-code
+
+  # These need neither a build nor the build dependencies.
+  lint:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        test: [codespell, ruff]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # ruff checks the Python code in libocispec as well.
+          submodules: recursive
+          persist-credentials: false
+      - name: run test
+        run: ./tests/ci.sh "${{ matrix.test }}"
 
   zizmor:
     runs-on: ubuntu-latest
@@ -233,8 +242,39 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: zizmorcore/zizmor-action@cc914d7f3750a2d13d75c7f184a1060aa0e9d482 # v0.6.4
+      - uses: zizmorcore/zizmor-action@53290badfa369cb0bf7ad16342cb62c2fa47ac7b # v0.8.0
         with:
           version: 1.30.1
           advanced-security: false
           annotations: true
+
+  codeql:
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    uses: $/.github/workflows/codeql-analysis.yml
+
+  total-success:
+    name: total-success
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    needs:
+      - build_job
+      - Test
+      - keyring
+      - runc-integration
+      - shellcheck
+      - lint
+      - zizmor
+      - codeql
+    permissions: {}
+    steps:
+      - name: Check results of all jobs
+        env:
+          RESULTS: ${{ toJSON(needs.*.result) }}
+        run: |
+          echo "$RESULTS"
+          if [ "$(echo "$RESULTS" | jq 'map(select(. != "success")) | length')" != 0 ]; then
+            exit 1
+          fi

@@ -401,6 +401,8 @@ int get_file_type_at (int dirfd, mode_t *mode, bool nofollow, const char *path);
 
 int get_file_type (mode_t *mode, bool nofollow, const char *path);
 
+uint64_t get_mount_id (const char *path);
+
 int get_file_type_fd (int fd, mode_t *mode);
 
 char *get_user_name (uid_t uid);
@@ -572,6 +574,13 @@ void channel_fd_pair_free (struct channel_fd_pair *channel);
  * and unregistered as necessary.
  */
 int channel_fd_pair_process (struct channel_fd_pair *channel, int epollfd, libcrun_error_t *err);
+
+/* Copy the data buffered in the channel_fd_pair, and the data currently
+ * available from the input file descriptor, to the output file descriptor.
+ * It is meant to be used once the writer to the input is gone, with the
+ * output file descriptor in blocking mode.
+ */
+int channel_fd_pair_flush (struct channel_fd_pair *channel, libcrun_error_t *err);
 
 static inline void
 cleanup_channel_fd_pairp (void *p)

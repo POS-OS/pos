@@ -34,6 +34,7 @@
 #include <stdbool.h>
 #include <argp.h>
 #include <unistd.h>
+#include <sys/mount.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sched.h>
@@ -1937,6 +1938,46 @@ has_new_pid_namespace (runtime_spec_schema_config_schema *def)
   return false;
 }
 
+static bool
+has_mount_namespace (runtime_spec_schema_config_schema *def)
+{
+  size_t i;
+
+  if (def->linux == NULL || def->linux->namespaces == NULL)
+    return false;
+
+  for (i = 0; i < def->linux->namespaces_len; i++)
+    {
+      if (strcmp (def->linux->namespaces[i]->type, "mount") == 0)
+        return true;
+    }
+  return false;
+}
+
+/* Without a mount namespace, the container rootfs is bind mounted onto itself
+   in the host mount namespace, and the container mounts are created under it.
+   Unmount it, together with all the container mounts, provided it is still
+   the mount with MOUNT_ID, so that a mount not created by crun is never
+   unmounted.  */
+static void
+unmount_host_mntns_rootfs (const char *rootfs, uint64_t mount_id)
+{
+  cleanup_free char *path = NULL;
+
+  if (mount_id == 0)
+    return;
+
+  path = realpath (rootfs, NULL);
+  if (path == NULL || get_mount_id (path) != mount_id)
+    {
+      libcrun_debug ("Not unmounting `%s`: not the container rootfs mount", rootfs);
+      return;
+    }
+
+  if (UNLIKELY (umount2 (path, MNT_DETACH | UMOUNT_NOFOLLOW) < 0))
+    libcrun_warning ("cannot unmount `%s`: %s", path, strerror (errno));
+}
+
 /* Delete the container state.  CONTAINER is the container the caller already has
    available, or NULL.  When it is not NULL, the poststop hooks are run even if the
    status file was never written, e.g. when the container creation failed.  */
@@ -2023,11 +2064,7 @@ container_delete_internal (libcrun_context_t *context, libcrun_container_t *cont
           ret = libcrun_kill_linux (&status, SIGKILL, err);
           if (UNLIKELY (ret < 0))
             {
-              errno = crun_error_get_errno (err);
-
-              /* pidfd_open returns EINVAL if the process is not a thread-group leader.
-                 In our case it means the process already exited, so handle as ESRCH.  */
-              if (errno != ESRCH && errno != EINVAL)
+              if (crun_error_get_errno (err) != ESRCH)
                 return ret;
 
               crun_error_release (err);
@@ -2056,6 +2093,18 @@ container_delete_internal (libcrun_context_t *context, libcrun_container_t *cont
       ret = libcrun_cgroup_destroy (cgroup_status, err);
       if (UNLIKELY (ret < 0))
         return ret;
+    }
+
+  if (status.rootfs_mount_id && status.rootfs)
+    {
+      cleanup_free char *rootfs = NULL;
+
+      if (status.rootfs[0] == '/' || status.bundle == NULL)
+        rootfs = xstrdup (status.rootfs);
+      else
+        xasprintf (&rootfs, "%s/%s", status.bundle, status.rootfs);
+
+      unmount_host_mntns_rootfs (rootfs, status.rootfs_mount_id);
     }
 
   ret = run_poststop_hooks (context, container, def, &status, state_root, id, err);
@@ -2116,7 +2165,7 @@ libcrun_container_killall (libcrun_context_t *context, const char *id, const cha
 static int
 write_container_status (libcrun_container_t *container, libcrun_context_t *context,
                         pid_t pid, struct libcrun_cgroup_status *cgroup_status,
-                        libcrun_error_t *err)
+                        uint64_t rootfs_mount_id, libcrun_error_t *err)
 {
   cleanup_free char *bundle_allocated = NULL;
   const char *bundle = get_bundle_path (context->bundle, &bundle_allocated);
@@ -2137,6 +2186,7 @@ write_container_status (libcrun_container_t *container, libcrun_context_t *conte
     .external_descriptors = external_descriptors,
     .cgroup_path = NULL,
     .scope = NULL,
+    .rootfs_mount_id = rootfs_mount_id,
   };
 
   get_current_timestamp (created, sizeof (created));
@@ -2270,6 +2320,27 @@ is_fd_pollable (int fd)
   return epoll_ctl (epollfd, EPOLL_CTL_ADD, fd, &ev) == 0 || errno != EPERM;
 }
 
+/* Copy to stdout what the container wrote to the terminal and was not
+   copied yet, and return EXIT_CODE.  */
+static int
+flush_terminal_output (struct channel_fd_pair *from_terminal, int exit_code, libcrun_error_t *err)
+{
+  int ret;
+
+  if (from_terminal == NULL)
+    return exit_code;
+
+  ret = set_blocking_fd (1, true, err);
+  if (UNLIKELY (ret < 0))
+    return ret;
+
+  ret = channel_fd_pair_flush (from_terminal, err);
+  if (UNLIKELY (ret < 0))
+    return crun_error_wrap (err, "copy from terminal fd");
+
+  return exit_code;
+}
+
 static int
 wait_for_process (struct wait_for_process_args *args, libcrun_error_t *err)
 {
@@ -2328,12 +2399,42 @@ wait_for_process (struct wait_for_process_args *args, libcrun_error_t *err)
   if (UNLIKELY (signalfd < 0))
     return signalfd;
 
+  if (args->terminal_fd >= 0)
+    {
+      /* The terminal_fd is dup()ed so that it can be registered with
+         epoll multiple times using different masks.  */
+      terminal_fd_from = dup (args->terminal_fd);
+      if (UNLIKELY (terminal_fd_from < 0))
+        return crun_make_error (err, errno, "dup terminal fd");
+      terminal_fd_to = dup (args->terminal_fd);
+      if (UNLIKELY (terminal_fd_to < 0))
+        return crun_make_error (err, errno, "dup terminal fd");
+
+      int i, non_blocking_fds[] = { terminal_fd_from, terminal_fd_to, 0, 1, -1 };
+      for (i = 0; non_blocking_fds[i] >= 0; i++)
+        {
+          ret = set_blocking_fd (non_blocking_fds[i], false, err);
+          if (UNLIKELY (ret < 0))
+            return ret;
+        }
+
+      /* stdin and stdout can be something epoll does not support, such as
+         /dev/null or a regular file.  Such a stdin is not forwarded, and
+         such a stdout is written to without waiting for it to be ready.  */
+      stdin_pollable = is_fd_pollable (0);
+      stdout_pollable = is_fd_pollable (1);
+
+      from_terminal = channel_fd_pair_new (terminal_fd_from, 1, BUFSIZ);
+      if (stdin_pollable)
+        to_terminal = channel_fd_pair_new (0, terminal_fd_to, BUFSIZ);
+    }
+
   ret = reap_subprocesses (&args->pid, &container_exit_code, &last_process, err);
   if (UNLIKELY (ret < 0))
     return ret;
 
   if (last_process)
-    return container_exit_code;
+    return flush_terminal_output (from_terminal, container_exit_code, err);
 
   if (args->seccomp_notify_fd >= 0)
     {
@@ -2367,36 +2468,6 @@ wait_for_process (struct wait_for_process_args *args, libcrun_error_t *err)
         return ret;
 
       in_fds[in_fds_len++] = args->seccomp_notify_fd;
-    }
-
-  if (args->terminal_fd >= 0)
-    {
-      /* The terminal_fd is dup()ed so that it can be registered with
-         epoll multiple times using different masks.  */
-      terminal_fd_from = dup (args->terminal_fd);
-      if (UNLIKELY (terminal_fd_from < 0))
-        return crun_make_error (err, errno, "dup terminal fd");
-      terminal_fd_to = dup (args->terminal_fd);
-      if (UNLIKELY (terminal_fd_to < 0))
-        return crun_make_error (err, errno, "dup terminal fd");
-
-      int i, non_blocking_fds[] = { terminal_fd_from, terminal_fd_to, 0, 1, -1 };
-      for (i = 0; non_blocking_fds[i] >= 0; i++)
-        {
-          ret = set_blocking_fd (non_blocking_fds[i], false, err);
-          if (UNLIKELY (ret < 0))
-            return ret;
-        }
-
-      /* stdin and stdout can be something epoll does not support, such as
-         /dev/null or a regular file.  Such a stdin is not forwarded, and
-         such a stdout is written to without waiting for it to be ready.  */
-      stdin_pollable = is_fd_pollable (0);
-      stdout_pollable = is_fd_pollable (1);
-
-      from_terminal = channel_fd_pair_new (terminal_fd_from, 1, BUFSIZ);
-      if (stdin_pollable)
-        to_terminal = channel_fd_pair_new (0, terminal_fd_to, BUFSIZ);
     }
 
   in_fds[in_fds_len++] = signalfd;
@@ -2472,7 +2543,7 @@ wait_for_process (struct wait_for_process_args *args, libcrun_error_t *err)
                   if (UNLIKELY (ret < 0))
                     return ret;
                   if (last_process)
-                    return container_exit_code;
+                    return flush_terminal_output (from_terminal, container_exit_code, err);
                 }
               else if (si.ssi_signo == SIGWINCH)
                 {
@@ -2947,6 +3018,7 @@ libcrun_container_run_internal (libcrun_container_t *container, libcrun_context_
   const char *seccomp_notify_plugins = NULL;
   cleanup_cgroup_preenter struct libcrun_cgroup_args cg = {};
   cleanup_free char *bundle_allocated = NULL;
+  uint64_t rootfs_mount_id = 0;
   struct container_entrypoint_s container_args = {
     .container = container,
     .context = context,
@@ -3098,6 +3170,15 @@ libcrun_container_run_internal (libcrun_container_t *container, libcrun_context_
   if (UNLIKELY (ret < 0))
     goto fail;
 
+  /* The container mounts are in place now.  Without a mount namespace, they
+     are in the host one, so remember the rootfs mount to unmount it later.  */
+  if (! has_mount_namespace (def) && def->root && def->root->path)
+    {
+      cleanup_free char *rootfs = realpath (def->root->path, NULL);
+      if (rootfs)
+        rootfs_mount_id = get_mount_id (rootfs);
+    }
+
   ret = libcrun_cgroup_enter_finalize (&cg, cgroup_status, err);
   if (UNLIKELY (ret < 0))
     goto fail;
@@ -3200,7 +3281,7 @@ libcrun_container_run_internal (libcrun_container_t *container, libcrun_context_
     }
 
   libcrun_debug ("Writing container status");
-  ret = write_container_status (container, context, pid, cgroup_status, err);
+  ret = write_container_status (container, context, pid, cgroup_status, rootfs_mount_id, err);
   if (UNLIKELY (ret < 0))
     goto fail;
 
@@ -3254,6 +3335,8 @@ libcrun_container_run_internal (libcrun_container_t *container, libcrun_context_
 
 fail:
   ret = cleanup_watch (context, def, cgroup_status, pid, sync_socket, terminal_fd, err);
+  if (rootfs_mount_id)
+    unmount_host_mntns_rootfs (def->root->path, rootfs_mount_id);
   if (cgroup_status)
     {
       libcrun_error_t tmp_err = NULL;
@@ -3275,6 +3358,23 @@ check_config_file (runtime_spec_schema_config_schema *def, libcrun_context_t *co
         return crun_make_error (err, 0, "invalid config file, no `root` block specified");
       if (UNLIKELY (def->mounts == NULL))
         return crun_make_error (err, 0, "invalid config file, no `mounts` block specified");
+    }
+
+  /* Without a mount namespace, these would change the host mounts.  */
+  if (! has_mount_namespace (def))
+    {
+      if (def->linux->rootfs_propagation && def->linux->rootfs_propagation[0])
+        return crun_make_error (err, 0, "unable to set rootfs propagation without a private MNT namespace");
+      if (context->no_pivot)
+        return crun_make_error (err, 0, "unable to use no-pivot without a private MNT namespace");
+    }
+
+  if (def->root && def->root->path)
+    {
+      cleanup_free char *rootfs = realpath (def->root->path, NULL);
+
+      if (rootfs && strcmp (rootfs, "/") == 0)
+        return crun_make_error (err, 0, "invalid rootfs: / is not allowed");
     }
   return 0;
 }
@@ -4323,7 +4423,8 @@ libcrun_container_exec_with_options (libcrun_context_t *context, const char *id,
   pipefd1 = container_ret_status[1];
 
   /* If the new process block doesn't specify a SELinux label, AppArmor profile, user,
-     I/O priority or scheduler, then use the configuration from the original config file.  */
+     I/O priority, scheduler or OOM score adjustment, then use the configuration from
+     the original config file.  */
   if (container->container_def->process)
     {
       if (process->io_priority == NULL && container->container_def->process->io_priority)
@@ -4338,6 +4439,12 @@ libcrun_container_exec_with_options (libcrun_context_t *context, const char *id,
           process->scheduler = clone_runtime_spec_schema_config_schema_process_scheduler (container->container_def->process->scheduler);
           if (process->scheduler == NULL)
             OOM ();
+        }
+
+      if (! process->oom_score_adj_present && container->container_def->process->oom_score_adj_present)
+        {
+          process->oom_score_adj = container->container_def->process->oom_score_adj;
+          process->oom_score_adj_present = true;
         }
 
       if (process->selinux_label == NULL && container->container_def->process->selinux_label)
@@ -4368,6 +4475,12 @@ libcrun_container_exec_with_options (libcrun_context_t *context, const char *id,
       if (UNLIKELY (ret < 0))
         return ret;
     }
+
+  /* The exec process inherits it from us.  This must be done before we drop
+     the dumpable flag, which makes /proc/self/oom_score_adj owned by root.  */
+  ret = libcrun_set_oom (container, process, err);
+  if (UNLIKELY (ret < 0))
+    return ret;
 
   ret = prctl (PR_SET_DUMPABLE, 0, 0, 0, 0);
   if (UNLIKELY (ret < 0))
@@ -5361,7 +5474,7 @@ libcrun_container_restore (libcrun_context_t *context, const char *id arg_unused
   }
 
   context->detach = cr_options->detach;
-  ret = write_container_status (container, context, status.pid, cgroup_status, err);
+  ret = write_container_status (container, context, status.pid, cgroup_status, 0, err);
   if (UNLIKELY (ret < 0))
     goto fail;
 

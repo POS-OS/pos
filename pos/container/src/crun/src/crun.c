@@ -24,6 +24,7 @@
 #include <libgen.h>
 #include <errno.h>
 #include <limits.h>
+#include <unistd.h>
 
 #ifdef HAVE_DLOPEN
 #  include <dlfcn.h>
@@ -55,6 +56,11 @@
 #define EXIT_EXEC_FAILURE 255
 
 static struct crun_global_arguments arguments;
+
+/* --systemd-cgroup and --cgroup-manager as specified, to reject them
+   when used together with conflicting values.  */
+static bool systemd_cgroup_option;
+static const char *cgroup_manager_option;
 
 struct commands_s
 {
@@ -294,6 +300,7 @@ parse_opt (int key, char *arg, struct argp_state *state)
 
     case OPTION_CGROUP_MANAGER:
       tmp = argp_mandatory_argument (arg, state);
+      cgroup_manager_option = tmp;
       if (strcmp (tmp, "systemd") == 0)
         {
           arguments.option_force_no_cgroup = false;
@@ -311,11 +318,12 @@ parse_opt (int key, char *arg, struct argp_state *state)
         }
       else
         {
-          libcrun_fail_with_error (0, "unknown cgroup manager specified");
+          libcrun_fail_with_error (0, "invalid --cgroup-manager value `%s` (must be `cgroupfs`, `systemd` or `disabled`)", tmp);
         }
       break;
 
     case OPTION_SYSTEMD_CGROUP:
+      systemd_cgroup_option = true;
       arguments.option_force_no_cgroup = false;
       arguments.option_systemd_cgroup = true;
       break;
@@ -416,6 +424,27 @@ parse_id_or_fail (const char *str, char **endptr, const char *kind)
   return (int) l;
 }
 
+/* Return the number of fds passed via socket activation, or 0 if they are
+   not meant for this process (see sd_listen_fds(3)).  */
+int
+get_listen_fds (void)
+{
+  const char *listen_fds = getenv ("LISTEN_FDS");
+  const char *listen_pid = getenv ("LISTEN_PID");
+  char *end = NULL;
+  long long pid;
+
+  if (listen_fds == NULL || listen_pid == NULL)
+    return 0;
+
+  errno = 0;
+  pid = strtoll (listen_pid, &end, 10);
+  if (errno != 0 || end == listen_pid || *end != '\0' || pid != getpid ())
+    return 0;
+
+  return parse_id_or_fail (listen_fds, NULL, "LISTEN_FDS");
+}
+
 static struct argp argp = { options, parse_opt, args_doc, doc, NULL, NULL, NULL };
 
 int ensure_cloned_binary (void);
@@ -467,6 +496,9 @@ main (int argc, char **argv)
 
   fill_handler_from_argv0 (argv[0], &arguments);
   argp_parse (&argp, argc, argv, ARGP_IN_ORDER, &first_argument, &arguments);
+
+  if (systemd_cgroup_option && cgroup_manager_option && strcmp (cgroup_manager_option, "systemd") != 0)
+    libcrun_fail_with_error (0, "--systemd-cgroup conflicts with --cgroup-manager=%s", cgroup_manager_option);
 
   command = get_command (argv[first_argument]);
   if (command == NULL)

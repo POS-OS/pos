@@ -199,6 +199,22 @@ get_file_type (mode_t *mode, bool nofollow, const char *path)
   return get_file_type_at (AT_FDCWD, mode, nofollow, path);
 }
 
+/* Return the ID of the mount PATH resides on, or 0 if it is not known.  */
+uint64_t
+get_mount_id (const char *path)
+{
+#if defined HAVE_STATX && defined STATX_MNT_ID
+  struct statx stx = {
+    0,
+  };
+
+  if (statx (AT_FDCWD, path, AT_SYMLINK_NOFOLLOW | AT_STATX_DONT_SYNC, STATX_MNT_ID, &stx) == 0
+      && (stx.stx_mask & STATX_MNT_ID))
+    return stx.stx_mnt_id;
+#endif
+  return 0;
+}
+
 int
 create_file_if_missing_at (int dirfd, const char *file, mode_t mode, libcrun_error_t *err)
 {
@@ -3108,6 +3124,37 @@ channel_fd_pair_process (struct channel_fd_pair *channel, int epollfd, libcrun_e
             return ret;
           channel->outfd_epoll_events = events;
         }
+    }
+  return 0;
+}
+
+int
+channel_fd_pair_flush (struct channel_fd_pair *channel, libcrun_error_t *err)
+{
+  bool is_input_eagain = false, is_output_eagain = false;
+  int ret, i;
+
+  /* Something may still be writing to the input, so use a hard limit as
+     channel_fd_pair_process does.  */
+  for (i = 0; i < 1000; i++)
+    {
+      if (! is_input_eagain && ring_buffer_get_space_available (channel->rb) > 0)
+        {
+          ret = ring_buffer_read (channel->rb, channel->in_fd, &is_input_eagain, err);
+          if (UNLIKELY (ret < 0))
+            return ret;
+        }
+      if (ring_buffer_get_data_available (channel->rb) == 0)
+        {
+          if (is_input_eagain)
+            break;
+          continue;
+        }
+      ret = ring_buffer_write (channel->rb, channel->out_fd, &is_output_eagain, err);
+      if (UNLIKELY (ret < 0))
+        return ret;
+      if (is_output_eagain)
+        break;
     }
   return 0;
 }

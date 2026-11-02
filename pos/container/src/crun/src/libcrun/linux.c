@@ -3925,24 +3925,27 @@ libcrun_finalize_mounts (struct container_entrypoint_s *entrypoint_args, libcrun
     {
       get_private_data (container)->needs_pivot = false;
 
-      if (get_private_data (container)->no_pivot)
+      if (! (get_private_data (container)->unshare_flags & CLONE_NEWNS))
         {
-          ret = move_root (rootfs, err);
+          ret = chroot (rootfs);
           if (UNLIKELY (ret < 0))
-            return ret;
+            return crun_make_error (err, errno, "chroot to `%s`", rootfs);
         }
       else
         {
-          ret = do_pivot (container, rootfs, err);
+          if (get_private_data (container)->no_pivot)
+            ret = move_root (rootfs, err);
+          else
+            ret = do_pivot (container, rootfs, err);
+          if (UNLIKELY (ret < 0))
+            return ret;
+
+          ret = do_mount (container, NULL, -1, "/", NULL,
+                          get_private_data (container)->rootfs_propagation,
+                          NULL, LABEL_MOUNT, err);
           if (UNLIKELY (ret < 0))
             return ret;
         }
-
-      ret = do_mount (container, NULL, -1, "/", NULL,
-                      get_private_data (container)->rootfs_propagation,
-                      NULL, LABEL_MOUNT, err);
-      if (UNLIKELY (ret < 0))
-        return ret;
 
       ret = chdir ("/");
       if (UNLIKELY (ret < 0))
@@ -4327,6 +4330,7 @@ static int
 setup_mount_namespace (libcrun_container_t *container, bool no_pivot, char **rootfs, libcrun_error_t *err)
 {
   runtime_spec_schema_config_schema *def = container->container_def;
+  bool host_mntns = ! (get_private_data (container)->unshare_flags & CLONE_NEWNS);
   unsigned long rootfs_propagation = 0;
   cleanup_close int rootfsfd = -1;
   cleanup_close int tree_fd = -1;
@@ -4468,7 +4472,7 @@ setup_mount_namespace (libcrun_container_t *container, bool no_pivot, char **roo
       get_private_data (container)->maskdir_bind_failed = true;
     }
 
-  if (! get_private_data (container)->joined_mount_ns
+  if (! host_mntns && ! get_private_data (container)->joined_mount_ns
       && can_use_open_tree_namespace (container))
     use_open_tree = true;
 
@@ -4513,6 +4517,30 @@ setup_mount_namespace (libcrun_container_t *container, bool no_pivot, char **roo
       get_private_data (container)->host_root_switched = true;
       free (*rootfs);
       *rootfs = xstrdup ("/");
+    }
+  else if (host_mntns)
+    {
+      /* Without a mount namespace, the container mounts are created in the
+         host mount namespace, so the propagation of the host mounts must not
+         be changed.  If the rootfs is a shared mount, the rootfs bind mount
+         below is propagated to its peers, and if one of them is the mount the
+         rootfs is on, the copy gets tucked under the bind mount, so that
+         unmounting it would unmount the rootfs too.  Make the rootfs a slave
+         to prevent that.  EINVAL means the rootfs is not a mount point.  */
+      ret = mount (NULL, *rootfs, NULL, MS_SLAVE, NULL);
+      if (UNLIKELY (ret < 0 && errno != EINVAL))
+        return crun_make_error (err, errno, "make `%s` a slave mount", *rootfs);
+
+      ret = do_mount (container, *rootfs, -1, *rootfs, NULL, MS_BIND | MS_REC, NULL, LABEL_MOUNT, err);
+      if (UNLIKELY (ret < 0))
+        return ret;
+
+      /* Do not let the container mounts propagate to the host.  */
+      ret = do_mount (container, NULL, -1, *rootfs, NULL, MS_SLAVE | MS_REC, NULL, LABEL_MOUNT, err);
+      if (UNLIKELY (ret < 0))
+        return ret;
+
+      get_private_data (container)->needs_pivot = true;
     }
   else
     {
@@ -4601,34 +4629,18 @@ libcrun_do_pivot_root (libcrun_container_t *container, bool no_pivot, char **roo
   if (*rootfs == NULL)
     return 0;
 
-  if (get_private_data (container)->unshare_flags & CLONE_NEWNS)
-    {
-      ret = setup_mount_namespace (container, no_pivot, rootfs, err);
-      if (UNLIKELY (ret < 0))
-        return ret;
+  ret = setup_mount_namespace (container, no_pivot, rootfs, err);
+  if (UNLIKELY (ret < 0))
+    return ret;
 
-      /* If setup_mount_namespace used OPEN_TREE_NAMESPACE, rootfs is
-         already set to "/".  Otherwise pivot_root is deferred until
-         after the mounts are created.  */
-      if (strcmp (*rootfs, "/") == 0)
-        {
-          ret = chdir ("/");
-          if (UNLIKELY (ret < 0))
-            return crun_make_error (err, errno, "chdir to `/`");
-        }
-    }
-  else
+  /* If setup_mount_namespace used OPEN_TREE_NAMESPACE, rootfs is
+     already set to "/".  Otherwise pivot_root (or chroot, without
+     a mount namespace) is deferred until after the mounts are created.  */
+  if (strcmp (*rootfs, "/") == 0)
     {
-      ret = chroot (*rootfs);
-      if (UNLIKELY (ret < 0))
-        return crun_make_error (err, errno, "chroot to `%s`", *rootfs);
-
       ret = chdir ("/");
       if (UNLIKELY (ret < 0))
         return crun_make_error (err, errno, "chdir to `/`");
-
-      free (*rootfs);
-      *rootfs = xstrdup ("/");
     }
 
   return 0;
@@ -5295,17 +5307,17 @@ libcrun_set_domainname (libcrun_container_t *container, libcrun_error_t *err)
 }
 
 int
-libcrun_set_oom (libcrun_container_t *container, libcrun_error_t *err)
+libcrun_set_oom (libcrun_container_t *container, runtime_spec_schema_config_schema_process *process,
+                 libcrun_error_t *err)
 {
-  runtime_spec_schema_config_schema *def = container->container_def;
   cleanup_close int fd = -1;
   int ret;
   char oom_buffer[16];
-  if (def->process == NULL || ! def->process->oom_score_adj_present)
+  if (process == NULL || ! process->oom_score_adj_present)
     return 0;
-  libcrun_debug ("Write OOM score adj: `%d`", def->process->oom_score_adj);
+  libcrun_debug ("Write OOM score adj: `%d`", process->oom_score_adj);
 
-  ret = snprintf (oom_buffer, sizeof (oom_buffer), "%i", def->process->oom_score_adj);
+  ret = snprintf (oom_buffer, sizeof (oom_buffer), "%i", process->oom_score_adj);
   if (UNLIKELY (ret >= (int) sizeof (oom_buffer)))
     return crun_make_error (err, 0, "internal error: static buffer too small");
 
@@ -6810,7 +6822,7 @@ init_container (libcrun_container_t *container, int sync_socket_container, struc
         return ret;
     }
 
-  ret = libcrun_set_oom (container, err);
+  ret = libcrun_set_oom (container, container->container_def->process, err);
   if (UNLIKELY (ret < 0))
     return ret;
 
@@ -7113,7 +7125,7 @@ libcrun_run_linux_container (libcrun_container_t *container, container_entrypoin
         return ret;
     }
 
-  ret = libcrun_set_oom (container, err);
+  ret = libcrun_set_oom (container, container->container_def->process, err);
   if (UNLIKELY (ret < 0))
     return ret;
 
@@ -8068,25 +8080,10 @@ libcrun_kill_linux (libcrun_container_status_t *status, int signal, libcrun_erro
       /* If pidfd_open is not supported, fallback to kill.  */
       if (errno == ENOSYS)
         return libcrun_kill_linux_no_pidfd (status, true, signal, err);
-      if (errno == ESRCH)
-        return crun_make_error (err, errno, "process not running");
-      /* Check if the PID is valid before reporting an error. */
-      if (errno == EINVAL)
-        {
-          int errno_saved = errno;
-          ret = libcrun_check_pid_valid (status, err);
-          if (UNLIKELY (ret < 0))
-            return ret;
-          if (ret == 0)
-            {
-              errno = ESRCH;
-              return crun_make_error (err, errno, "kill process");
-            }
-
-          /* Restore original errno. */
-          errno = errno_saved;
-        }
-
+      /* Kernels < 6.16 return EINVAL, newer ones ENOENT, when the pid
+         is not a thread-group leader (i.e. it was reused).  */
+      if (errno == ESRCH || errno == ENOENT || errno == EINVAL)
+        return crun_make_error (err, ESRCH, "process not running");
       return crun_make_error (err, errno, "open pidfd");
     }
 

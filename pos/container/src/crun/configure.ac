@@ -52,10 +52,6 @@ CFLAGS="$crun_save_CFLAGS"
 AS_IF([test "x$enable_werror" = "xyes"], [WARN_CFLAGS="$WARN_CFLAGS -Werror"])
 AC_SUBST([WARN_CFLAGS])
 
-AC_PATH_PROG(MD2MAN, go-md2man)
-
-AM_CONDITIONAL([HAVE_MD2MAN], [test "x$ac_cv_path_MD2MAN" != x])
-
 AC_CHECK_HEADERS([linux/openat2.h stdatomic.h linux/ioprio.h])
 
 AC_CHECK_TYPES([atomic_int], [], [], [[#include <stdatomic.h>]])
@@ -304,9 +300,10 @@ AS_IF([test "x$use_fPIC" = "xyes"], [
 ])
 
 dnl criu
-AC_ARG_ENABLE([criu], AS_HELP_STRING([--disable-criu], [Disable CRIU based checkpoint/restore support]))
+AC_ARG_ENABLE([criu], AS_HELP_STRING([--enable-criu], [CRIU based checkpoint/restore support (yes/no, default: autodetect)]))
 AS_IF([test "x$enable_criu" != "xno"], [
 	PKG_CHECK_MODULES([CRIU], [criu >= 3.15], [have_criu="yes"], [have_criu="no"
+		AS_IF([test "x$enable_criu" = "xyes"], [AC_MSG_ERROR([*** CRIU headers not found; install libcriu or use --disable-criu])])
 		AC_MSG_NOTICE([CRIU headers not found, building without CRIU support])])
 	PKG_CHECK_MODULES([CRIU_JOIN_NS], [criu > 3.16], [have_criu_join_ns="yes"], [have_criu_join_ns="no"
 	        AC_MSG_NOTICE([CRIU version doesn't support join-ns API])])
