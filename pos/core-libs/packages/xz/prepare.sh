@@ -1,6 +1,6 @@
-# autogen.sh generates the build system and the translated man pages
-# (po4a).
+# autogen.sh generates the build system; --no-po4a leaves out the
+# translated man pages (po4a).
 
 prep() {
-  prep_gen
+  ./autogen.sh --no-po4a
 }

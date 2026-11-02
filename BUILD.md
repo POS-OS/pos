@@ -1719,8 +1719,10 @@ and pos-extras builds can take its tools and libraries.
 * procps has the programs of Fedora's procps-ng: ps, top, free, pgrep,
   hugetop, pkill, pidof, pidwait, pmap, pwdx, skill, snice, slabtop, sysctl,
   tload, uptime, vmstat, w and watch, and libproc2. `w` reads sessions from
-  logind. Its translated man pages are made by po4a (a host requirement),
-  which leaves out those less than 80% translated.
+  logind.
+* Man pages are English only: po4a, which makes the translated ones of
+  util-linux, procps and xz, is not a build tool. util-linux-bootstrap has
+  none; util-linux, which obsoletes it, has them.
 * curl and libcurl: OpenSSL with OpenSSL's trust store (`/etc/ssl/cert.pem`,
   ca-certificates), HTTP/2 with nghttp2 (its library only), zlib and zstd.
   Not built for lack of the libraries: brotli, IDN (libidn2), libpsl,

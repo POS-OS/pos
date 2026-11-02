@@ -5,6 +5,7 @@ pkg() {
   # more does without libmagic: util-linux does not require file.
   # The install runs unprivileged: no chown/setuid at make install time, the
   # set-uid programs are marked with pkg_setuid below.
+  # No translated man pages (po4a): English ones only.
   # agetty runs login from a built-in path, /bin/login unless _PATH_LOGIN is
   # defined (include/pathnames.h); without it, a getty on a root without
   # /bin/login only says "Login is currently unavailable".
@@ -13,6 +14,7 @@ pkg() {
     --runstatedir=/run \
     --disable-static \
     --disable-pylibmount \
+    --disable-poman \
     --without-python \
     --disable-makeinstall-chown \
     --disable-makeinstall-setuid \
