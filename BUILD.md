@@ -787,7 +787,10 @@ separately (`pkg_strip`), as Fedora's debuginfo packages do. Each ELF
 program and shared library's debug info is copied to
 `work/builds/<id>/debug/<package>/pos/lib/debug/.build-id/<xx>/<rest>.debug`,
 named by its build ID, where gdb and debuginfod look for it; the file in
-`dest/<package>` is then stripped. The loader keeps its symbol table
+`dest/<package>` is then stripped. The debug files' DWARF sections are
+compressed with zlib, as Fedora's are: about 60% less unpacked, though
+the zstd archives that hold them come out slightly larger. zstd sections
+would need the toolchain's binutils built with zstd. The loader keeps its symbol table
 (valgrind needs it), static libraries lose only their debug info, and
 object files (`crt*.o`) are left as they are. A file without a build ID is
 stripped with a warning in the log. Set-uid bits, modes and hard links are
