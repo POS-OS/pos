@@ -23,6 +23,7 @@
 
 #include <sys/stat.h>
 #include <locale.h>
+#include <poll.h>
 
 static void disconnect_std_streams(void)
 {
@@ -285,7 +286,7 @@ int main(int argc, char *argv[])
 		exit(127);
 	}
 
-	close_runtime_fds();
+	close_runtime_fds(start_pipe_fd);
 
 	if (logging_is_passthrough())
 		disconnect_std_streams();
@@ -331,8 +332,9 @@ int main(int argc, char *argv[])
 	if (workerfd_stderr > -1)
 		close(workerfd_stderr);
 
+	guint console_tag = 0;
 	if (csname != NULL) {
-		g_unix_fd_add(console_socket_fd, G_IO_IN, terminal_accept_cb, csname);
+		console_tag = g_unix_fd_add(console_socket_fd, G_IO_IN, terminal_accept_cb, csname);
 		/* Process any SIGCHLD we may have missed before the signal handler was in place.  */
 		if (!opt_exec || !opt_terminal || container_status < 0) {
 			GHashTable *exit_status_cache = g_hash_table_new_full(g_int_hash, g_int_equal, g_free, g_free);
@@ -380,6 +382,19 @@ int main(int argc, char *argv[])
 			write_or_close_sync_fd(&sync_pipe_fd, to_report, error_msg);
 		}
 		nexitf("Failed to create container: exit status %d", get_exit_status(runtime_status));
+	}
+
+	/* The runtime may have sent the terminal and exited before the main loop accepted it. */
+	if (opt_terminal && mainfd_stdout == -1 && console_tag != 0) {
+		struct pollfd pfd = {.fd = console_socket_fd, .events = POLLIN};
+		int ready;
+		do
+			ready = poll(&pfd, 1, 0);
+		while (ready < 0 && errno == EINTR);
+		if (ready > 0) {
+			g_source_remove(console_tag);
+			terminal_accept_cb(console_socket_fd, G_IO_IN, csname);
+		}
 	}
 
 	if (opt_terminal && mainfd_stdout == -1) {
@@ -439,7 +454,14 @@ int main(int argc, char *argv[])
 	}
 
 	if (opt_timeout > 0) {
-		g_timeout_add_seconds(opt_timeout, timeout_cb, NULL);
+		/*
+		 * Do not use g_timeout_add_seconds here: it rounds the expiration
+		 * to a whole second boundary, and may fire up to 250ms early.
+		 */
+		if ((guint)opt_timeout <= G_MAXUINT / 1000)
+			g_timeout_add((guint)opt_timeout * 1000, timeout_cb, NULL);
+		else /* Too long for g_timeout_add, imprecision does not matter. */
+			g_timeout_add_seconds(opt_timeout, timeout_cb, NULL);
 	}
 
 	if (data.exit_status_cache) {

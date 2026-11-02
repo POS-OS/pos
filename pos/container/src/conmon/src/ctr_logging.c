@@ -1038,9 +1038,7 @@ static gboolean shift_backup_files(void)
 	close(validation_fd);
 
 	/* Shift existing backups from highest to lowest: .N-1 -> .N, .N-2 -> .N-1, etc. */
-	int loop_start = (opt_log_max_files > 1) ? opt_log_max_files : 2;
-
-	for (int i = loop_start; i >= 2; i--) {
+	for (int i = opt_log_max_files; i >= 2; i--) {
 		_cleanup_free_ char *from = g_strdup_printf("%s.%d", k8s_log_path, i - 1);
 		_cleanup_free_ char *to = g_strdup_printf("%s.%d", k8s_log_path, i);
 
@@ -1132,6 +1130,12 @@ static int validate_and_lock_rotation(int *parent_fd)
 
 	if (!validate_fd_path_security(old_fd, k8s_log_path)) {
 		nwarnf("File descriptor security validation failed");
+		lock_info.l_type = F_UNLCK;
+		if (fcntl(old_fd, F_SETLK, &lock_info) == -1) {
+			nwarnf("Cannot release log file lock: %m");
+		}
+		close(*parent_fd);
+		*parent_fd = -1;
 		return -1;
 	}
 
