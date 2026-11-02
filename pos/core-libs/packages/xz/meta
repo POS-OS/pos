@@ -1,4 +1,2 @@
 build-requires pos-link
 requires glibc
-# autogen.sh generates the translated man pages with po4a.
-prepare-requires po4a
