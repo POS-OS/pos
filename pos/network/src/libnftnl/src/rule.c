@@ -52,7 +52,7 @@ void nftnl_rule_free(const struct nftnl_rule *r)
 	if (r->flags & (1 << (NFTNL_RULE_CHAIN)))
 		xfree(r->chain);
 	if (r->flags & (1 << (NFTNL_RULE_USERDATA)))
-		xfree(r->user.data);
+		nftnl_mem_blob_free(&r->user_data);
 
 	xfree(r);
 }
@@ -85,7 +85,7 @@ void nftnl_rule_unset(struct nftnl_rule *r, uint16_t attr)
 	case NFTNL_RULE_POSITION_ID:
 		break;
 	case NFTNL_RULE_USERDATA:
-		xfree(r->user.data);
+		nftnl_mem_blob_free(&r->user_data);
 		break;
 	}
 
@@ -132,15 +132,9 @@ int nftnl_rule_set_data(struct nftnl_rule *r, uint16_t attr,
 		memcpy(&r->position, data, sizeof(r->position));
 		break;
 	case NFTNL_RULE_USERDATA:
-		if (r->flags & (1 << NFTNL_RULE_USERDATA))
-			xfree(r->user.data);
-
-		r->user.data = malloc(data_len);
-		if (!r->user.data)
+		if (nftnl_set_udata_attr(&r->user_data, &r->flags,
+					 attr, data, data_len) < 0)
 			return -1;
-
-		memcpy(r->user.data, data, data_len);
-		r->user.len = data_len;
 		break;
 	case NFTNL_RULE_ID:
 		memcpy(&r->id, data, sizeof(r->id));
@@ -207,8 +201,7 @@ const void *nftnl_rule_get_data(const struct nftnl_rule *r, uint16_t attr,
 		*data_len = sizeof(uint64_t);
 		return &r->position;
 	case NFTNL_RULE_USERDATA:
-		*data_len = r->user.len;
-		return r->user.data;
+		return nftnl_mem_blob_get(&r->user_data, data_len);
 	case NFTNL_RULE_ID:
 		*data_len = sizeof(uint32_t);
 		return &r->id;
@@ -279,10 +272,8 @@ void nftnl_rule_nlmsg_build_payload(struct nlmsghdr *nlh, struct nftnl_rule *r)
 		mnl_attr_put_u64(nlh, NFTA_RULE_HANDLE, htobe64(r->handle));
 	if (r->flags & (1 << NFTNL_RULE_POSITION))
 		mnl_attr_put_u64(nlh, NFTA_RULE_POSITION, htobe64(r->position));
-	if (r->flags & (1 << NFTNL_RULE_USERDATA)) {
-		mnl_attr_put(nlh, NFTA_RULE_USERDATA, r->user.len,
-			     r->user.data);
-	}
+	if (r->flags & (1 << NFTNL_RULE_USERDATA))
+		nftnl_mem_blob_attr_put(nlh, NFTA_RULE_USERDATA, &r->user_data);
 
 	if (!list_empty(&r->expr_list)) {
 		nest = mnl_attr_nest_start(nlh, NFTA_RULE_EXPRESSIONS);
@@ -333,7 +324,7 @@ static int nftnl_rule_parse_attr_cb(const struct nlattr *attr, void *data)
 	switch(type) {
 	case NFTA_RULE_TABLE:
 	case NFTA_RULE_CHAIN:
-		if (mnl_attr_validate(attr, MNL_TYPE_STRING) < 0)
+		if (mnl_attr_validate(attr, MNL_TYPE_NUL_STRING) < 0)
 			abi_breakage();
 		break;
 	case NFTA_RULE_HANDLE:
@@ -456,20 +447,14 @@ int nftnl_rule_nlmsg_parse(const struct nlmsghdr *nlh, struct nftnl_rule *r)
 		r->flags |= (1 << NFTNL_RULE_POSITION);
 	}
 	if (tb[NFTA_RULE_USERDATA]) {
+		uint16_t ulen =
+			mnl_attr_get_payload_len(tb[NFTA_RULE_USERDATA]);
 		const void *udata =
 			mnl_attr_get_payload(tb[NFTA_RULE_USERDATA]);
 
-		if (r->flags & (1 << NFTNL_RULE_USERDATA))
-			xfree(r->user.data);
-
-		r->user.len = mnl_attr_get_payload_len(tb[NFTA_RULE_USERDATA]);
-
-		r->user.data = malloc(r->user.len);
-		if (r->user.data == NULL)
+		if (nftnl_set_udata_attr(&r->user_data, &r->flags,
+					 NFTNL_RULE_USERDATA, udata, ulen) < 0)
 			return -1;
-
-		memcpy(r->user.data, udata, r->user.len);
-		r->flags |= (1 << NFTNL_RULE_USERDATA);
 	}
 	if (tb[NFTA_RULE_ID]) {
 		r->id = ntohl(mnl_attr_get_u32(tb[NFTA_RULE_ID]));
@@ -572,10 +557,10 @@ static int nftnl_rule_snprintf_default(char *buf, size_t remain,
 		SNPRINTF_BUFFER_SIZE(ret, remain, offset);
 	}
 
-	if (r->user.len) {
+	if (r->user_data.len) {
 		ret = snprintf(buf + offset, remain,
 			       "\n  userdata len %d sum 0x%x",
-			       r->user.len, bytesum(r->user.data, r->user.len));
+			       r->user_data.len, bytesum(r->user_data.data, r->user_data.len));
 		SNPRINTF_BUFFER_SIZE(ret, remain, offset);
 	}
 

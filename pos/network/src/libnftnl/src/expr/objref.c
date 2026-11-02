@@ -98,7 +98,7 @@ static int nftnl_expr_objref_cb(const struct nlattr *attr, void *data)
 		break;
 	case NFTA_OBJREF_IMM_NAME:
 	case NFTA_OBJREF_SET_NAME:
-		if (mnl_attr_validate(attr, MNL_TYPE_STRING) < 0)
+		if (mnl_attr_validate(attr, MNL_TYPE_NUL_STRING) < 0)
 			abi_breakage();
 		break;
 	case NFTA_OBJREF_SET_SREG:
@@ -121,12 +121,12 @@ static void nftnl_expr_objref_build(struct nlmsghdr *nlh,
 		mnl_attr_put_u32(nlh, NFTA_OBJREF_IMM_TYPE,
 				 htonl(objref->imm.type));
 	if (e->flags & (1 << NFTNL_EXPR_OBJREF_IMM_NAME))
-		mnl_attr_put_str(nlh, NFTA_OBJREF_IMM_NAME, objref->imm.name);
+		mnl_attr_put_strz(nlh, NFTA_OBJREF_IMM_NAME, objref->imm.name);
 	if (e->flags & (1 << NFTNL_EXPR_OBJREF_SET_SREG))
 		mnl_attr_put_u32(nlh, NFTA_OBJREF_SET_SREG,
 				 htonl(objref->set.sreg));
 	if (e->flags & (1 << NFTNL_EXPR_OBJREF_SET_NAME))
-		mnl_attr_put_str(nlh, NFTA_OBJREF_SET_NAME, objref->set.name);
+		mnl_attr_put_strz(nlh, NFTA_OBJREF_SET_NAME, objref->set.name);
 	if (e->flags & (1 << NFTNL_EXPR_OBJREF_SET_ID))
 		mnl_attr_put_u32(nlh, NFTA_OBJREF_SET_ID,
 				 htonl(objref->set.id));

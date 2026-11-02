@@ -22,10 +22,7 @@ struct nftnl_obj {
 	uint32_t		flags;
 	uint64_t		handle;
 
-	struct {
-		void		*data;
-		uint32_t	len;
-	} user;
+	struct nftnl_mem_blob	user_data;
 
 	union {
 		struct nftnl_obj_counter {

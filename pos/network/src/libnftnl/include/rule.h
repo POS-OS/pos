@@ -12,10 +12,7 @@ struct nftnl_rule {
 	uint64_t	position;
 	uint32_t	id;
 	uint32_t	position_id;
-	struct {
-			void		*data;
-			uint32_t	len;
-	} user;
+	struct nftnl_mem_blob user_data;
 	struct {
 			uint32_t	flags;
 			uint32_t	proto;

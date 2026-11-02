@@ -136,16 +136,37 @@ void __noreturn __abi_breakage(const char *file, int line, const char *reason)
        exit(EXIT_FAILURE);
 }
 
+int nftnl_set_udata_attr(struct nftnl_mem_blob *b, uint32_t *flags,
+			 uint16_t attr, const void *data, uint32_t data_len)
+{
+	void *tmp = malloc(data_len);
+
+	if (!tmp)
+		return -1;
+
+	memcpy(tmp, data, data_len);
+
+	if (*flags & (1 << attr))
+		xfree(b->data);
+
+	b->data = tmp;
+	b->len = data_len;
+	*flags |= (1 << attr);
+	return 0;
+}
+
 int nftnl_set_str_attr(const char **dptr, uint32_t *flags,
 		       uint16_t attr, const void *data, uint32_t data_len)
 {
+	char *new = strndup(data, data_len);
+
+	if (!new)
+		return -1;
+
 	if (*flags & (1 << attr))
 		xfree(*dptr);
 
-	*dptr = strndup(data, data_len);
-	if (!*dptr)
-		return -1;
-
+	*dptr = new;
 	*flags |= (1 << attr);
 	return 0;
 }
@@ -179,14 +200,15 @@ void nftnl_attr_put_ifname(struct nlmsghdr *nlh, const char *ifname)
 
 char *nftnl_attr_get_ifname(const struct nlattr *attr)
 {
+	uint16_t dlen = mnl_attr_get_payload_len(attr);
 	const char *dev = mnl_attr_get_str(attr);
 	char buf[IFNAMSIZ];
 
 	switch (mnl_attr_get_type(attr)) {
 	case NFTA_DEVICE_NAME:
-		return strdup(dev);
+		return strndup(dev, dlen);
 	case NFTA_DEVICE_PREFIX:
-		snprintf(buf, IFNAMSIZ, "%s*", dev);
+		snprintf(buf, IFNAMSIZ, "%.*s*", (int)dlen, dev);
 		return strdup(buf);
 	default:
 		return NULL;
@@ -196,14 +218,14 @@ char *nftnl_attr_get_ifname(const struct nlattr *attr)
 int nftnl_parse_str_attr(const struct nlattr *tb, int attr,
 			 const char **field, uint32_t *flags)
 {
+	const char *s;
+	uint32_t len;
+
 	if (!tb)
 		return 0;
 
-	if (*flags & (1 << attr))
-		xfree(*field);
-	*field = strdup(mnl_attr_get_str(tb));
-	if (!*field)
-		return -1;
-	*flags |= (1 << attr);
-	return 0;
+	len = mnl_attr_get_payload_len(tb);
+	s = mnl_attr_get_str(tb);
+
+	return nftnl_set_str_attr(field, flags, attr, s, len);
 }

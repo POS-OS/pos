@@ -131,7 +131,7 @@ static int nftnl_expr_dynset_cb(const struct nlattr *attr, void *data)
 			abi_breakage();
 		break;
 	case NFTA_DYNSET_SET_NAME:
-		if (mnl_attr_validate(attr, MNL_TYPE_STRING) < 0)
+		if (mnl_attr_validate(attr, MNL_TYPE_NUL_STRING) < 0)
 			abi_breakage();
 		break;
 	case NFTA_DYNSET_EXPR:

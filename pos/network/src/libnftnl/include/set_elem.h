@@ -2,6 +2,7 @@
 #define _LIBNFTNL_SET_ELEM_INTERNAL_H_
 
 #include <data_reg.h>
+#include "utils.h"
 
 struct nftnl_set_elem {
 	struct list_head	head;
@@ -14,10 +15,7 @@ struct nftnl_set_elem {
 	uint64_t		timeout;
 	uint64_t		expiration;
 	const char		*objref;
-	struct {
-		void		*data;
-		uint32_t	len;
-	} user;
+	struct nftnl_mem_blob	user;
 };
 
 int nftnl_set_elem_snprintf_default(char *buf, size_t size,

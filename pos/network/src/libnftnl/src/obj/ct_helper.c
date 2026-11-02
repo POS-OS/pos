@@ -67,7 +67,7 @@ static int nftnl_obj_ct_helper_cb(const struct nlattr *attr, void *data)
 
 	switch (type) {
 	case NFTA_CT_HELPER_NAME:
-		if (mnl_attr_validate(attr, MNL_TYPE_STRING) < 0)
+		if (mnl_attr_validate(attr, MNL_TYPE_NUL_STRING) < 0)
 			abi_breakage();
 		if (mnl_attr_get_payload_len(attr) >= sizeof(helper->name))
 			abi_breakage();
@@ -92,7 +92,7 @@ nftnl_obj_ct_helper_build(struct nlmsghdr *nlh, const struct nftnl_obj *e)
 	struct nftnl_obj_ct_helper *helper = nftnl_obj_data(e);
 
 	if (e->flags & (1 << NFTNL_OBJ_CT_HELPER_NAME))
-		mnl_attr_put_str(nlh, NFTA_CT_HELPER_NAME, helper->name);
+		mnl_attr_put_strz(nlh, NFTA_CT_HELPER_NAME, helper->name);
 	if (e->flags & (1 << NFTNL_OBJ_CT_HELPER_L3PROTO))
 		mnl_attr_put_u16(nlh, NFTA_CT_HELPER_L3PROTO, htons(helper->l3proto));
 	if (e->flags & (1 << NFTNL_OBJ_CT_HELPER_L4PROTO))

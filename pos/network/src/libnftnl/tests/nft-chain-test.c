@@ -125,6 +125,9 @@ int main(int argc, char *argv[])
 
 	cmp_nftnl_chain(a, b);
 
+	nftnl_chain_unset(a, NFTNL_CHAIN_DEVICES);
+	nftnl_chain_set_array(a, NFTNL_CHAIN_DEVICES, devs);
+
 	nftnl_chain_free(a);
 	nftnl_chain_free(b);
 

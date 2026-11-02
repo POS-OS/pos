@@ -36,7 +36,6 @@ struct nftnl_parse_ctx {
 		struct nftnl_chain	*chain;
 		struct nftnl_rule		*rule;
 		struct nftnl_set		*set;
-		struct nftnl_set_elem	*set_elem;
 	};
 	void *data;
 
@@ -158,9 +157,9 @@ void nftnl_ruleset_ctx_free(const struct nftnl_parse_ctx *ctx)
 		nftnl_rule_free(ctx->rule);
 		break;
 	case NFTNL_RULESET_SET:
-	case NFTNL_RULESET_SET_ELEMS:
 		nftnl_set_free(ctx->set);
 		break;
+	case NFTNL_RULESET_SET_ELEMS:
 	case NFTNL_RULESET_RULESET:
 	case NFTNL_RULESET_UNSPEC:
 		break;

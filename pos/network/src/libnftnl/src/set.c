@@ -48,7 +48,7 @@ void nftnl_set_free(const struct nftnl_set *s)
 	if (s->flags & (1 << NFTNL_SET_NAME))
 		xfree(s->name);
 	if (s->flags & (1 << NFTNL_SET_USERDATA))
-		xfree(s->user.data);
+		nftnl_mem_blob_free(&s->user_data);
 
 	list_for_each_entry_safe(expr, next, &s->expr_list, head) {
 		list_del(&expr->head);
@@ -102,7 +102,7 @@ void nftnl_set_unset(struct nftnl_set *s, uint16_t attr)
 	case NFTNL_SET_COUNT:
 		break;
 	case NFTNL_SET_USERDATA:
-		xfree(s->user.data);
+		nftnl_mem_blob_free(&s->user_data);
 		break;
 	case NFTNL_SET_EXPR:
 	case NFTNL_SET_EXPRESSIONS:
@@ -188,6 +188,7 @@ int nftnl_set_set_data(struct nftnl_set *s, uint16_t attr, const void *data,
 		if (data_len > sizeof(s->desc.field_len))
 			return -1;
 
+		memset(&s->desc.field_len, 0, sizeof(s->desc.field_len));
 		memcpy(&s->desc.field_len, data, data_len);
 		for (s->desc.field_count = 0;
 		     s->desc.field_count < NFT_REG32_COUNT;
@@ -206,14 +207,9 @@ int nftnl_set_set_data(struct nftnl_set *s, uint16_t attr, const void *data,
 		memcpy(&s->elemcount, data, sizeof(s->elemcount));
 		break;
 	case NFTNL_SET_USERDATA:
-		if (s->flags & (1 << NFTNL_SET_USERDATA))
-			xfree(s->user.data);
-
-		s->user.data = malloc(data_len);
-		if (!s->user.data)
+		if (nftnl_set_udata_attr(&s->user_data, &s->flags,
+					 attr, data, data_len) < 0)
 			return -1;
-		memcpy(s->user.data, data, data_len);
-		s->user.len = data_len;
 		break;
 	case NFTNL_SET_EXPR:
 		list_for_each_entry_safe(expr, tmp, &s->expr_list, head) {
@@ -257,8 +253,6 @@ EXPORT_SYMBOL(nftnl_set_get_data);
 const void *nftnl_set_get_data(const struct nftnl_set *s, uint16_t attr,
 			       uint32_t *data_len)
 {
-	struct nftnl_expr *expr;
-
 	if (!(s->flags & (1 << attr)))
 		return NULL;
 
@@ -315,12 +309,13 @@ const void *nftnl_set_get_data(const struct nftnl_set *s, uint16_t attr,
 		*data_len = sizeof(uint32_t);
 		return &s->elemcount;
 	case NFTNL_SET_USERDATA:
-		*data_len = s->user.len;
-		return s->user.data;
+		return nftnl_mem_blob_get(&s->user_data, data_len);
 	case NFTNL_SET_EXPR:
-		list_for_each_entry(expr, &s->expr_list, head)
-			break;
-		return expr;
+		*data_len = 0;
+		if (list_empty(&s->expr_list))
+			return NULL;
+
+		return list_entry(s->expr_list.next, struct nftnl_expr, head);
 	}
 	return NULL;
 }
@@ -434,7 +429,7 @@ void nftnl_set_nlmsg_build_payload(struct nlmsghdr *nlh, struct nftnl_set *s)
 	if (s->flags & (1 << NFTNL_SET_GC_INTERVAL))
 		mnl_attr_put_u32(nlh, NFTA_SET_GC_INTERVAL, htonl(s->gc_interval));
 	if (s->flags & (1 << NFTNL_SET_USERDATA))
-		mnl_attr_put(nlh, NFTA_SET_USERDATA, s->user.len, s->user.data);
+		nftnl_mem_blob_attr_put(nlh, NFTA_SET_USERDATA, &s->user_data);
 	if (!list_empty(&s->expr_list)) {
 		struct nftnl_expr *expr;
 
@@ -497,7 +492,7 @@ static int nftnl_set_parse_attr_cb(const struct nlattr *attr, void *data)
 	case NFTA_SET_TABLE:
 	case NFTA_SET_NAME:
 	case NFTA_SET_TYPE:
-		if (mnl_attr_validate(attr, MNL_TYPE_STRING) < 0)
+		if (mnl_attr_validate(attr, MNL_TYPE_NUL_STRING) < 0)
 			abi_breakage();
 		break;
 	case NFTA_SET_HANDLE:

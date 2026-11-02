@@ -54,7 +54,7 @@ static int nftnl_obj_secmark_cb(const struct nlattr *attr, void *data)
 
 	switch(type) {
 	case NFTA_SECMARK_CTX:
-		if (mnl_attr_validate(attr, MNL_TYPE_STRING) < 0)
+		if (mnl_attr_validate(attr, MNL_TYPE_NUL_STRING) < 0)
 			abi_breakage();
 		if (mnl_attr_get_payload_len(attr) >= sizeof(secmark->ctx))
 			abi_breakage();
@@ -71,7 +71,7 @@ nftnl_obj_secmark_build(struct nlmsghdr *nlh, const struct nftnl_obj *e)
 	struct nftnl_obj_secmark *secmark = nftnl_obj_data(e);
 
 	if (e->flags & (1 << NFTNL_OBJ_SECMARK_CTX))
-		mnl_attr_put_str(nlh, NFTA_SECMARK_CTX, secmark->ctx);
+		mnl_attr_put_strz(nlh, NFTA_SECMARK_CTX, secmark->ctx);
 }
 
 static int

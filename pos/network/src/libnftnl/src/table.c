@@ -31,10 +31,7 @@ struct nftnl_table {
 	uint32_t	use;
 	uint32_t	flags;
 	uint32_t	owner;
-	struct {
-		void		*data;
-		uint32_t	len;
-	} user;
+	struct nftnl_mem_blob user;
 };
 
 EXPORT_SYMBOL(nftnl_table_alloc);
@@ -49,7 +46,7 @@ void nftnl_table_free(const struct nftnl_table *t)
 	if (t->flags & (1 << NFTNL_TABLE_NAME))
 		xfree(t->name);
 	if (t->flags & (1 << NFTNL_TABLE_USERDATA))
-		xfree(t->user.data);
+		nftnl_mem_blob_free(&t->user);
 
 	xfree(t);
 }
@@ -71,7 +68,7 @@ void nftnl_table_unset(struct nftnl_table *t, uint16_t attr)
 		xfree(t->name);
 		break;
 	case NFTNL_TABLE_USERDATA:
-		xfree(t->user.data);
+		nftnl_mem_blob_free(&t->user);
 		break;
 	case NFTNL_TABLE_FLAGS:
 	case NFTNL_TABLE_HANDLE:
@@ -115,14 +112,9 @@ int nftnl_table_set_data(struct nftnl_table *t, uint16_t attr,
 		memcpy(&t->use, data, sizeof(t->use));
 		break;
 	case NFTNL_TABLE_USERDATA:
-		if (t->flags & (1 << NFTNL_TABLE_USERDATA))
-			xfree(t->user.data);
-
-		t->user.data = malloc(data_len);
-		if (!t->user.data)
+		if (nftnl_set_udata_attr(&t->user, &t->flags,
+					 attr, data, data_len) < 0)
 			return -1;
-		memcpy(t->user.data, data, data_len);
-		t->user.len = data_len;
 		break;
 	case NFTNL_TABLE_OWNER:
 		memcpy(&t->owner, data, sizeof(t->owner));
@@ -186,8 +178,7 @@ const void *nftnl_table_get_data(const struct nftnl_table *t, uint16_t attr,
 		*data_len = sizeof(uint32_t);
 		return &t->use;
 	case NFTNL_TABLE_USERDATA:
-		*data_len = t->user.len;
-		return t->user.data;
+		return nftnl_mem_blob_get(&t->user, data_len);
 	case NFTNL_TABLE_OWNER:
 		*data_len = sizeof(uint32_t);
 		return &t->owner;
@@ -239,7 +230,7 @@ void nftnl_table_nlmsg_build_payload(struct nlmsghdr *nlh, const struct nftnl_ta
 	if (t->flags & (1 << NFTNL_TABLE_FLAGS))
 		mnl_attr_put_u32(nlh, NFTA_TABLE_FLAGS, htonl(t->table_flags));
 	if (t->flags & (1 << NFTNL_TABLE_USERDATA))
-		mnl_attr_put(nlh, NFTA_TABLE_USERDATA, t->user.len, t->user.data);
+		nftnl_mem_blob_attr_put(nlh, NFTA_TABLE_USERDATA, &t->user);
 }
 
 static int nftnl_table_parse_attr_cb(const struct nlattr *attr, void *data)
@@ -252,7 +243,7 @@ static int nftnl_table_parse_attr_cb(const struct nlattr *attr, void *data)
 
 	switch(type) {
 	case NFTA_TABLE_NAME:
-		if (mnl_attr_validate(attr, MNL_TYPE_STRING) < 0)
+		if (mnl_attr_validate(attr, MNL_TYPE_NUL_STRING) < 0)
 			abi_breakage();
 		break;
 	case NFTA_TABLE_HANDLE:

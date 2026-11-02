@@ -118,7 +118,7 @@ static int nftnl_trace_parse_attr_cb(const struct nlattr *attr, void *data)
 		break;
 	case NFTA_TRACE_CHAIN:
 	case NFTA_TRACE_TABLE:
-		if (mnl_attr_validate(attr, MNL_TYPE_STRING) < 0)
+		if (mnl_attr_validate(attr, MNL_TYPE_NUL_STRING) < 0)
 			abi_breakage();
 		break;
 	case NFTA_TRACE_RULE_HANDLE:
@@ -308,7 +308,7 @@ static int nftnl_trace_parse_verdict_cb(const struct nlattr *attr, void *data)
 		tb[type] = attr;
 		break;
 	case NFTA_VERDICT_CHAIN:
-		if (mnl_attr_validate(attr, MNL_TYPE_STRING) < 0)
+		if (mnl_attr_validate(attr, MNL_TYPE_NUL_STRING) < 0)
 			abi_breakage();
 		tb[type] = attr;
 		break;
@@ -320,7 +320,7 @@ static int nftnl_trace_parse_verdict_cb(const struct nlattr *attr, void *data)
 static int nftnl_trace_parse_verdict(const struct nlattr *attr,
 				     struct nftnl_trace *t)
 {
-	struct nlattr *tb[NFTA_VERDICT_MAX+1];
+	struct nlattr *tb[NFTA_VERDICT_MAX+1] = {};
 
 	if (mnl_attr_parse_nested(attr, nftnl_trace_parse_verdict_cb, tb) < 0)
 		return -1;

@@ -14,6 +14,7 @@ void nftnl_str_array_clear(struct nftnl_str_array *sa)
 	while (sa->len > 0)
 		free(sa->array[--sa->len]);
 	free(sa->array);
+	sa->array = NULL;
 }
 
 int nftnl_str_array_set(struct nftnl_str_array *sa, const char * const *array)

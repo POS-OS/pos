@@ -53,7 +53,10 @@ EXPORT_SYMBOL(nftnl_udata_buf_put);
 void nftnl_udata_buf_put(struct nftnl_udata_buf *buf, const void *data,
 			 uint32_t len)
 {
-	memcpy(buf->data, data, len <= buf->size ? len : buf->size);
+	if (len > buf->size)
+		len = buf->size;
+
+	memcpy(buf->data, data, len);
 	buf->end = buf->data + len;
 }
 

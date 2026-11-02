@@ -25,7 +25,7 @@ static int data_attr_cb(const struct nlattr *attr, void *data)
 
 	switch(type) {
 	case NFTA_COMPAT_NAME:
-		if (mnl_attr_validate(attr, MNL_TYPE_STRING) < 0) {
+		if (mnl_attr_validate(attr, MNL_TYPE_NUL_STRING) < 0) {
 			perror("mnl_attr_validate");
 			return MNL_CB_ERROR;
 		}

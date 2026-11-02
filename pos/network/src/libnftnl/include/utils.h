@@ -19,7 +19,7 @@
 
 #define __noreturn	__attribute__((__noreturn__))
 
-#define xfree(ptr)	free((void *)ptr);
+#define xfree(ptr)	free((void *)ptr)
 
 #define div_round_up(n, d)	(((n) + (d) - 1) / (d))
 
@@ -68,6 +68,13 @@ void __nftnl_assert_attr_exists(uint16_t attr, uint16_t attr_max,
 
 #define array_size(arr)		(sizeof(arr) / sizeof((arr)[0]) + __must_be_array(arr))
 
+struct nftnl_mem_blob {
+	void *data;
+	uint32_t len;
+};
+#define nftnl_mem_blob_attr_put(nlh, type, b) \
+	mnl_attr_put((nlh), (type), (b)->len, (b)->data)
+
 const char *nftnl_family2str(uint32_t family);
 
 const char *nftnl_verdict2str(uint32_t verdict);
@@ -80,6 +87,8 @@ int nftnl_fprintf(FILE *fpconst, const void *obj, uint32_t cmd, uint32_t type,
 			  	     uint32_t cmd, uint32_t type,
 				     uint32_t flags));
 
+int nftnl_set_udata_attr(struct nftnl_mem_blob *b, uint32_t *flags,
+			uint16_t attr, const void *data, uint32_t data_len);
 int nftnl_set_str_attr(const char **dptr, uint32_t *flags,
 		       uint16_t attr, const void *data, uint32_t data_len);
 
@@ -99,6 +108,21 @@ static inline uint32_t bytesum(uint8_t *buf, size_t buflen)
 		ret += buf[buflen];
 
 	return ret;
+}
+
+static inline void nftnl_mem_blob_free(const struct nftnl_mem_blob *const_b)
+{
+	struct nftnl_mem_blob *b = (struct nftnl_mem_blob *)const_b;
+
+	xfree(b->data);
+	b->data = NULL;
+	b->len = 0;
+}
+
+static inline const void *nftnl_mem_blob_get(const struct nftnl_mem_blob *b, uint32_t *len)
+{
+	*len = b->len;
+	return b->data;
 }
 
 #endif

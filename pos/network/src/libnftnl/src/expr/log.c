@@ -100,7 +100,7 @@ static int nftnl_expr_log_cb(const struct nlattr *attr, void *data)
 
 	switch(type) {
 	case NFTA_LOG_PREFIX:
-		if (mnl_attr_validate(attr, MNL_TYPE_STRING) < 0)
+		if (mnl_attr_validate(attr, MNL_TYPE_NUL_STRING) < 0)
 			abi_breakage();
 		break;
 	case NFTA_LOG_GROUP:
