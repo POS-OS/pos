@@ -541,7 +541,8 @@ setting picks them when a build is created (`info`: `tools-reference`):
   of the tools image's, and `pos-link` puts the build's prefix and the sdk
   in front of them. The profile's `host-replaces` names the Fedora
   packages of recipes' `host-requires` and `prepare-requires` its tools
-  stand for (meson, ninja-build, cmake, python3 and its modules, perl):
+  stand for (meson, ninja-build, cmake, python3 and its modules, perl,
+  git-core, texinfo-tex, wget):
   the tools image leaves them out, so a step runs the extras' copy, not
   Fedora's. Those recipes keep the Fedora names for `fedora` tools;
   outputs keep theirs.
@@ -1763,15 +1764,6 @@ systemd-resolved configure the network without it.
   writes its rules with (see "Container stage"); no iptables
   compatibility. nftables.service loads `/etc/nftables/rules/main.nft`
   where there is one.
-* GNU Wget2 and libwget, as Fedora has it, with `wget` a link to `wget2`
-  (Fedora's wget2-wget): OpenSSL (its default is GnuTLS) with OpenSSL's
-  trust store, HTTP/2 with nghttp2, pcre2, and zlib, zstd, xz and bzip2
-  encodings; no libpsl, HSTS preload list (libhsts), IDN or brotli, and no
-  man page (pandoc). Wget2 has no FTP or WARC, which Wget 1 had. Built from
-  git with gnulib bootstrap, as the GNU packages of the base stage,
-  synced without its submodules (gnulib is POS's, the wiki is not needed).
-* rsync with popt, zlib and zstd from POS (not its included copies) and
-  OpenSSL; no lz4 or xxhash. Its daemon units are installed.
 * OpenSSH (ssh, sshd, scp, sftp, ssh-agent, ssh-keygen): configuration in
   `/etc/ssh` (factory), PAM on (the shipped `sshd_config`, edited in
   prepare) with pam's vendor file `sshd`, the privilege separation user
@@ -1781,7 +1773,7 @@ systemd-resolved configure the network without it.
   starts. No Kerberos, libedit, FIDO security keys or SELinux.
 
 Wi-Fi (iwd, iw, wireless-regdb) and the packet capture tools are not in
-the stage yet. RPM systems have no package of the stage: their network
+the stage yet. Wget2 and rsync are pos-extras' (curl is the base's). RPM systems have no package of the stage: their network
 tools are Fedora's (see "RPM packages").
 
 # Container stage

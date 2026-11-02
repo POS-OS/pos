@@ -90,7 +90,7 @@ if [[ -f /pos/lib/pos/stages/pos-network.raw ]]; then
   check "pos-stage enable network" bash -c 'pos-stage enable network &&
     pos-stage list | grep -qx "network enabled" || { systemd-sysext status; false; }'
   check "network stage tools" bash -c 'ip -br link && ping -c 1 127.0.0.1 &&
-    wget2 --version && ssh -V && nft --version && rsync --version'
+    ssh -V && nft --version'
 fi
 # The storage stage: on a loop device, an LVM volume group with a LUKS2
 # volume holding XFS, and a Btrfs volume.

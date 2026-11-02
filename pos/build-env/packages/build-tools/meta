@@ -8,14 +8,19 @@ requires bash coreutils findutils gawk grep sed tar gzip xz zstd bzip2 cpio file
 requires make m4 autoconf automake autoconf-archive libtool pkgconf
 requires bison flex gperf texinfo help2man gettext-tools
 requires perl python3 git diffutils patch patchelf
-# Python modules of recipes' build steps (rsync's md2man, systemd's meson,
-# qemu's configure venv), in place of their Fedora host-requires.
-requires python3-setuptools python3-wheel python3-commonmark python3-jinja2
-requires python3-pyyaml python3-pyelftools
+# Python modules of recipes' build steps (systemd's meson, qemu's
+# configure venv), in place of their Fedora host-requires.
+requires python3-setuptools python3-wheel python3-jinja2 python3-pyyaml
+requires python3-pyelftools
 # meson, ninja and cmake: the build systems recipes build with.
 requires meson ninja cmake
+# wget: gnulib bootstrap fetches translations with it.
+requires wget2
 # The Fedora packages of recipes' host-requires and prepare-requires that
 # these tools stand for: with them, the tools image leaves those out.
 host-replaces meson ninja-build cmake python3 perl
-host-replaces python3-setuptools python3-wheel python3-pip python3-CommonMark
-host-replaces python3-jinja2 python3-pyyaml python3-pyelftools
+host-replaces python3-setuptools python3-wheel python3-pip python3-jinja2
+host-replaces python3-pyyaml python3-pyelftools
+# git's, texinfo's and wget2's: qemu's and smartmontools' prepare clone,
+# gnulib bootstrap checks for texi2pdf and fetches translations.
+host-replaces git-core texinfo-tex wget
