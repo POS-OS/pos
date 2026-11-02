@@ -328,9 +328,10 @@ its build container is given (`build_key`): the source's key and time
 recipe's directory, the recipe of its source (which a bootstrap recipe
 sources) and `buildsys/pkg.sh`; each package of the environment, a
 reference's by the reference, this build's by its `content` and its
-recipe's env.sh; the tools image, by its base and the Fedora packages
-installed on it, since every build makes an image of its own; the tools
-reference; and the prefixes. A build has no network, so two builds of a
+recipe's env.sh; the tools reference; the Fedora packages, with their
+versions, that the package's `host-requires` name and those of the host
+and profile packages of its environment (`host-base`, with Fedora's
+tools), as the build's tools image has them; and the prefixes. A build has no network, so two builds of a
 package with the same key are builds of the same inputs. The paths of the
 checkout and of the build directory are not in it: builds must not depend
 on them. The key is computed from what the checkout holds, without
@@ -344,8 +345,9 @@ built against a bootstrap package (systemd against util-linux-bootstrap)
 stays as it is; what changes what it requires is its meta, in its key. A
 package built before build keys is kept. `run` drops the stale packages
 and builds them along with its targets. A tools image made again (after
-`clean`, or for a package's new `host-requires`) with other Fedora packages
-makes every package stale.
+`clean`, or for a package's new `host-requires`), or another build's,
+makes stale only the packages whose Fedora packages it has in other
+versions. A Fedora library that a host tool links is not in the key.
 
 `content <hash>` is a hash of what the package installed (every path, its
 type, mode and contents), all but its meta, which names the build.

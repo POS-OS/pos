@@ -61,6 +61,8 @@ CHECKS=yes
 NO_CACHE=
 # The stale packages of the build (stale_check) and why.
 declare -A STALE=() CHECKED=()
+# The Fedora packages of the tools image by host-requires (tools_versions).
+declare -A FEDORA=()
 # Who commits VERSION bumps, as the source syncs are committed.
 bot_name=pos-bot bot_email=pos-bot@devzero.dk
 sources=$base/work/sources
@@ -967,18 +969,31 @@ source_id() {
   git -C "$base" log -1 --format=%ct HEAD -- "${SRCPATH[$s]}"
 }
 
-# The tools image by what it holds, for build keys: its base and the
-# Fedora packages installed on it. Each build makes an image of its own,
-# whose ID no other build shares, so the ID would key no build alike.
+# The Fedora packages of the tools image that the recipes' host-requires
+# name, for build keys (build_key): each name with the packages that
+# provide it (name-version-release.arch), or - when none does (a
+# host-requires the build tools replace). A key names the versions of the
+# Fedora packages its build uses, not the image: each build makes an image
+# of its own, with the Fedora packages of the day.
 # Inputs:
-#   bdir    active build directory
+#   bdir, PKGS, HREQ
 # Outputs:
-#   the key, 16 hex digits
-tools_key() {
-  {
-    build_info tools-base
-    host_podman run --rm --network=none "$(build_info tools-image)" rpm -qa --qf '%{NEVRA}\n' | sort
-  } | sha256sum | cut -c1-16
+#   FEDORA (host-requires name -> its packages)
+tools_versions() {
+  local p n v
+  FEDORA=()
+  # shellcheck disable=SC2016
+  while read -r n v; do
+    FEDORA[$n]=$v
+  done < <(for p in "${PKGS[@]}"; do echo "${HREQ[$p]}"; done | xargs -n1 | sort -u |
+             host_podman run --rm -i --network=none "$(build_info tools-image)" bash -c '
+               while read -r n; do
+                 if v=$(rpm -q --whatprovides --qf "%{NEVRA}\n" "$n" 2>/dev/null); then
+                   echo "$n $(sort <<<"$v" | xargs)"
+                 else
+                   echo "$n -"
+                 fi
+               done')
 }
 
 # The key of a package build: a hash of everything build_one hands the
@@ -991,11 +1006,14 @@ tools_key() {
 #     bootstrap recipe sources (util-linux-bootstrap), and buildsys/pkg.sh;
 #   - the environment: each entry's identity (env_key), and the env.sh
 #     scripts of this build's packages in it;
-#   - the tools image (tools_key) and reference, and the prefixes it
-#     installs into.
+#   - the build tools: the tools reference, and the Fedora packages
+#     (tools_versions) that the package's host-requires name and those of
+#     the host and profile packages of its environment (host-base, with
+#     Fedora's tools);
+#   - the prefixes.
 # Inputs:
 #   $1    package name
-#   ENV (env_of, or as the package was built: stale_check), TOOLS_KEY,
+#   ENV (env_of, or as the package was built: stale_check), FEDORA,
 #   TOOLS_REF, PREFIX
 # Outputs:
 #   the key, 16 hex digits
@@ -1020,7 +1038,13 @@ build_key() {
       d=$base/${PKGDIR[$q]:-}/env.sh
       is_ref "$q" || [[ -z ${PKGDIR[$q]:-} || ! -f $d ]] || echo "env-script $q $(sha256sum <"$d")"
     done
-    echo "tools $TOOLS_KEY $TOOLS_REF"
+    echo "tools $TOOLS_REF"
+    for d in $(for q in "$p" "${ENV[@]}"; do
+                 [[ $q == "$p" || ${KIND[$q]:-} == host || ${KIND[$q]:-} == profile ]] || continue
+                 echo "${HREQ[$q]:-}"
+               done | xargs -n1 | sort -u); do
+      echo "fedora $d ${FEDORA[$d]:--}"
+    done
     echo "prefix $PREFIX $(sdk_prefix) $(tools_prefix)"
     for q in "$p" ${OUTS[$p]}; do
       echo "output $q $(pkg_prefix "$q")"
@@ -1039,7 +1063,7 @@ build_key() {
 # when its key matches, since that key names what it installed before.
 # Inputs:
 #   $1      package name
-#   BUILT, bdir, TOOLS_KEY
+#   BUILT, bdir, FEDORA
 # Outputs:
 #   STALE[$1] (why), CHECKED[$1]
 stale_one() {
@@ -1073,7 +1097,7 @@ stale_one() {
 # The stale packages of this build (stale_one), which run builds again:
 # they are not built (BUILT), and neither are their outputs.
 # Inputs:
-#   BUILT, bdir, TOOLS_KEY
+#   BUILT, bdir, FEDORA
 # Outputs:
 #   STALE (package -> why), BUILT
 stale_check() {
@@ -1107,7 +1131,7 @@ drop_package() {
 # again, from the cache when a build of their key is there. run adds them
 # to its targets: what was built in the build stays built in it.
 # Inputs:
-#   BUILT, bdir, id, TOOLS_KEY
+#   BUILT, bdir, id, FEDORA
 stale_drop() {
   local p
   stale_check
@@ -1241,7 +1265,7 @@ cmd_plan() {
     # The stale packages, which run builds again; the tools image is
     # needed for their keys.
     if host_podman image exists "$(build_info tools-image)"; then
-      TOOLS_KEY=$(tools_key)
+      tools_versions
       stale_check
       for t in $(printf '%s\n' "${!STALE[@]}" | sort); do
         echo "$t: ${STALE[$t]}"
@@ -1435,7 +1459,7 @@ cmd_run() {
   targets_check "${TARGETS[@]}"
   tools_ensure
   TOOLS_ID=$(host_podman image inspect --format '{{.Id}}' "$(build_info tools-image)")
-  TOOLS_KEY=$(tools_key)
+  tools_versions
   stale_drop
   TARGETS+=("${!STALE[@]}")
 
