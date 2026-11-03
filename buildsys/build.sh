@@ -1539,8 +1539,9 @@ cmd_prepare() {
   local -A seen=()
   id=$(current_id) || die "no current build; start one with run --new"
   bdir=$builds/$id
-  PIPELINE=$(build_info pipeline)
-  PIPELINE=${PIPELINE:-pos}
+  # The build's references, as run has them: prepare keys and composes
+  # with the tools reference, and a key made without it is not run's.
+  build_load
   title_init
   ((${#args[@]})) || mapfile -t args < <(pipeline_targets)
   targets_expand "${args[@]}"
