@@ -330,8 +330,9 @@ pkg_cargo() {
 }
 
 # Environment for Go builds: Go modules from the source's committed
-# vendor directory, no network and no other Go toolchain than the build
-# host's (host-requires golang). cgo compiles with CFLAGS and links with
+# vendor directory, no network and no other Go toolchain than the
+# environment's (build-requires go: the toolchain reference's, whose
+# env.sh puts it on PATH). cgo compiles with CFLAGS and links with
 # the environment's gcc and LDFLAGS (the POS loader, /pos/lib): external
 # linking, which programs that use cgo get, and which -linkmode=external
 # asks for where a recipe passes its own -ldflags.

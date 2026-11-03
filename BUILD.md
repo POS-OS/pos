@@ -449,9 +449,10 @@ are Fedora packages, in the build's tools image (see "Build containers");
 the tools every build gets are `host-base`'s or `build-tools`' (see
 "Build tools").
 
-Go and Rust packages (the container stage's) build with Fedora's
-compilers, from the tools image (`host-requires golang`, `rust cargo`):
-POS builds neither yet. `pkg_go_env` (`buildsys/pkg.sh`) sets up a Go
+Go packages (the container stage's) build with the toolchain
+reference's go (`build-requires go`: pos-sdk's, BUILD.md "Go" there);
+Rust packages with Fedora's compilers, from the tools image
+(`host-requires rust cargo`): POS builds no Rust yet. `pkg_go_env` (`buildsys/pkg.sh`) sets up a Go
 build with the source's committed `vendor/` modules, and `pkg_cargo`
 builds with cargo from the crates prepare vendored; both offline. Their
 programs link with the environment's gcc and LDFLAGS, as C programs do:

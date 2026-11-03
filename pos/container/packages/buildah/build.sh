@@ -1,5 +1,5 @@
 pkg() {
-  # Go from the build host (host-requires golang), with the modules of
+  # Go from the toolchain reference (build-requires go), with the modules of
   # buildah's committed vendor directory (pkg_go_env). The build tags are
   # podman's (pos/container/packages/podman), set here rather than probed
   # by hack/*_tag.sh. The vendor configuration directory is

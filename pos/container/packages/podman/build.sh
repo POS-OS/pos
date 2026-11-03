@@ -1,5 +1,5 @@
 pkg() {
-  # Go from the build host (host-requires golang), with the modules of
+  # Go from the toolchain reference (build-requires go), with the modules of
   # podman's committed vendor directory (pkg_go_env). Build tags as
   # Fedora's, set here rather than probed by hack/*_tag.sh: seccomp,
   # systemd, sqlite from POS (libsqlite3), libsubid; signatures with Go's
