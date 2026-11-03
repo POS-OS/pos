@@ -17,5 +17,5 @@ requires meson ninja cmake
 # wget: gnulib bootstrap fetches translations with it.
 requires wget2
 # Man page tools: groff (gettext, less), asciidoctor (util-linux,
-# cryptsetup).
-requires groff asciidoctor
+# cryptsetup), man-db (podman checks its pages with man -l).
+requires groff asciidoctor man-db

@@ -644,11 +644,11 @@ setting picks them when a build is created (`info`: `tools-reference`):
   the extras' copy, not Fedora's. They are read from the reference, so
   they follow what it has: an older one replaces less. What the profile
   requires, though, a reference must have: wget2 (gnulib bootstrap
-  fetches translations with wget), groff and asciidoctor came to
-  pos-extras after the first extras references, so a build of one of
+  fetches translations with wget), groff, asciidoctor and man-db came
+  to pos-extras after the first extras references, so a build of one of
   those resolves no build tools ("<package>: needs wget2") and is
-  continued no further; start another with `run --new`. Recipes keep the
-  Fedora names for `fedora` tools; outputs keep theirs.
+  continued no further; start another with `run --new`. Recipes keep
+  the Fedora names for `fedora` tools; outputs keep theirs.
 * `fedora`: `host-base`'s Fedora packages, installed in the tools image
   (see "Build containers") and a requirement of every package. The
   default where the store has no extras reference or the build has no pos
@@ -1756,7 +1756,7 @@ differently; POS follows Fedora except where noted.
 | privilege | sudo, systemd run0, su | sudo shipped as planned; run0 comes with systemd anyway |
 | scheduled jobs | cronie, systemd timers | both. cronie needs a `run-parts` for cron.hourly, which no listed package provides (Fedora: crontabs, Debian: debianutils) |
 | log rotation | logrotate, journald | journald handles the journal; logrotate for other files |
-| man | man-db + groff + gdbm, mandoc | neither in the base (Scope); man-db and groff are pos-extras', groff also a build tool |
+| man | man-db + groff + gdbm, mandoc | neither in the base (Scope); man-db and groff are pos-extras', also build tools |
 | rmt | tar, cpio (both from paxutils) | tar; cpio's deleted, it runs tar's at the same path |
 | zic, zdump, tzselect | glibc, tzdata | glibc (Fedora); tzdata's deleted, it ships the data |
 | passwd.5, getspnam.3, crypt.3 | man-pages, shadow, libxcrypt | man-pages (deferred) for the first two, shadow's deleted; libxcrypt for crypt, man-pages' deleted |
