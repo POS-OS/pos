@@ -605,8 +605,11 @@ is_ref() {
 # Resolve the build environment of a package: its requirements and,
 # recursively, the run-time requirements of each provider chosen. A
 # requirement the build itself provides (gcc requires its own output
-# gcc-runtime) is installed with the package, not needed to build it.
-# Reached through another package's requirements, it is needed (systemd
+# gcc-runtime) is installed with the package, not needed to build it. A
+# build requirement it provides is the compiler of a package that builds
+# itself (go build-requires go): the reference's copy, or the host profile
+# it obsoletes without one, as for one reached through another package's
+# requirements. Reached so, it is needed (systemd
 # links util-linux's libmount, which links libsystemd), and the reference's
 # copy is used, as in a new build, where the package is not built yet. Then
 # the build tools (see the top). Sets ENV (sorted package names), TOOLENV
@@ -628,7 +631,8 @@ env_of() {
   if [[ -n $p ]]; then
     self_caps "$p"
     self=$SELF
-    for cap in ${BREQ[$p]} ${REQ[$p]}; do
+    queue=(${BREQ[$p]})
+    for cap in ${REQ[$p]}; do
       [[ $self == *" $cap "* ]] || queue+=("$cap")
     done
     [[ $TOOLS_REF != none || ${KIND[$p]} != package ]] || queue+=(host-base)
