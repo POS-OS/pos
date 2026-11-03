@@ -1,4 +1,4 @@
-build-requires gcc pos-link
+build-requires gcc pos-link go
 # cgo: libseccomp, libsystemd (journald, sd-notify), sqlite (its database),
 # libsubid (shadow's subordinate ids for rootless users). The helpers it
 # runs: crun, conmon, catatonit, netavark, aardvark-dns, pasta, and their
@@ -8,4 +8,4 @@ requires containers-common crun conmon catatonit netavark aardvark-dns passt
 # go-md2man makes the man pages; the Markdown is preprocessed with Python.
 # man-db: each page is rendered with man -l to check for broken tables.
 # envsubst writes the paths into the docker script.
-host-requires golang golang-github-cpuguy83-md2man python3 man-db gettext-envsubst
+host-requires golang-github-cpuguy83-md2man python3 man-db gettext-envsubst
