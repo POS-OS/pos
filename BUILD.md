@@ -23,6 +23,7 @@ reaches through `flatpak-spawn --host` from inside a toolbox, as the
     $ devtools/vm.sh               # boot the vm-disk-dnf disk in a VM
     $ devtools/vm.sh -c devtools/smoke.sh  # check it: boot, run the checks, power off
     $ buildsys/compare-builds.sh <id> <id>  # what differs between two builds
+    $ devtools/plan-time.sh        # plan within its time budget (engine changes)
 
 ## Builds
 A build has an ID (a timestamp) and keeps everything under
