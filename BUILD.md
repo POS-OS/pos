@@ -435,6 +435,9 @@ what the package needs and what it gives (format in `buildsys/resolve.sh`):
 
 `requires` are run-time requirements, installed along with the package
 wherever it is installed. `build-requires` are needed only to build it.
+A compiler that builds itself build-requires its own name (pos-sdk's go
+`build-requires go`): that is the reference's copy, or, without one, the
+host profile it obsoletes (`go-host`, Fedora's), never the build's own.
 Every package provides its own name. When two available packages provide
 what is required, the one the other obsoletes is not used. `host-requires`
 are Fedora packages, in the build's tools image (see "Build containers");
