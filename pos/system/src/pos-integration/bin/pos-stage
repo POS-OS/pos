@@ -96,11 +96,16 @@ unlink_stage() {
 }
 
 # Merge the enabled images again and have the running system see the result.
-# systemd-sysext reloads systemd's units; udevd looks at its rules on its own
-# at most every 3 seconds, and an event handled before then misses a stage's
-# rules. lvm2 waits for those rules to run, without a timeout.
+# systemd-sysext reloads systemd only for an extension whose
+# extension-release asks for it (EXTENSION_RELOAD_MANAGER), read from the
+# /usr the stages do not merge over: the reload is done here, so a stage's
+# units (podman.socket, sshd.service) are known, or gone. udevd looks at
+# its rules on its own at most every 3 seconds, and an event handled before
+# then misses a stage's rules. lvm2 waits for those rules to run, without a
+# timeout.
 merge() {
   systemd-sysext refresh
+  systemctl daemon-reload
   systemctl try-reload-or-restart systemd-udevd.service
 }
 
