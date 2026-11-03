@@ -433,6 +433,34 @@ recipe_mounts() {
   done
 }
 
+# The build tools of an extras reference for a step of its own (prepare,
+# unpack): /pos and their prefix as a package build has them, without a
+# package's own environment, composed in $bdir/roots/<name>. Nothing with
+# fedora's tools, which are the tools image's. The step sources the
+# scripts, with pos_prefix and tools_prefix set, as _pkg_setup does.
+# Inputs:
+#   $1    the step's name (prepare-<source>, unpack-<source>)
+#   TOOLS_REF, bdir, base
+# Outputs:
+#   TOOLS_ROOT (to remove after the step, or empty), TOOLS_MOUNTS,
+#   TOOLS_SCRIPTS (env.sh paths as the step sees them)
+tools_root() {
+  local p=$1 q
+  local -a ENV=() MISSING=()
+  local -A TOOLENV=()
+  TOOLS_ROOT='' TOOLS_MOUNTS=() TOOLS_SCRIPTS=''
+  [[ $TOOLS_REF != none ]] || return 0
+  TOOLS_ROOT=$bdir/roots/$p
+  env_of || die "$p: build tools unresolved: ${MISSING[*]}"
+  root_compose "$TOOLS_ROOT"
+  root_mounts "$TOOLS_ROOT"
+  TOOLS_MOUNTS=("${ROOT_MOUNTS[@]}")
+  for q in $(env_scripts); do
+    TOOLS_SCRIPTS+=" $(env_script "$q" "$(host_path "$base")")"
+  done
+  TOOLS_SCRIPTS=${TOOLS_SCRIPTS# }
+}
+
 # The key of a prepared tree: everything that goes into it. Of a release
 # archive's, the unpacked tree's key stands for the source.
 # Inputs:
@@ -496,23 +524,10 @@ prepare_source() {
   fi
   recipe_mounts
   mounts=(net ro:"$engine/buildsys" "${RECIPE_MOUNTS[@]}" ro:"$src" rw:"$dir.tmp" ro:"$dir.upstream")
-  # The build tools of an extras reference: /pos and their prefix as a
-  # package build has them, without a package's own environment.
-  # Its own environment: prepare runs within a package's build_one.
-  local root='' scripts=''
-  local -a ENV=() MISSING=()
-  local -A TOOLENV=()
-  if [[ $TOOLS_REF != none ]]; then
-    root=$bdir/roots/prepare-$s
-    env_of || die "prepare $s: build tools unresolved: ${MISSING[*]}"
-    local p=prepare-$s q
-    root_compose "$root"
-    root_mounts "$root"
-    mounts+=("${ROOT_MOUNTS[@]}")
-    for q in $(env_scripts); do
-      scripts+=" $(env_script "$q" "$hbase")"
-    done
-  fi
+  local root scripts
+  tools_root "prepare-$s"
+  root=$TOOLS_ROOT scripts=$TOOLS_SCRIPTS
+  mounts+=("${TOOLS_MOUNTS[@]}")
   if [[ -n ${SRCPATH[gnulib]:-} && -d $base/${SRCPATH[gnulib]} ]]; then
     gnulib=$hbase/${SRCPATH[gnulib]}
     mounts+=(ro:"$base/${SRCPATH[gnulib]}")
@@ -532,7 +547,7 @@ prepare_source() {
     POS_UPSTREAM="$(host_path "$dir.upstream")" \
     POS_WITH_SRC_DIRS="${with_dirs# }" \
     POS_TOOLS_PREFIX="$(tools_prefix)" \
-    POS_ENV_SCRIPTS="${scripts# }" \
+    POS_ENV_SCRIPTS="$scripts" \
     bash "$(host_path "$engine/buildsys/prepare.sh")" 2>&1 | tee -a "$log"
   [[ -z $root ]] || rm -rf "$root"
   mv "$dir.tmp" "$dir"
@@ -621,13 +636,26 @@ unpack_source() {
   rm -rf "$dir" "$dir.tmp"
   mkdir -p "$dir.tmp"
   mounts=(ro:"$f" rw:"$dir.tmp")
-  ((${#patches[@]} == 0)) || mounts+=(ro:"$base/${PKGDIR[$s]}/patches")
+  # Patching takes patch from the build tools: an extras reference's
+  # replaces Fedora's in the tools image (tools_root).
+  TOOLS_ROOT='' TOOLS_SCRIPTS=''
+  if ((${#patches[@]})); then
+    mounts+=(ro:"$base/${PKGDIR[$s]}/patches")
+    tools_root "unpack-$s"
+    recipe_mounts
+    mounts+=("${TOOLS_MOUNTS[@]}" "${RECIPE_MOUNTS[@]}")
+  fi
   title "unpack $s"
   echo "=== unpack $s ($key) ==="
   # shellcheck disable=SC2016
-  step_run "unpack-$s" "${mounts[@]}" -- bash -euo pipefail -c '
+  step_run "unpack-$s" "${mounts[@]}" -- env \
+    pos_prefix=/pos tools_prefix="$(tools_prefix)" POS_ENV_SCRIPTS="$TOOLS_SCRIPTS" \
+    bash -euo pipefail -c '
   f=$1 dir=$2
   shift 2
+  for e in $POS_ENV_SCRIPTS; do
+    source "$e"
+  done
   tops=$(tar -tf "$f" | cut -d/ -f1 | sort -u | wc -l)
   [[ $tops == 1 ]] || { echo "${f##*/}: $tops top directories, not one" >&2; exit 1; }
   tar -xf "$f" -C "$dir" --strip-components=1 --no-same-owner
@@ -637,6 +665,7 @@ unpack_source() {
     patch -p1 -s --no-backup-if-mismatch <"$p"
   done
   ' unpack "$(host_path "$f")" "$(host_path "$dir.tmp")" "${patches[@]}"
+  [[ -z $TOOLS_ROOT ]] || rm -rf "$TOOLS_ROOT"
   mv "$dir.tmp" "$dir"
   touch "$dir.done"
 }

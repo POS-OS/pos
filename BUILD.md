@@ -358,7 +358,8 @@ each time it is used; a file that does not match stops the build and is
 left as it is. A build container without network unpacks it, with the
 patches, into `work/sources/<source>/<key>`, keyed by the `archive` line
 and the patches; the archive holds one top directory, which becomes the
-tree. Builds use the tree as they use a prepared one.
+tree. The patches are applied with the build tools' `patch` (an extras
+reference's, as prepare has them), not the tools image's. Builds use the tree as they use a prepared one.
 
 Each package's metadata records the source it was built from:
 `build-source <source> <key>`, the prepared or unpacked tree's key or
