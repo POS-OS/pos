@@ -349,8 +349,8 @@ meta_validate() {
         echo "$m: archive is for the package directory of its own source" >&2
         err=1
       fi
-      if [[ -e $base/${SRCPATH[$p]} || -f $base/${PKGDIR[$p]}/prepare.sh ]]; then
-        echo "$m: archive, and also ${SRCPATH[$p]} or prepare.sh" >&2
+      if [[ -e $base/${SRCPATH[$p]} ]]; then
+        echo "$m: archive, and also ${SRCPATH[$p]}" >&2
         err=1
       fi
     fi

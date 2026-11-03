@@ -15,8 +15,9 @@
 # builds. A source from a release archive (meta "archive") is downloaded
 # into the download directory (setting download-dir), checked against its
 # sha256, and unpacked with its patches into work/sources/<source>/<key>
-# the same way. Downloads and prepares are the steps with network; package
-# builds have none.
+# the same way; one with a prepare recipe is then prepared from that tree.
+# Downloads and prepares are the steps with network; package builds have
+# none.
 #
 # Every step of a build (prepare, package build, output) runs in a
 # container of the build's tools image: Fedora's container image with the
@@ -432,14 +433,19 @@ recipe_mounts() {
   done
 }
 
-# The key of a prepared tree: everything that goes into it.
+# The key of a prepared tree: everything that goes into it. Of a release
+# archive's, the unpacked tree's key stands for the source.
 # Inputs:
 #   $1    source name
 prepare_key() {
   local s=$1 w
   {
-    source_tree "$s"
-    upstream_info "$s"
+    if [[ -n ${ARCHIVE[$s]:-} ]]; then
+      echo "archive $(unpack_key "$s")"
+    else
+      source_tree "$s"
+      upstream_info "$s"
+    fi
     cat "$base/${PKGDIR[$s]}/prepare.sh" "$engine/buildsys/prepare.sh"
     echo "${PREQ[$s]}"
     # What prepare generates with is part of it; fedora's tools are the
@@ -459,13 +465,16 @@ prepare_key() {
 # release process does. It sees the committed source (prepare recipes
 # compare with it), gnulib, and the committed sources of the package's
 # with-sources, which upstream's bootstrap may take files from (tar's and
-# cpio's paxutils).
+# cpio's paxutils). A release archive's source is its unpacked tree
+# (unpack_source), for an archive that lacks what a release holds (a
+# tag's archive without the Go modules or crates: prep_go_vendor); its
+# .upstream names the archive and version.
 # Inputs:
 #   $1    source name
 # Outputs:
 #   PREPARED (path to prepared source directory in $sources/$s/$key)
 prepare_source() {
-  local s=$1 key dir log hbase w with_dirs= gnulib=''
+  local s=$1 key dir log hbase w with_dirs= gnulib='' src
   local -a mounts
   key=$(prepare_key "$s") || exit 1
   dir=$sources/$s/$key
@@ -475,10 +484,18 @@ prepare_source() {
   hbase=$(host_path "$base")
   rm -rf "$dir" "$dir.tmp"
   mkdir -p "$dir.tmp"
-  git -C "$base" archive --format=tar "HEAD:${SRCPATH[$s]}" | tar -x -C "$dir.tmp"
-  upstream_info "$s" >"$dir.upstream"
+  if [[ -n ${ARCHIVE[$s]:-} ]]; then
+    unpack_source "$s"
+    src=$UNPACKED
+    cp -a "$src/." "$dir.tmp/"
+    printf 'archive %s\nversion %s\n' "${ARCHIVE[$s]%% *}" "${VERSION[$s]}" >"$dir.upstream"
+  else
+    src=$base/${SRCPATH[$s]}
+    git -C "$base" archive --format=tar "HEAD:${SRCPATH[$s]}" | tar -x -C "$dir.tmp"
+    upstream_info "$s" >"$dir.upstream"
+  fi
   recipe_mounts
-  mounts=(net ro:"$engine/buildsys" "${RECIPE_MOUNTS[@]}" ro:"$base/${SRCPATH[$s]}" rw:"$dir.tmp" ro:"$dir.upstream")
+  mounts=(net ro:"$engine/buildsys" "${RECIPE_MOUNTS[@]}" ro:"$src" rw:"$dir.tmp" ro:"$dir.upstream")
   # The build tools of an extras reference: /pos and their prefix as a
   # package build has them, without a package's own environment.
   # Its own environment: prepare runs within a package's build_one.
@@ -509,7 +526,7 @@ prepare_source() {
   step_run "prepare-$s" "${mounts[@]}" -- env \
     POS_SOURCE="$s" \
     POS_RECIPE_DIR="$hbase/${PKGDIR[$s]}" \
-    POS_SRC_DIR="$hbase/${SRCPATH[$s]}" \
+    POS_SRC_DIR="$(host_path "$src")" \
     POS_GNULIB_DIR="$gnulib" \
     POS_PREP_DIR="$(host_path "$dir.tmp")" \
     POS_UPSTREAM="$(host_path "$dir.upstream")" \
@@ -926,6 +943,11 @@ source_of() {
     SOURCE_KEY=$(basename "$UNPACKED")
     SOURCE_EPOCH=$(archive_epoch "$s") || exit 1
     SOURCE_VERSION=${VERSION[$s]}
+    if has_prepare "$s"; then
+      prepare_source "$s"
+      SOURCE_DIR=$PREPARED
+      SOURCE_KEY=$(basename "$PREPARED")
+    fi
     return 0
   fi
   SOURCE_EPOCH=$(git -C "$base" log -1 --format=%ct HEAD -- "${SRCPATH[$s]}")
@@ -984,7 +1006,11 @@ env_key() {
 source_id() {
   local s=$1
   if [[ -n ${ARCHIVE[$s]:-} ]]; then
-    echo "$(unpack_key "$s") -"
+    if has_prepare "$s"; then
+      echo "$(prepare_key "$s") -"
+    else
+      echo "$(unpack_key "$s") -"
+    fi
     return
   fi
   if has_prepare "$s"; then
@@ -1332,7 +1358,8 @@ cmd_plan() {
 # their metadata (build-source, build-with-source), and the build recipes.
 # A source from a release archive is that archive as downloaded,
 # pos-src-<archive>: the meta's sha256 checks it, and its patches are in
-# the recipes. An engine of another checkout gets an archive of its own,
+# the recipes; one prepared from it is its prepared tree, as a committed
+# source's, since the archive alone lacks what prepare fetched. An engine of another checkout gets an archive of its own,
 # pos-engine-<stem>.tar.zst.
 # Inputs:
 #   bdir, PKGS, KIND, BUILT
@@ -1349,7 +1376,7 @@ source_archives() {
         echo "note: no source archive for $s: ${SRCPATH[$s]:-its source} is not in the repository"
         continue
       fi
-      if [[ -n ${ARCHIVE[$s]:-} ]]; then
+      if [[ -n ${ARCHIVE[$s]:-} ]] && ! has_prepare "$s"; then
         out=$bdir/pos-src-$(basename "$(archive_file "$s")")
         [[ -f $out ]] || { cp "$(archive_file "$s")" "$out.tmp" && mv "$out.tmp" "$out"; }
         echo "$out"
@@ -1359,6 +1386,8 @@ source_archives() {
       [[ -f $out ]] && continue
       if [[ -d $sources/$s/$key ]]; then
         tar --zstd -cf "$out.tmp" -C "$sources/$s" --transform "s,^$key,$s," "$key"
+      elif [[ -n ${ARCHIVE[$s]:-} ]]; then
+        die "$s: its prepared tree $sources/$s/$key is gone; prepare it again (./build prepare $s)"
       else
         git -C "$base" archive --format=tar --prefix="$s/" "$key" | zstd -q -o "$out.tmp"
       fi
@@ -1520,12 +1549,12 @@ cmd_prepare() {
     for s in ${SRC[$p]} ${WSRC[$p]}; do
       [[ -z ${seen[$s]:-} ]] || continue
       seen[$s]=1
-      if [[ -n ${ARCHIVE[$s]:-} ]]; then
-        unpack_source "$s"
-        echo "$s: $UNPACKED"
-      elif has_prepare "$s"; then
+      if has_prepare "$s"; then
         prepare_source "$s"
         echo "$s: $PREPARED"
+      elif [[ -n ${ARCHIVE[$s]:-} ]]; then
+        unpack_source "$s"
+        echo "$s: $UNPACKED"
       fi
     done
   done

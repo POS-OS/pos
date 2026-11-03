@@ -340,8 +340,13 @@ A source can instead be an upstream release archive, for what follows
 upstream releases rather than its development (pos-sdk's toolchain,
 see "Toolchain"). The meta of the package named after the source has
 `archive <url> <sha256>` and `version <version>` (the release's, as
-upstream numbers it), and the source has no `src/<source>` and no
-prepare recipe: a release archive is what prepare makes of a tree.
+upstream numbers it), and the source has no `src/<source>`: a release
+archive is what prepare makes of a tree. An archive that lacks part of
+what a release holds, as a tag's archive of a Go or Rust program
+without its modules or crates, has a prepare recipe all the same
+(`prep_go_vendor`, `prep_cargo_vendor`): prepare works on the unpacked
+tree, and builds use the prepared one, keyed by the archive, its
+patches and the recipe. Its time is the archive's.
 Patches go in the package directory's `patches/`, `*.patch` applied with
 `-p1` in name order. Changing the version is changing those two lines.
 
