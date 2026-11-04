@@ -969,7 +969,12 @@ and link anything else statically. pos names no sdk path: the search
 paths below, an imported image's `PATH` and pos-fedora's `/usr/bin` links
 are pos's. Software installed outside `/pos` goes on `PATH` when it is
 installed on a machine, by a drop-in of `/etc/profile.d`, which
-pos-integration's `/etc/profile` reads.
+pos-integration's `/etc/profile` reads. `pos-app` (pos-integration)
+installs such an app from its archive, the tree of
+`/apps/<name>/<version>` with a manifest (`app`: its version, `PATH`
+directories and requirements, such as pos-sdk's gcc-runtime), keeps
+versions side by side, points `/apps/<name>/current` at the selected one
+and writes its drop-in, `/etc/profile.d/app-<name>.sh`.
 
 Configuration and mutable data stay outside the prefix:
 

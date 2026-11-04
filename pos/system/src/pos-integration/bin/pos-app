@@ -1,0 +1,250 @@
+#!/pos/bin/bash
+# Install, select and remove apps: software released apart from /pos
+# (pos-sdk, pos-extras), each version a tree of its own,
+# /apps/<name>/<version>, side by side. /apps/<name>/current is the
+# version on PATH, through the drop-in /etc/profile.d/app-<name>.sh that
+# /etc/profile reads. /apps is the state: an installed version is a
+# directory with its manifest.
+#
+# An app archive (<name>-app-<release>.tar.zst) is the tree, archived from
+# inside it (./bin, ./lib, ...), with its manifest ./app: "key value" lines.
+#   name <name>              the app
+#   version <version>        its directory, /apps/<name>/<version>: the
+#                            prefix the tree was built for
+#   id <build id>            the build it comes from
+#   release <release>        that build's release name
+#   path <dir>               a directory of the tree added to PATH; any number
+#   requires <what> <op> <version>   what the system must have; any number:
+#                            <what> is a pos package (the version in its
+#                            record, /pos/lib/pos/packages/<what>/meta) or os
+#                            (VERSION_ID in /pos/lib/os-release, the pos
+#                            release line); <op> is >= or =
+#
+#   pos-app [--root <dir>] list [<name>]
+#   pos-app [--root <dir>] install <archive>      and select it, when none is
+#   pos-app [--root <dir>] select <name> <version>
+#   pos-app [--root <dir>] remove <name> <version>  not the current one, while
+#                                                 others are installed
+# --root works on a system tree at <dir> instead of /.
+set -euo pipefail
+
+usage() {
+  sed -n '/^#   pos-app /,/^# --root/s/^# \{0,1\}//p' "$0" >&2
+  exit 2
+}
+
+die() {
+  echo "pos-app: $*" >&2
+  exit 1
+}
+
+# The keys of a manifest, read by manifest_read.
+declare -A M=()
+declare -a M_PATH=() M_REQUIRES=()
+
+# Read a manifest into M, M_PATH and M_REQUIRES, and check that it names
+# an app and version that can be directories.
+# Inputs:
+#   $1    the manifest's text
+#   $2    where it comes from, for messages
+manifest_read() {
+  local key value name='^[A-Za-z0-9][A-Za-z0-9._+~^-]*$'
+  M=() M_PATH=() M_REQUIRES=()
+  while read -r key value; do
+    case $key in
+      '' | '#'*) ;;
+      path) M_PATH+=("$value") ;;
+      requires) M_REQUIRES+=("$value") ;;
+      *) M[$key]=$value ;;
+    esac
+  done <<<"$1"
+  [[ ${M[name]:-} =~ $name ]] || die "$2: no app name, or not one ('${M[name]:-}')"
+  [[ ${M[version]:-} =~ $name && ${M[version]} != current ]] ||
+    die "$2: no version, or not one ('${M[version]:-}')"
+}
+
+# Read the manifest of an installed version.
+# Inputs:
+#   $1    app name
+#   $2    version
+manifest_installed() {
+  [[ -f $apps/$1/$2/app ]] || die "$1 $2 is not installed"
+  manifest_read "$(<"$apps/$1/$2/app")" "$apps/$1/$2/app"
+}
+
+# The version the system has of what a requirement names: a pos package's
+# recorded version, or os, the pos release line.
+# Inputs:
+#   $1    os or a pos package name
+# Outputs:
+#   the version, or nothing when the system has none
+have() {
+  local f
+  if [[ $1 == os ]]; then
+    f=$root/pos/lib/os-release
+    [[ ! -f $f ]] || sed -n 's/^VERSION_ID=//p' "$f" | tr -d '"'
+  else
+    f=$root/pos/lib/pos/packages/$1/meta
+    [[ ! -f $f ]] || awk '$1 == "version" {print $2}' "$f"
+  fi
+}
+
+# Check the manifest's requirements against the system; list every one it
+# does not meet and exit.
+# Inputs:
+#   M_REQUIRES, M
+requires_check() {
+  local r what op want got
+  local -a problems=()
+  for r in "${M_REQUIRES[@]}"; do
+    read -r what op want <<<"$r"
+    got=$(have "$what")
+    case $op in
+      '>=') [[ -n $got && $(printf '%s\n' "$want" "$got" | sort -V | head -n1) == "$want" ]] ;;
+      '=') [[ $got == "$want" ]] ;;
+      *) die "${M[name]} ${M[version]}: requirement '$r': the operator is >= or =" ;;
+    esac || problems+=("$what $op $want, the system has ${got:-none}")
+  done
+  if ((${#problems[@]})); then
+    echo "pos-app: ${M[name]} ${M[version]} needs:" >&2
+    printf '  %s\n' "${problems[@]}" >&2
+    exit 1
+  fi
+}
+
+# The version current points at, or nothing.
+# Inputs:
+#   $1    app name
+current() {
+  readlink "$apps/$1/current" 2>/dev/null || true
+}
+
+# The installed versions of an app, one per line.
+# Inputs:
+#   $1    app name
+versions() {
+  local d
+  for d in "$apps/$1"/*/app; do
+    [[ -f $d ]] || continue
+    d=${d%/app}
+    [[ ! -L $d ]] && echo "${d##*/}"
+  done
+}
+
+# List the installed versions: <name> <version> <release>, and current.
+# Inputs:
+#   [$1]  app name; every app without one
+list() {
+  local name v cur d mark
+  for d in "$apps"/${1:-*}/; do
+    [[ -d $d ]] || continue
+    name=$(basename "$d")
+    cur=$(current "$name")
+    for v in $(versions "$name"); do
+      manifest_installed "$name" "$v"
+      mark=
+      [[ $v != "$cur" ]] || mark=' current'
+      echo "$name $v ${M[release]:-}$mark"
+    done
+  done
+}
+
+# Make a version current: the current link, and the PATH drop-in from its
+# manifest's path lines, naming /apps/<name>/current (the system's, also
+# under --root).
+# Inputs:
+#   $1    app name
+#   $2    version
+select_version() {
+  local name=$1 version=$2 dir dropin=$root/etc/profile.d/app-$1.sh
+  manifest_installed "$name" "$version"
+  # A new link renamed over the old one: current always names a version.
+  ln -sfn "$version" "$apps/$name/.current.tmp"
+  mv -T "$apps/$name/.current.tmp" "$apps/$name/current"
+  mkdir -p "${dropin%/*}"
+  {
+    echo "# $name, the version /apps/$name/current points at (pos-app)."
+    for dir in "${M_PATH[@]}"; do
+      echo "PATH=\$PATH:/apps/$name/current/$dir"
+    done
+  } >"$dropin.tmp"
+  mv "$dropin.tmp" "$dropin"
+  echo "$name $version is current"
+}
+
+# Install an archive's version: check its manifest, unpack it beside the
+# others under a temporary name and rename it, so a half-done install is
+# never a version; select it when the app has no current version.
+# Inputs:
+#   $1    app archive
+install_archive() {
+  local archive=$1 text dir tmp
+  [[ -f $archive ]] || die "no archive $archive"
+  text=$(tar --zstd -xOf "$archive" ./app 2>/dev/null) || die "$archive: no manifest ./app; not an app archive"
+  manifest_read "$text" "$archive"
+  dir=$apps/${M[name]}/${M[version]}
+  if [[ -f $dir/app ]]; then
+    [[ $(awk '$1 == "id" {print $2}' "$dir/app") == "${M[id]:-}" ]] ||
+      die "${M[name]} ${M[version]} is installed from another build; remove it first"
+    echo "${M[name]} ${M[version]} is installed"
+    return 0
+  fi
+  requires_check
+  tmp=$apps/${M[name]}/.${M[version]}.tmp
+  rm -rf "$tmp"
+  mkdir -p "$tmp"
+  tar --zstd -xf "$archive" -C "$tmp" --no-same-owner
+  mv -T "$tmp" "$dir"
+  echo "installed ${M[name]} ${M[version]}"
+  [[ -n $(current "${M[name]}") ]] || select_version "${M[name]}" "${M[version]}"
+}
+
+# Remove a version. The current one only when it is the last: then
+# current and the drop-in go too. Renamed first, so a half-done removal is
+# not a version.
+# Inputs:
+#   $1    app name
+#   $2    version
+remove_version() {
+  local name=$1 version=$2 tmp
+  manifest_installed "$name" "$version"
+  if [[ $(current "$name") == "$version" ]]; then
+    [[ $(versions "$name" | wc -l) == 1 ]] ||
+      die "$name $version is current; select another version first"
+    rm -f "$apps/$name/current" "$root/etc/profile.d/app-$name.sh"
+  fi
+  tmp=$apps/$name/.$version.tmp
+  rm -rf "$tmp"
+  mv -T "$apps/$name/$version" "$tmp"
+  rm -rf "$tmp"
+  rmdir "$apps/$name" 2>/dev/null || true
+  echo "removed $name $version"
+}
+
+root=
+if [[ ${1:-} == --root ]]; then
+  (($# >= 2)) || usage
+  root=${2%/}
+  shift 2
+fi
+apps=$root/apps
+
+case ${1:-} in
+  list)
+    (($# <= 2)) || usage
+    list "${2:-}"
+    ;;
+  install)
+    (($# == 2)) || usage
+    install_archive "$2"
+    ;;
+  select)
+    (($# == 3)) || usage
+    select_version "$2" "$3"
+    ;;
+  remove)
+    (($# == 3)) || usage
+    remove_version "$2" "$3"
+    ;;
+  *) usage ;;
+esac
