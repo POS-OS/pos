@@ -1232,6 +1232,10 @@ rpm-pos-fedora; fedora-toolbox from container-fs-dnf).
 | `vm-disk-dnf` | the rpm-pos outputs | `pos-vm-disk-dnf-<stem>.qcow2` |
 | `fedora-toolbox` | container-fs-dnf | `localhost/pos-fedora-toolbox` in podman |
 
+A pos-sdk or pos-extras build has no stages; its `app` output requires
+nothing and makes `<name>-app-<stem>.tar.zst` and `.app` (see "App
+archives").
+
 `run` makes every output whose stages it assembled, directly or through
 the outputs it requires, so a plain `run` makes them all. Each starts as
 soon as what it requires is made, at the same time as the others that are
@@ -1246,10 +1250,10 @@ containers"), and `output_host()`, which runs on the host after it, for
 what needs the host's podman. Both call the functions of
 `buildsys/output-plugins.d`: `fs.sh` makes a root tree and archives it,
 `disk.sh` makes a disk of it and checks the disk, `rpm.sh` makes RPM
-packages, `sysext.sh` makes stage images (see "Stage images") and
-`podman.sh` builds and imports podman images. A recipe may
-use another output's files: vm-disk-dnf takes vm-disk's `root/` and
-`repart.d`.
+packages, `sysext.sh` makes stage images (see "Stage images"),
+`podman.sh` builds and imports podman images and `app.sh` makes app
+archives (see "App archives"). A recipe may use another output's files:
+vm-disk-dnf takes vm-disk's `root/` and `repart.d`.
 
 ## Images
 An image is a root filesystem with POS installed, made by `fs.sh` in the
@@ -1531,6 +1535,34 @@ the machine; enabling it runs only what a first boot runs for its files.
   the build's: the link in `/etc/extensions` names the library's path.
   smoke.sh enables the network stage and runs its tools where the library
   is, then the container stage, and runs containers.
+
+## App archives
+pos-sdk and pos-extras install outside `/pos`, each version in a tree of
+its own, `/apps/<name>/<version>` (see "Prefix"); on a machine pos-app
+(pos-integration) installs one from its app archive. `app.sh` makes it,
+for an output of the project whose `meta` requires nothing: such an
+output is made from the whole build, by a `run` of every target (a plain
+`run`) or by `./build output`, not by a run of some packages. Its recipe
+calls `app_make` with the manifest's `path` and `requires` lines:
+
+    output() {
+      local gcc
+      gcc=$(app_version gcc-runtime) || exit 1
+      app_make "path bin" "requires gcc-runtime >= $gcc"
+    }
+
+`app_make` merges the trees of every package the build built at its
+prefix into one tree; a package that installs in `/pos` (gcc-runtime) is
+pos's and stays out, as debug info does. It writes the manifest `app` at
+the top, with the name and version the prefix gives, the build ID and the
+release (`<stem>`), and archives the tree from inside, files owned by
+root, as `<name>-app-<stem>.tar.zst`; the manifest is beside it as
+`<name>-app-<stem>.app`, to read before taking the archive. `publish`
+copies both with the build's other artifacts. The versions a recipe
+requires come from the build's packages (`app_version`) and from its
+references (`app_ref_version toolchain gcc-runtime`; `app_ref_info pos
+product-version`, the pos release line): outputs see the restored
+references read-only.
 
 ## Images made with podman
 `podman_build` makes an image with podman from the output's

@@ -1553,6 +1553,7 @@ cmd_run() {
   build_os "${args[@]}"
   local -a outputs
   mapfile -t outputs < <(outputs_of "${STAGES_BUILT[@]}")
+  [[ -n $all ]] || mapfile -t outputs < <(outputs_partial "${outputs[@]}")
   outputs_run "${outputs[@]}"
   [[ -z $all ]] || step_made complete
 }

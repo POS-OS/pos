@@ -9,7 +9,10 @@
 #
 #   requires       stages and outputs it is made from: a stage of the
 #                  build once assembled, an output once made. The stages
-#                  are extracted in the order given
+#                  are extracted in the order given. An output that
+#                  requires nothing is made from the whole build (an app
+#                  archive of a toolchain or extras build): by a run of
+#                  every target, not of some
 #   host-requires  Fedora packages its steps need in the build's tools
 #                  image
 #   tag            its name in podman (output-plugins.d/podman.sh)
@@ -20,7 +23,8 @@
 #
 #   output()       runs in a container of the build's tools image, as the
 #                  container's root, with network; it sees the recipes
-#                  (buildsys, outputs, the stage lists) and the build directory
+#                  (buildsys, outputs, the stage lists), the build directory
+#                  and, read-only, the restored references (work/references)
 #   output_host()  runs on the host after it, for what needs the host's
 #                  podman (podman images, the VM of disk checks)
 #
@@ -165,6 +169,19 @@ outputs_of() {
   done
 }
 
+# The outputs among the given ones that require something: what a run of
+# some of the targets makes, which an output of the whole build is not.
+# Inputs:
+#   $@    output names
+#   OUT_REQ
+outputs_partial() {
+  local o
+  for o in "$@"; do
+    [[ -z ${OUT_REQ[$o]} ]] || echo "$o"
+  done
+  return 0
+}
+
 # Return 0 when every requirement of an output is made in the build: its
 # stages assembled, its outputs made.
 # Inputs:
@@ -197,7 +214,9 @@ output_make() {
       for s in $(all_stages); do
         stage_mounts+=(ro:"$(stage_file "$s")")
       done
-      step_run "output-$output" net root ro:"$engine/buildsys" ro:"$base/outputs" "${stage_mounts[@]}" rw:"$bdir" -- \
+      mkdir -p "$refs"
+      step_run "output-$output" net root ro:"$engine/buildsys" ro:"$base/outputs" "${stage_mounts[@]}" \
+        ro:"$refs" rw:"$bdir" -- \
         env POS_PROJECT="$(host_path "$base")" \
         bash "$(host_path "$engine/buildsys/outputs.sh")" "$(host_path "$bdir")" "$output"
     fi
