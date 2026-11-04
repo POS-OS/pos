@@ -305,14 +305,15 @@ _pkg_rust_link_args() {
 
 # Build a Rust package with cargo, offline, from the crates its prepare
 # recipe vendored (prep_cargo_vendor in buildsys/prepare.sh). The compiler
-# is the build host's (host-requires rust cargo); programs link with the
-# environment's gcc against /pos, as C programs do, and keep their debug
-# info for _pkg_finish to split off. Build scripts and proc-macros run in
-# the build, proc-macros inside rustc, so they link with the host's cc
-# against the tools image's glibc: an explicit --target keeps RUSTFLAGS,
-# and the POS linker in them, to the target's crates (host-requires gcc
-# for the host's cc). The programs are in $cargo_out; the recipe installs
-# them.
+# is the toolchain reference's (build-requires rust: pos-sdk's, which
+# provides cargo); programs link with the environment's gcc and LDFLAGS
+# against /pos, as C programs do, and keep their debug info for
+# _pkg_finish to split off. Build scripts and proc-macros run in the
+# build, proc-macros inside rustc, a POS program: they link with rustc's
+# default linker, the environment's gcc, which links for POS without
+# LDFLAGS. An explicit --target keeps RUSTFLAGS (the hardening and build
+# ID flags) to the target's crates. The programs are in $cargo_out; the
+# recipe installs them.
 # Inputs:
 #   $@    extra arguments passed to cargo build
 #   build_dir, nproc, CFLAGS, LDFLAGS

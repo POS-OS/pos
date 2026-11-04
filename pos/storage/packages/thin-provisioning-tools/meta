@@ -1,8 +1,8 @@
-build-requires gcc pos-link
+# devicemapper-sys makes its bindings with bindgen, which loads libclang
+# (llvm-config on PATH finds it) and asks the clang driver for its header
+# paths (stdarg.h): pos-sdk's llvm.
+build-requires gcc pos-link rust llvm
 # libudev (systemd), the udev crate; libdevmapper (lvm2-bootstrap, which
 # lvm2 replaces), the devicemapper crate. libgcc_s (gcc-runtime).
 requires glibc gcc-runtime systemd lvm2-bootstrap
-# devicemapper-sys makes its bindings with bindgen, which loads libclang
-# and asks the clang driver for its header paths (stdarg.h).
-host-requires rust cargo gcc clang
 prepare-requires cargo

@@ -450,19 +450,19 @@ are Fedora packages, in the build's tools image (see "Build containers");
 the tools every build gets are `host-base`'s or `build-tools`' (see
 "Build tools").
 
-Go packages (the container stage's) build with the toolchain
-reference's go (`build-requires go`: pos-sdk's, BUILD.md "Go" there);
-Rust packages with Fedora's compilers, from the tools image
-(`host-requires rust cargo`): POS builds no Rust yet. `pkg_go_env` (`buildsys/pkg.sh`) sets up a Go
+Go and Rust packages (the container and storage stages') build with the
+toolchain reference's compilers (`build-requires go`, `build-requires
+rust`: pos-sdk's, BUILD.md "Go" and "Rust" there). `pkg_go_env` (`buildsys/pkg.sh`) sets up a Go
 build with the source's committed `vendor/` modules, and `pkg_cargo`
 builds with cargo from the crates prepare vendored; both offline. Their
 programs link with the environment's gcc and LDFLAGS, as C programs do:
 against `/pos/lib`, with the POS loader as interpreter, and with a build
 ID for the debug info. What cargo builds to run in the build, build
-scripts and proc-macros, links with the host's `cc` instead
-(`host-requires gcc`): rustc loads proc-macros into itself, on the tools
-image's glibc, which may be older than POS's. `pkg_cargo` passes an
-explicit `--target` for that, which keeps RUSTFLAGS to the target's crates.
+scripts and proc-macros, links with rustc's default linker, the
+environment's gcc, without LDFLAGS: rustc loads proc-macros into itself,
+and it is a POS program too. `pkg_cargo` passes an explicit `--target`,
+which keeps RUSTFLAGS (LDFLAGS' hardening and build ID flags) to the
+target's crates.
 
 Python modules (pos-extras) build with `pkg_python`: a wheel of the
 source, made by the python3 on PATH with the build backend the recipe
@@ -2030,7 +2030,7 @@ update-docs target; smartmontools' `util/dist-version.sh` (make dist), by
 its `getversion.sh` against the upstream history at the synced commit,
 fetched without file contents. thin-provisioning-tools' devicemapper-sys
 makes its bindings with bindgen, which needs libclang and the clang
-driver's header paths: Fedora's clang, a build tool only.
+driver's header paths: pos-sdk's llvm, a build tool only.
 
 Not in the stage: f2fs-tools, ntfs-3g, multipath-tools, targetcli (iSCSI
 targets), Stratis, VDO.
