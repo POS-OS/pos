@@ -8,8 +8,10 @@
 # pos-fedora). The presets are POS's, ahead of systemd's. The udev rules
 # start services for devices (the QEMU guest agent for its port).
 # pos-stage enables the optional stages, which systemd-sysext merges over
-# /pos (its drop-in). pos-preferences keeps the global system preferences,
-# POS's defaults in /pos/lib/pos/preferences. pos-kernel installs kernels
+# /pos (its drop-in). pos-app installs apps in /apps/<name>/<version>
+# from their archives and writes their PATH drop-in. pos-preferences
+# keeps the global system preferences, POS's defaults in
+# /pos/lib/pos/preferences. pos-kernel installs kernels
 # from the channels in /pos/lib/pos/kernel, its archive's directories are
 # made by tmpfiles. /etc/profile reads the drop-ins of /etc/profile.d,
 # where software installed outside /pos adds itself to PATH (pos-sdk); both
@@ -31,6 +33,7 @@ pkg() {
   install -d "$dest_dir$prefix/lib/udev/rules.d"
   install -m 0644 "$src_dir"/udev/*.rules "$dest_dir$prefix/lib/udev/rules.d/"
   install -D -m 0755 "$src_dir/bin/pos-stage" "$dest_dir$prefix/sbin/pos-stage"
+  install -D -m 0755 "$src_dir/bin/pos-app" "$dest_dir$prefix/sbin/pos-app"
   install -D -m 0755 "$src_dir/bin/pos-kernel" "$dest_dir$prefix/sbin/pos-kernel"
   install -d "$dest_dir$prefix/lib/pos/kernel/channels" "$dest_dir$prefix/lib/pos/kernel/formats"
   install -m 0644 "$src_dir"/kernel/channels/* "$dest_dir$prefix/lib/pos/kernel/channels/"

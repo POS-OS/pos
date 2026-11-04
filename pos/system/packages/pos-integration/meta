@@ -1,9 +1,10 @@
 # POS's own system integration (src/pos-integration): data, and the
-# pos-stage script. pos-stage runs bash, coreutils, systemd and glibc's
-# ldconfig; pos-kernel kernel-install (systemd) and its dracut plugin,
-# cpio, xz, zstd, gzip, gawk, sed, grep, util-linux's flock and curl, which
-# it downloads with.
-requires pos-integration-base systemd util-linux bash coreutils glibc dracut cpio xz zstd gzip gawk sed grep curl
+# pos-stage, pos-app and pos-kernel scripts. pos-stage runs bash,
+# coreutils, systemd and glibc's ldconfig; pos-app tar, zstd, sed and
+# gawk; pos-kernel kernel-install (systemd) and its dracut plugin, cpio,
+# xz, zstd, gzip, gawk, sed, grep, util-linux's flock and curl, which it
+# downloads with.
+requires pos-integration-base systemd util-linux bash coreutils glibc dracut cpio xz tar zstd gzip gawk sed grep curl
 # The base stage's part: os-release, the PAM stack, /etc/profile,
 # pos-preferences.
 outputs pos-integration-base

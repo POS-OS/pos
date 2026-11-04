@@ -33,6 +33,15 @@ bin/pos-stage  Enables and disables the optional stages: links an image of
         with systemd-sysext and runs sysusers, tmpfiles and ldconfig for
         it. Installed as /pos/sbin/pos-stage.
 
+bin/pos-app  Installs, selects and removes apps, software released apart
+        from /pos (pos-sdk, pos-extras): an app archive is the tree of
+        /apps/<name>/<version> with its manifest, ./app, which names the
+        version, the directories to add to PATH and what the system must
+        have (a pos package's version, the pos release line). Versions
+        sit side by side; /apps/<name>/current is the selected one, on
+        PATH through /etc/profile.d/app-<name>.sh, which pos-app writes.
+        Installed as /pos/sbin/pos-app.
+
 systemd/  Drop-ins for systemd's units: systemd-sysext.service merges
         over /pos (SYSTEMD_SYSEXT_HIERARCHIES), where the stages go.
 
