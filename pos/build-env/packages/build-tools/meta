@@ -19,3 +19,6 @@ requires wget2
 # Man page tools: groff (gettext, less), asciidoctor (util-linux,
 # cryptsetup), man-db (podman checks its pages with man -l).
 requires groff asciidoctor man-db
+# Code generators of the container packages: go-md2man (their man pages,
+# from Markdown), protoc (netavark's DHCP proxy, gRPC).
+requires go-md2man protobuf

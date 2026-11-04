@@ -654,8 +654,9 @@ setting picks them when a build is created (`info`: `tools-reference`):
   the extras' copy, not Fedora's. They are read from the reference, so
   they follow what it has: an older one replaces less. What the profile
   requires, though, a reference must have: wget2 (gnulib bootstrap
-  fetches translations with wget), groff, asciidoctor and man-db came
-  to pos-extras after the first extras references, so a build of one of
+  fetches translations with wget), groff, asciidoctor, man-db, go-md2man
+  and protobuf (protoc) came to pos-extras after the first extras
+  references, so a build of one of
   those resolves no build tools ("<package>: needs wget2") and is
   continued no further; start another with `run --new`. Recipes keep
   the Fedora names for `fedora` tools; outputs keep theirs.
