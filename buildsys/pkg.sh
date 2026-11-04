@@ -474,7 +474,7 @@ _pkg_split() {
 _pkg_runpath() {
   local dest=$1 prefix=${2:-$prefix} f o d s t old new mode id
   local -a trees=("$dest_dir") needed=() dirs=() entries=()
-  local -A seen=()
+  local -A seen=() have=()
   [[ $prefix != "$pos_prefix" && -d $dest$prefix ]] || return 0
   for o in ${POS_OUTPUTS:-}; do
     trees+=("$(pkg_output "$o")")
@@ -491,9 +491,11 @@ _pkg_runpath() {
     old=$(readelf -d "$f" 2>/dev/null | awk -F'[][]' '/\((RUNPATH|RPATH)\)/ {print $2}')
     dirs=("$prefix/lib")
     entries=()
+    # The entries kept, so a computed one already there is not added again.
+    have=()
     for d in ${old//:/ }; do
       case $d in
-        '$ORIGIN'*) entries+=("$d") ;;
+        '$ORIGIN'*) [[ -n ${have[$d]:-} ]] || { entries+=("$d"); have[$d]=1; } ;;
         "$prefix" | "$prefix"/*) [[ " ${dirs[*]} " == *" $d "* ]] || dirs+=("$d") ;;
       esac
     done
@@ -502,7 +504,8 @@ _pkg_runpath() {
         for t in "${trees[@]}"; do
           [[ -e $t$d/$s ]] || continue
           d=$(realpath -m -s --relative-to="$(dirname "${f#"$dest"}")" "$d")
-          [[ $d == . ]] && entries+=('$ORIGIN') || entries+=("\$ORIGIN/$d")
+          [[ $d == . ]] && d='$ORIGIN' || d="\$ORIGIN/$d"
+          [[ -n ${have[$d]:-} ]] || { entries+=("$d"); have[$d]=1; }
           continue 3
         done
       done
