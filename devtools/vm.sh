@@ -4,11 +4,16 @@
 #
 #   vm.sh [-o <output>] [-c <script>] [<id>]
 #                                (default: vm-disk-dnf, the current build)
+#   vm.sh -d <disk> [-w] [-s <dir>] [-c <script>]
+#                                a disk file instead of a build's
 #
 # qemu runs with KVM and UEFI firmware (OVMF) in a container of
 # localhost/pos-vm, which is made from Fedora when missing. The disk is not
 # changed: the VM writes to an overlay that is gone when it stops, 4G
-# bigger than the disk, so the root partition grows into it. The
+# bigger than the disk, so the root partition grows into it. With -w the
+# VM writes to the disk itself, at its size (devtools/vm-libvirt-disk.sh
+# sets up a disk so). With -s the directory is shared with the VM, read
+# only, as the 9p file system of mount tag pos-share. The
 # serial port is the console and first boot asks nothing (console=ttyS0,
 # which the disk's command line has before the display, tty0, and
 # systemd.firstboot=no, added to the kernel command line by systemd-boot
@@ -22,7 +27,8 @@
 # With -c, the script runs as root once the VM has booted, and the VM powers
 # off after it. It is passed as a credential, with the unit that runs it
 # (systemd.extra-unit). Its output goes to a second serial port, which
-# vm.sh prints; the console goes to work/builds/<id>/logs/vm-<output>.log.
+# vm.sh prints; the console goes to work/builds/<id>/logs/vm-<output>.log
+# (with -d, to <disk without .qcow2>.vm/console.log).
 # vm.sh exits with the script's status, or fails when the VM does not
 # finish within POS_VM_TIMEOUT seconds (default 900; podman stops it). devtools/smoke.sh holds the
 # checks of a booted image.
@@ -38,18 +44,30 @@ source "$base/buildsys/buildinfo.sh"
 builds=${base}/work/builds
 
 output=vm-disk-dnf
-script=
+script='' disk='' write='' share=''
 while (($#)); do
   case $1 in
     -o) output=${2:?}; shift 2 ;;
     -c) script=${2:?}; shift 2 ;;
+    -d) disk=$(realpath "${2:?}"); shift 2 ;;
+    -w) write=1; shift ;;
+    -s) share=$(realpath "${2:?}"); shift 2 ;;
     *) break ;;
   esac
 done
-id=${1:-$(basename "$(readlink "${builds}/current")")}
-disk=${builds}/${id}/pos-${output}-$(build_stem "${builds}/${id}").qcow2
+# The disk, and where a script's output and the console go.
+if [[ -n $disk ]]; then
+  out=${disk%.qcow2}.vm
+  log=${out}/console.log
+else
+  id=${1:-$(basename "$(readlink "${builds}/current")")}
+  disk=${builds}/${id}/pos-${output}-$(build_stem "${builds}/${id}").qcow2
+  out=${builds}/${id}/vm/${output}
+  log=${builds}/${id}/logs/vm-${output}.log
+fi
 [[ -f $disk ]] || { echo "no disk $disk" >&2; exit 1; }
 [[ -z $script || -f $script ]] || { echo "no script $script" >&2; exit 1; }
+[[ -z $share || -d $share ]] || { echo "no directory $share" >&2; exit 1; }
 
 in_toolbox() {
   [[ -f /run/.toolboxenv ]]
@@ -83,14 +101,21 @@ EOF
 fi
 
 # Runs in the container: $1 a credential (the autologin drop-in, or the
-# script's unit), $2 the script's credential or empty.
+# script's unit), $2 the script's credential or empty; WRITE set: boot
+# /disk.qcow2 itself; /share there: share it.
 qemu='
 set -e
 cp /usr/share/edk2/ovmf/OVMF_VARS.fd /tmp/vars.fd
-qemu-img create -q -f qcow2 -b /disk.qcow2 -F qcow2 /tmp/overlay.qcow2
-qemu-img resize -q /tmp/overlay.qcow2 +4G
+drive=/disk.qcow2
+if [[ -z $WRITE ]]; then
+  drive=/tmp/overlay.qcow2
+  qemu-img create -q -f qcow2 -b /disk.qcow2 -F qcow2 $drive
+  qemu-img resize -q $drive +4G
+fi
 cmdline="systemd.firstboot=no console=ttyS0"
 args=(-smbios "type=11,value=$1")
+[[ ! -d /share ]] ||
+  args+=(-virtfs local,path=/share,mount_tag=pos-share,security_model=none,readonly=on)
 if [[ -n $2 ]]; then
   cmdline+=" systemd.wants=pos-vm-script.service"
   args+=(-smbios "type=11,value=$2" -display none -no-reboot
@@ -101,13 +126,20 @@ fi
 exec qemu-system-x86_64 -machine q35,accel=kvm -cpu host -m 4G -smp 4 \
   -drive if=pflash,format=raw,readonly=on,file=/usr/share/edk2/ovmf/OVMF_CODE.fd \
   -drive if=pflash,format=raw,file=/tmp/vars.fd \
-  -drive if=virtio,format=qcow2,file=/tmp/overlay.qcow2 \
+  -drive if=virtio,format=qcow2,file=$drive \
   -nic user,model=virtio-net-pci \
   -device virtio-serial-pci -chardev socket,id=qga,path=/tmp/qga.sock,server=on,wait=off \
   -device virtserialport,chardev=qga,name=org.qemu.guest_agent.0 \
   -smbios "type=11,value=io.systemd.boot.kernel-cmdline-extra=$cmdline" \
   "${args[@]}"
 '
+
+# The container's volumes and environment: the disk, read only unless -w,
+# and the shared directory.
+mode=ro
+[[ -z $write ]] || mode=rw
+volumes=(-v "$(host_path "$disk"):/disk.qcow2:$mode" -e "WRITE=$write")
+[[ -z $share ]] || volumes+=(-v "$(host_path "$share"):/share:ro")
 
 if [[ -z $script ]]; then
   autologin=$(cred systemd.unit-dropin.serial-getty@ttyS0.service~autologin <<'EOF'
@@ -117,7 +149,7 @@ ExecStart=-/pos/sbin/agetty --autologin root --noreset --noclear --keep-baud 115
 EOF
   )
   exec host_podman run --rm -it --log-driver=none --device /dev/kvm --security-opt label=disable \
-    -v "$(host_path "$disk"):/disk.qcow2:ro" localhost/pos-vm bash -c "$qemu" vm "$autologin" ""
+    "${volumes[@]}" localhost/pos-vm bash -c "$qemu" vm "$autologin" ""
 fi
 
 # The script's unit: started once the boot transaction is done (Type=exec
@@ -141,13 +173,11 @@ ExecStopPost=/pos/bin/bash -c 'echo "vm.sh: exit $$EXIT_STATUS" >/dev/ttyS1; /po
 EOF
 )
 code=$(cred pos.vm-script <"$script")
-out=${builds}/${id}/vm/${output}
-log=${builds}/${id}/logs/vm-${output}.log
-mkdir -p "$out"
+mkdir -p "$out" "$(dirname "$log")"
 rm -f "$out/script.out"
 status=0
 host_podman run --rm --log-driver=none --timeout "${POS_VM_TIMEOUT:-900}" --device /dev/kvm --security-opt label=disable \
-  -v "$(host_path "$disk"):/disk.qcow2:ro" -v "$(host_path "$out"):/out" \
+  "${volumes[@]}" -v "$(host_path "$out"):/out" \
   localhost/pos-vm bash -c "$qemu" vm "$unit" "$code" \
   </dev/null >"$log" 2>&1 || status=$?
 result=$(tr -d '\r' <"$out/script.out" 2>/dev/null | sed -n '/^vm.sh: start$/,$p' | sed 1d) || true

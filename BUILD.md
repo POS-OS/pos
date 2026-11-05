@@ -22,6 +22,7 @@ reaches through `flatpak-spawn --host` from inside a toolbox, as the
     $ ./build output fedora-toolbox  # POS as a toolbox image
     $ devtools/vm.sh               # boot the vm-disk-dnf disk in a VM
     $ devtools/vm.sh -c devtools/smoke.sh  # check it: boot, run the checks, power off
+    $ devtools/vm-libvirt-disk.sh <build>  # a release's vm-disk, set up, as libvirt's test VM disk
     $ buildsys/compare-builds.sh <id> <id>  # what differs between two builds
     $ devtools/plan-time.sh        # plan within its time budget (engine changes)
 
@@ -1414,10 +1415,25 @@ the script and a unit that runs it go in as credentials (the unit as
 it runs as root once the boot transaction is done, writes to a second
 serial port that vm.sh prints, and the VM powers off. vm.sh exits with the
 script's status; the console goes to `logs/vm-<output>.log` of the build.
+`vm.sh -d <disk>` boots a disk file instead of a build's (the console then
+goes to `<disk>.vm/console.log`, without `.qcow2`). With `-w` the VM writes
+to that disk itself, not to an overlay. With `-s <dir>` the VM gets the
+directory read only, as the 9p file system of mount tag `pos-share`.
 `devtools/smoke.sh` is the check of a booted image: system state, failed
 units, module loading in the initrd and after, unit file modes, the login
 prompt on tty1, the QEMU guest agent, network and dnf, the PAM services
 and sudo. Its status is the number of failed checks. `disk_check` runs it in `output_host()` (see "Build numbers").
+
+`devtools/vm-libvirt-disk.sh [-o <output>] [-t <timezone>] [-u <user>]
+<build>` makes a libvirt test VM's disk from a published release: the
+release's vm-disk (or `-o vm-disk-dnf`), set up by `devtools/vm-setup.sh`
+in one boot of `vm.sh -d -w -s`: first boot's time zone (the host's by
+default) and root password, the container stage, the apps of the newest
+pos-sdk and pos-extras releases that have an app archive (`pos-app
+install`), and a user (`$USER` by default) in group wheel. It asks for the
+passwords and passes their hashes. The set-up disk goes to libvirt's images
+as `pos-vm-disk-<product version>.qcow2`, with a new 12G overlay on it,
+`pos-rootfs.qcow2`, which the VM boots; both are replaced on every run.
 
 ## Kernels
 POS boots kernels other projects build. `pos-kernel` (`/pos/sbin`,
