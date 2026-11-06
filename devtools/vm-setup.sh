@@ -3,6 +3,7 @@
 # devtools/vm-libvirt-disk.sh, which puts the settings in front of it:
 #
 #   TIMEZONE     the time zone, a name of /pos/share/zoneinfo
+#   KEYMAP       the console's keyboard layout, a keymap of kbd; empty: none
 #   ROOT_HASH    root's password, hashed (crypt(3), as openssl passwd -6)
 #   USER_NAME    the user to add, with a home directory; empty: none
 #   USER_HASH    the user's password, hashed
@@ -23,6 +24,17 @@ PATH=/pos/sbin:/pos/bin:/usr/sbin:/usr/bin
 # First boot's settings, which a later boot would otherwise ask for.
 systemd-firstboot --force --timezone="$TIMEZONE" --root-password-hashed="$ROOT_HASH"
 echo "time zone $(readlink /etc/localtime), root password set"
+
+# The console's keyboard layout (/etc/vconsole.conf), applied now and at
+# every boot, in the initramfs too. Disks of releases before 1.0-11 have no
+# kbd, and keep the kernel's US layout.
+if [[ -n $KEYMAP && -x /pos/bin/loadkeys ]]; then
+  systemd-firstboot --force --keymap="$KEYMAP"
+  systemctl restart systemd-vconsole-setup.service
+  echo "keymap $KEYMAP"
+elif [[ -n $KEYMAP ]]; then
+  echo "keymap $KEYMAP not set: the disk has no kbd"
+fi
 
 # The container stage and those it requires, merged now and at every boot.
 pos-stage enable container
