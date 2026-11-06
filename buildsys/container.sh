@@ -41,11 +41,14 @@ host_podman() {
 # extras reference's, none of those the tools stand for in packages'
 # requirements: the replaces-host-rpm of the reference's packages the
 # build-tools profile brings (env_of without a package), as the reference
-# has them. Outputs keep theirs: they run on Fedora's, not the build tools.
+# has them, nor the prepare-requires the toolchain and pos references
+# stand in for (PREP_REF: prepare takes those, prep_refs). Outputs keep
+# theirs: they run on Fedora's, not the build tools.
 # Inputs:
-#   PKGS, HREQ, PREQ, OUT_HREQ, TOOLS_REF, TOOLS_HREPL (load_references)
+#   PKGS, HREQ, PREQ, OUT_HREQ, TOOLS_REF, TOOLS_HREPL, PREP_REF
+#   (load_references)
 tools_packages() {
-  local p q
+  local p q h
   local -a drop=() ENV=() MISSING=()
   local -A TOOLENV=()
   if [[ $TOOLS_REF != none ]]; then
@@ -57,7 +60,10 @@ tools_packages() {
   {
     for p in "${PKGS[@]}"; do
       [[ $p != host-base || $TOOLS_REF == none ]] || continue
-      echo ${HREQ[$p]} ${PREQ[$p]}
+      echo ${HREQ[$p]}
+      for h in ${PREQ[$p]}; do
+        [[ $TOOLS_REF != none && -n ${PREP_REF[$h]:-} ]] || echo "$h"
+      done
     done | xargs -n1 | grep -vxF -f <(printf '%s\n' "${drop[@]}") || true
     echo "${OUT_HREQ[@]}"
   } | xargs -n1 | sort -u

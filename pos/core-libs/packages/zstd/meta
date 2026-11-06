@@ -1,3 +1,4 @@
 build-requires pos-link
 # The zstd program reads gzip and xz streams when the libraries are present.
 requires glibc zlib xz
+replaces-host-rpm zstd

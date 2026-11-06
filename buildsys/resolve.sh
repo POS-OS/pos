@@ -120,7 +120,7 @@ declare -A KIND=() REQ=() BREQ=() HREQ=() PREQ=() PROV=() OBS=() SRC=() WSRC=() 
 declare -A PIPE=() PKGDIR=() SRCPATH=() SRCREFS=() ARCHIVE=() VERSION=() PFX=()
 declare -A PROVIDERS=() BOOTCAP=() TPROV=()
 declare -A BUILT=() REF=() POSREF=() REF_REQ=() FOREIGN=()
-declare -A TOOLSREF=() TOOLS_REQ=() TOOLS_HREPL=() TOOLENV=()
+declare -A TOOLSREF=() TOOLS_REQ=() TOOLS_HREPL=() TOOLENV=() PREP_REF=()
 # Memos of what does not change within a run (resolution asks them for
 # every capability of every package, again for each package it picks):
 # whether a host or profile package is available (TARGETS and REF; reset
@@ -213,7 +213,7 @@ meta_load() {
         build-requires) BREQ[$p]+=" $vals" ;;
         host-requires) HREQ[$p]+=" $vals" ;;
         prepare-requires) PREQ[$p]+=" $vals" ;;
-        replaces-host-rpm) ;; # read from the tools reference (load_references)
+        replaces-host-rpm) ;; # read from the references (load_references)
         provides) PROV[$p]+=" $vals" ;;
         obsoletes) OBS[$p]+=" $vals" ;;
         source) SRC[$p]=$vals ;;
@@ -594,6 +594,23 @@ provider_tools() {
   return 1
 }
 
+# The toolchain or pos reference's copy of a provider, for a step's
+# reference packages (env_of): what a prepared tree is made with depends on
+# the references alone (prepare_key), not on what the build has built.
+# Inputs:
+#   $1    capability name
+#   REF, POSREF
+# Outputs:
+#   PROVIDER (<name>@ref or <name>@pos)
+provider_step() {
+  local p
+  for p in ${PROVIDERS[$1]:-}; do
+    [[ -z ${REF[$p]:-} ]] || { PROVIDER=$p@ref; return 0; }
+    [[ -z ${POSREF[$p]:-} ]] || { PROVIDER=$p@pos; return 0; }
+  done
+  return 1
+}
+
 # Return 0 if an environment entry is satisfied from a reference build
 # (<pkg>@ref, <pkg>@pos or <pkg>@tools).
 # Inputs:
@@ -617,6 +634,8 @@ is_ref() {
 # available provider). Returns 1 when anything is missing.
 # Inputs:
 #   $1    package name, or nothing for the tools alone (prepare)
+#   $2..  with no package: reference entries (<name>@ref, <name>@pos) the
+#         step needs besides the tools (tools_root)
 #   TOOLS_REF
 #   ENV_UNSORTED  set: ENV unsorted (next_package, which only looks)
 # Outputs:
@@ -624,6 +643,7 @@ is_ref() {
 #   unresolved capabilities)
 env_of() {
   local p=${1:-} cap entry ref q
+  (($# == 0)) || shift
   local -a queue=()
   local -A seen=() inenv=()
   local self=' '
@@ -637,25 +657,39 @@ env_of() {
     done
     [[ $TOOLS_REF != none || ${KIND[$p]} != package ]] || queue+=(host-base)
   fi
-  # An entry is a capability, or ref:<capability> for a requirement of a
+  # The step's reference packages (tools_root: the prepare-requires they
+  # stand in for), with what they require, from the toolchain and pos
+  # references only (provider_step).
+  for entry; do
+    inenv[$entry]=1
+    for q in ${REF_REQ[${entry%@*}]:-}; do
+      queue+=("step:$q")
+    done
+  done
+  # An entry is a capability, ref:<capability> for a requirement of a
+  # reference package, or step:<capability> for one of a step's
   # reference package.
   while ((${#queue[@]})); do
     entry=${queue[0]}
     queue=("${queue[@]:1}")
     [[ -n ${seen[$entry]:-} ]] && continue
     seen[$entry]=1
-    cap=${entry#ref:}
+    cap=${entry#*:}
     ref=
     [[ $entry == ref:* || $self == *" $cap "* ]] && ref=1
-    if ! provider "$cap" "$ref"; then
+    if [[ $entry == step:* ]]; then
+      provider_step "$cap"
+    else
+      provider "$cap" "$ref"
+    fi || {
       MISSING+=("$cap")
       continue
-    fi
+    }
     [[ -n ${inenv[$PROVIDER]:-} ]] && continue
     inenv[$PROVIDER]=1
     if is_ref "$PROVIDER"; then
       for q in ${REF_REQ[${PROVIDER%@*}]:-}; do
-        queue+=("ref:$q")
+        if [[ $entry == step:* ]]; then queue+=("step:$q"); else queue+=("ref:$q"); fi
       done
     else
       queue+=(${REQ[$PROVIDER]})

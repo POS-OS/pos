@@ -435,11 +435,13 @@ recipe_mounts() {
 
 # The build tools of an extras reference for a step of its own (prepare,
 # unpack): /pos and their prefix as a package build has them, without a
-# package's own environment, composed in $bdir/roots/<name>. Nothing with
-# fedora's tools, which are the tools image's. The step sources the
-# scripts, with pos_prefix and tools_prefix set, as _pkg_setup does.
+# package's own environment, composed in $bdir/roots/<name>, with the
+# reference packages the step names (prep_refs). Nothing with fedora's
+# tools, which are the tools image's. The step sources the scripts, with
+# pos_prefix, sdk_prefix and tools_prefix set, as _pkg_setup does.
 # Inputs:
 #   $1    the step's name (prepare-<source>, unpack-<source>)
+#   $2..  reference entries the step takes besides the tools (PREPREFS)
 #   TOOLS_REF, bdir, base
 # Outputs:
 #   TOOLS_ROOT (to remove after the step, or empty), TOOLS_MOUNTS,
@@ -448,10 +450,11 @@ tools_root() {
   local p=$1 q
   local -a ENV=() MISSING=()
   local -A TOOLENV=()
+  shift
   TOOLS_ROOT='' TOOLS_MOUNTS=() TOOLS_SCRIPTS=''
   [[ $TOOLS_REF != none ]] || return 0
   TOOLS_ROOT=$bdir/roots/$p
-  env_of || die "$p: build tools unresolved: ${MISSING[*]}"
+  env_of '' "$@" || die "$p: build tools unresolved: ${MISSING[*]}"
   root_compose "$TOOLS_ROOT"
   root_mounts "$TOOLS_ROOT"
   TOOLS_MOUNTS=("${ROOT_MOUNTS[@]}")
@@ -461,12 +464,33 @@ tools_root() {
   TOOLS_SCRIPTS=${TOOLS_SCRIPTS# }
 }
 
+# The reference packages that stand in for a source's prepare-requires
+# (replaces-host-rpm: PREP_REF), which its prepare takes instead of the
+# Fedora packages: the toolchain reference's cargo, go and gcc, the pos
+# reference's zstd. Only with an extras reference: without one, prepare
+# has no composed root (tools_root) and the tools image has them all
+# (tools_packages).
+# Inputs:
+#   $1    source name
+#   PREQ, PREP_REF, TOOLS_REF
+# Outputs:
+#   PREPREFS (array of <name>@ref, <name>@pos)
+prep_refs() {
+  local h
+  PREPREFS=()
+  [[ $TOOLS_REF != none ]] || return 0
+  for h in ${PREQ[$1]}; do
+    [[ -z ${PREP_REF[$h]:-} ]] || PREPREFS+=("${PREP_REF[$h]}")
+  done
+}
+
 # The key of a prepared tree: everything that goes into it. Of a release
 # archive's, the unpacked tree's key stands for the source.
 # Inputs:
 #   $1    source name
 prepare_key() {
-  local s=$1 w
+  local s=$1 w q
+  prep_refs "$s"
   {
     if [[ -n ${ARCHIVE[$s]:-} ]]; then
       echo "archive $(unpack_key "$s")"
@@ -479,6 +503,12 @@ prepare_key() {
     # What prepare generates with is part of it; fedora's tools are the
     # tools image's, which keys never had.
     [[ $TOOLS_REF == none ]] || echo "tools $TOOLS_REF"
+    for q in "${PREPREFS[@]}"; do
+      case $q in
+        *@ref) echo "$q $TOOLCHAIN_REF" ;;
+        *@pos) echo "$q $POS_REF" ;;
+      esac
+    done
     if [[ -f $base/${SRCPATH[$s]}/bootstrap.conf || -x $base/${SRCPATH[$s]}/autopull.sh ]]; then
       source_tree gnulib
     fi
@@ -525,7 +555,8 @@ prepare_source() {
   recipe_mounts
   mounts=(net ro:"$engine/buildsys" "${RECIPE_MOUNTS[@]}" ro:"$src" rw:"$dir.tmp" ro:"$dir.upstream")
   local root scripts
-  tools_root "prepare-$s"
+  prep_refs "$s"
+  tools_root "prepare-$s" "${PREPREFS[@]}"
   root=$TOOLS_ROOT scripts=$TOOLS_SCRIPTS
   mounts+=("${TOOLS_MOUNTS[@]}")
   if [[ -n ${SRCPATH[gnulib]:-} && -d $base/${SRCPATH[gnulib]} ]]; then
@@ -546,6 +577,7 @@ prepare_source() {
     POS_PREP_DIR="$(host_path "$dir.tmp")" \
     POS_UPSTREAM="$(host_path "$dir.upstream")" \
     POS_WITH_SRC_DIRS="${with_dirs# }" \
+    POS_SDK_PREFIX="$(sdk_prefix)" \
     POS_TOOLS_PREFIX="$(tools_prefix)" \
     POS_ENV_SCRIPTS="$scripts" \
     bash "$(host_path "$engine/buildsys/prepare.sh")" 2>&1 | tee -a "$log"
