@@ -315,7 +315,8 @@ committed source.
 
 Prepared trees are kept in `work/sources/<source>/<key>`. The key is a hash
 of the committed source tree, its `.upstream`, the prepare recipe, the
-helpers, the `prepare-requires`, the committed gnulib for
+helpers, the `prepare-requires` and the references that stand in for them
+(see "Build tools"), the committed gnulib for
 packages that use gnulib, and the committed `with-sources`. A tree is prepared once for each key and shared by
 every package built from that source (util-linux, util-linux-bootstrap),
 every build that copies it into its own tree (`with-sources`), and later
@@ -678,6 +679,17 @@ its perl. The extras reference's packages stay in their own prefix
 (`/apps/pos-extras/<version>-<release>`, see "Prefix"), so their `#!`
 lines and runpaths hold; it may not be the build's own prefix, where an
 extras build installs its packages.
+
+Prepare also takes from the toolchain and pos references what their
+packages name with `replaces-host-rpm`: pos-sdk's go (`golang`), rust
+(`cargo`) and gcc (`gcc`), pos' zstd (`zstd`). A source whose
+`prepare-requires` names one gets that package in its prepare container,
+with what it requires from the same references, never this build's, and
+the tools image leaves it out of the `prepare-requires` (not of
+`host-requires`, nor the outputs'). So `go mod vendor` and `cargo vendor`
+run the sdk's Go and Cargo, the ones its build compiles with. This needs
+an extras reference, as the rest of the build tools do; without one,
+prepare has Fedora's.
 
 The C++ tools (gperf, patchelf, ninja, cmake) run on the build's
 gcc-runtime: the toolchain reference's, or without one the pos
