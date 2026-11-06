@@ -20,12 +20,15 @@
 #   POS_WITH_SRC_DIRS  the package's further source trees (meta
 #                   "with-sources"), as <source>=<dir> words; _prep_setup
 #                   copies each into the tree, as a directory named after it
+#   POS_SDK_PREFIX  the toolchain reference's sdk, which the env.sh of go,
+#                   rust and gcc name, when prepare takes them
 #   POS_TOOLS_PREFIX  the prefix of the build tools from an extras
 #                   reference, or empty for fedora's, in the tools image
 #                   (BUILD.md "Build tools"); then /pos holds them with
 #                   the base stage, and
 #   POS_ENV_SCRIPTS the env.sh of the build-tools profile, which puts
-#                   them on PATH
+#                   them on PATH, and of the reference packages that
+#                   stand in for prepare-requires
 set -euo pipefail
 
 source=${POS_SOURCE:?run prepare recipes through buildsys/build.sh}
@@ -40,15 +43,17 @@ _require_container() {
 
 # Initialize the source preparation directory before prep() runs.
 # Inputs (environment):
-#   POS_PREP_DIR, POS_WITH_SRC_DIRS, POS_GNULIB_DIR, POS_TOOLS_PREFIX,
+#   POS_PREP_DIR, POS_WITH_SRC_DIRS, POS_GNULIB_DIR, POS_SDK_PREFIX,
+#   POS_TOOLS_PREFIX,
 #   POS_ENV_SCRIPTS
 # Outputs (shell variables set for prep()):
 #   prep_dir, GNULIB_SRCDIR (exported if gnulib's gnulib-tool exists),
-#   pos_prefix, tools_prefix
+#   pos_prefix, sdk_prefix, tools_prefix
 _prep_setup() {
   _require_container
   prep_dir=${POS_PREP_DIR:?}
   pos_prefix=/pos
+  sdk_prefix=${POS_SDK_PREFIX:-}
   tools_prefix=${POS_TOOLS_PREFIX:-}
   cd "$prep_dir" || exit 1
   local w f

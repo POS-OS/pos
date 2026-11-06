@@ -406,6 +406,16 @@ reference_restore() {
   reference_kind "$ref" "$kind"
 }
 
+# The requires and replaces-host-rpm of an installed meta, each on one
+# line (load_references).
+# Inputs:
+#   $1    meta file
+meta_reqs_repl() {
+  awk '$1 == "requires" {r = r " " substr($0, index($0, $2))}
+       $1 == "replaces-host-rpm" {h = h " " substr($0, index($0, $2))}
+       END {print r; print h}' "$1"
+}
+
 # The packages of the references the resolver may use, with the
 # requirements they were built with (resolve.sh: REF, POSREF, REF_REQ,
 # TOOLSREF, TOOLS_REQ): the toolchain packages of the toolchain
@@ -414,14 +424,18 @@ reference_restore() {
 # glibc, which is not taken from it. The tools' packages have requirements
 # of their own (TOOLS_REQ): in an extras build they have the names of the
 # build's packages, in another prefix. TOOLS_HREPL: the Fedora packages
-# each stands for (replaces-host-rpm), as the reference has it.
+# each stands for (replaces-host-rpm), as the reference has it. PREP_REF:
+# the toolchain and pos references' packages by the Fedora package they
+# stand for, which prepare takes instead (tools_root); the toolchain's
+# first.
 # Inputs:
 #   TOOLCHAIN_REF, POS_REF, TOOLS_REF, refs
 # Outputs:
-#   REF[], POSREF[], REF_REQ[], TOOLSREF[], TOOLS_REQ[], TOOLS_HREPL[]
+#   REF[], POSREF[], REF_REQ[], TOOLSREF[], TOOLS_REQ[], TOOLS_HREPL[],
+#   PREP_REF[]
 load_references() {
-  local ref from meta p
-  REF=() POSREF=() REF_REQ=() TOOLSREF=() TOOLS_REQ=() TOOLS_HREPL=() HOSTAVAIL=()
+  local ref from meta p e reqs repl h
+  REF=() POSREF=() REF_REQ=() TOOLSREF=() TOOLS_REQ=() TOOLS_HREPL=() PREP_REF=() HOSTAVAIL=()
   TOOLSMEMO=() TOOLSMISS=() TOOLSKEY=() REFPFX=()
   next_reset
   for ref in "$TOOLCHAIN_REF" "$POS_REF" "$TOOLS_REF"; do
@@ -429,25 +443,29 @@ load_references() {
   done
   if [[ $TOOLS_REF != none ]]; then
     while read -r meta; do
-      p=$(basename "$(dirname "$meta")")
+      p=${meta%/*} p=${p##*/}
       [[ -n ${KIND[$p]:-} && ${PIPE[$p]} == extras ]] || continue
       TOOLSREF[$p]=1
-      TOOLS_REQ[$p]=$(awk '$1 == "requires" {$1 = ""; print}' "$meta" | xargs)
-      TOOLS_HREPL[$p]=$(awk '$1 == "replaces-host-rpm" {$1 = ""; print}' "$meta" | xargs)
+      { read -r reqs; read -r repl; } < <(meta_reqs_repl "$meta")
+      TOOLS_REQ[$p]=$reqs TOOLS_HREPL[$p]=$repl
     done < <(ref_metas "$TOOLS_REF")
   fi
   for ref in "$TOOLCHAIN_REF" "$POS_REF"; do
     [[ $ref != none ]] || continue
     from=$(ref_info "$ref" pipeline)
     while read -r meta; do
-      p=$(basename "$(dirname "$meta")")
+      p=${meta%/*} p=${p##*/}
       [[ -n ${KIND[$p]:-} && ${PIPE[$p]} == "${from:-pos}" ]] || continue
       if [[ $from == toolchain ]]; then
-        REF[$p]=1
+        REF[$p]=1 e=$p@ref
       else
-        POSREF[$p]=1
+        POSREF[$p]=1 e=$p@pos
       fi
-      REF_REQ[$p]=$(awk '$1 == "requires" {$1 = ""; print}' "$meta" | xargs)
+      { read -r reqs; read -r repl; } < <(meta_reqs_repl "$meta")
+      REF_REQ[$p]=$reqs
+      for h in $repl; do
+        [[ -n ${PREP_REF[$h]:-} ]] || PREP_REF[$h]=$e
+      done
     done < <(ref_metas "$ref")
   done
   return 0
