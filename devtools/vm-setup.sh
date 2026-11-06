@@ -15,6 +15,11 @@
 set -euo pipefail
 PATH=/pos/sbin:/pos/bin:/usr/sbin:/usr/bin
 
+# systemd's time zones are /usr/share/zoneinfo's; disks of releases
+# before 1.0-11 lack the link to /pos/share/zoneinfo that vm-disk's layout
+# makes now.
+[[ -e /usr/share/zoneinfo ]] || ln -s ../../pos/share/zoneinfo /usr/share/zoneinfo
+
 # First boot's settings, which a later boot would otherwise ask for.
 systemd-firstboot --force --timezone="$TIMEZONE" --root-password-hashed="$ROOT_HASH"
 echo "time zone $(readlink /etc/localtime), root password set"
