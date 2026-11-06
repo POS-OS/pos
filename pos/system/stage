@@ -10,6 +10,8 @@ logrotate
 # for systemd-fsck at boot and resizing. Others are the storage stage's.
 e2fsprogs
 dosfstools
+# The console's keyboard layouts and fonts (systemd-vconsole-setup, localectl).
+kbd
 # The initramfs: dracut (kernel-install's plugin; GNU cpio is the base's).
 dracut
 # The QEMU guest agent, for POS in VMs; glib is its library.

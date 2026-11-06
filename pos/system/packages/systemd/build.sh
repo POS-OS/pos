@@ -5,8 +5,10 @@ pkg() {
   #
   # systemd bakes in paths to programs it execs, defaulting to /usr/bin or
   # /usr/sbin. The *-path options move the ones POS ships: kmod from kmod,
-  # the rest from util-linux (BUILD.md "Prefix"). quotaon, quotacheck, kexec,
-  # loadkeys and setfont are not in POS and keep their dead defaults.
+  # loadkeys and setfont from kbd, the rest from util-linux (BUILD.md
+  # "Prefix"). quotaon, quotacheck and kexec are not in POS and keep their
+  # dead defaults. The keymaps localectl lists are those of fixed /usr
+  # directories; the root layouts link /usr/share/kbd to kbd's data.
   # Programs a unit names without a path (ExecStart=systemd-tmpfiles) are
   # looked up in the built-in search path, /usr/local and /usr; POS's bin
   # directories are appended to it (extra-exec-search-path), which also
@@ -41,6 +43,8 @@ pkg() {
         -Dextra-exec-search-path="${prefix}/sbin:${prefix}/bin" \
         -Dcompat-sysv-interfaces=false \
         -Dkmod-path="${prefix}/bin/kmod" \
+        -Dloadkeys-path="${prefix}/bin/loadkeys" \
+        -Dsetfont-path="${prefix}/bin/setfont" \
         -Dmount-path="${prefix}/bin/mount" \
         -Dumount-path="${prefix}/bin/umount" \
         -Dsulogin-path="${prefix}/sbin/sulogin" \
