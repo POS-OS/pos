@@ -1436,11 +1436,11 @@ units, module loading in the initrd and after, unit file modes, the login
 prompt on tty1, the QEMU guest agent, network and dnf, the PAM services
 and sudo. Its status is the number of failed checks. `disk_check` runs it in `output_host()` (see "Build numbers").
 
-`devtools/vm-libvirt-disk.sh [-o <output>] [-t <timezone>] [-u <user>]
-<build>` makes a libvirt test VM's disk from a published release: the
+`devtools/vm-libvirt-disk.sh [-o <output>] [-t <timezone>] [-k <keymap>]
+[-u <user>] <build>` makes a libvirt test VM's disk from a published release: the
 release's vm-disk (or `-o vm-disk-dnf`), set up by `devtools/vm-setup.sh`
-in one boot of `vm.sh -d -w -s`: first boot's time zone (the host's by
-default) and root password, the container stage, the apps of the newest
+in one boot of `vm.sh -d -w -s`: first boot's time zone and console keymap
+(the host's by default) and root password, the container stage, the apps of the newest
 pos-sdk and pos-extras releases that have an app archive (`pos-app
 install`), and a user (`$USER` by default) in group wheel. It asks for the
 passwords and passes their hashes. The set-up disk goes to libvirt's images
@@ -1850,6 +1850,14 @@ file system tools and the initramfs. It builds on core-libs and base.
   they resize and repair without a stage enabled. Other file systems are
   the storage stage's. e2fsprogs uses util-linux's libuuid, libblkid,
   fsck and uuidd; no fuse2fs.
+* kbd, the console's keyboard layouts and fonts: loadkeys and setfont,
+  which systemd-vconsole-setup runs with `/etc/vconsole.conf`'s KEYMAP and
+  FONT (`localectl set-keymap`, `systemd-firstboot --keymap`). Its data is
+  in `/pos/share/kbd`, uncompressed. systemd looks for keymaps only in /usr
+  directories: the root layouts link `/usr/share/kbd` there. dracut's i18n
+  module (`kbddir=/pos/share/kbd`, 01-dist.conf) puts the layout and font
+  in the initramfs. vlock is left out (a PAM program), as is xkb
+  conversion (no xkbcommon).
 * The QEMU guest agent (qemu-ga, pos/system/packages/qemu-guest-agent) answers the
   host's libvirt in a VM: guest IP addresses, `virsh guestinfo`, shutdown
   and reboot through the agent, file system freeze for quiesced snapshots,

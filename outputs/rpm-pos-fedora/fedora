@@ -86,6 +86,9 @@ glib glib2
 qemu-guest-agent qemu-guest-agent
 cpio cpio
 dracut dracut
+# kbd: Fedora's kbd provides vlock, which POS's kbd leaves out. Its data is in
+# /usr/lib/kbd; POS's is /pos/share/kbd, linked as /usr/share/kbd by the layout.
+kbd kbd kbd-misc kbd-legacy
 # dracut: Fedora's subpackages (dracut-network, dracut-squash, ...) are not
 # listed; POS's dracut has their modules, but not the Fedora configuration
 # (dracut-config-*).
