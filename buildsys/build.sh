@@ -384,10 +384,14 @@ step_made() {
 # Inputs:
 #   bdir    active build directory
 # Outputs:
-#   PIPELINE, PREFIX, BUILT[], TOOLCHAIN_REF, POS_REF, REF[], POSREF[], REF_REQ[]
+#   PIPELINE, PREFIX, fedora_release, BUILT[], TOOLCHAIN_REF, POS_REF, REF[],
+#   POSREF[], REF_REQ[]
 build_load() {
   PIPELINE=$(build_info pipeline)
   PIPELINE=${PIPELINE:-pos}
+  # The release its tools image has, whatever the setting is now.
+  fedora_release=$(build_info fedora)
+  fedora_release=${fedora_release:-$(config fedora-release)}
   PREFIX=$(build_prefix)
   load_built
   build_references
@@ -436,7 +440,7 @@ recipe_mounts() {
 # The build tools of an extras reference for a step of its own (prepare,
 # unpack): /pos and their prefix as a package build has them, without a
 # package's own environment, composed in $bdir/roots/<name>, with the
-# reference packages the step names (prep_refs). Nothing with fedora's
+# reference packages the step names (prep_tools). Nothing with fedora's
 # tools, which are the tools image's. The step sources the scripts, with
 # pos_prefix, sdk_prefix and tools_prefix set, as _pkg_setup does.
 # Inputs:
@@ -464,24 +468,46 @@ tools_root() {
   TOOLS_SCRIPTS=${TOOLS_SCRIPTS# }
 }
 
-# The reference packages that stand in for a source's prepare-requires
+# The tools of a source's prepare beyond the build tools. PREPREFS: the
+# reference packages that stand in for its prepare-requires
 # (replaces-host-rpm: PREP_REF), which its prepare takes instead of the
 # Fedora packages: the toolchain reference's cargo, go and gcc, the pos
-# reference's zstd. Only with an extras reference: without one, prepare
+# reference's zstd; only with an extras reference: without one, prepare
 # has no composed root (tools_root) and the tools image has them all
-# (tools_packages).
+# (tools_packages). PREPFED: the Fedora packages it runs, from the tools
+# image: the other prepare-requires and, with fedora's build tools,
+# host-base's.
 # Inputs:
 #   $1    source name
-#   PREQ, PREP_REF, TOOLS_REF
+#   PREQ, PREP_REF, TOOLS_REF, HREQ
 # Outputs:
-#   PREPREFS (array of <name>@ref, <name>@pos)
-prep_refs() {
+#   PREPREFS (array of <name>@ref, <name>@pos), PREPFED (array of names)
+prep_tools() {
   local h
-  PREPREFS=()
-  [[ $TOOLS_REF != none ]] || return 0
+  PREPREFS=() PREPFED=()
+  [[ $TOOLS_REF != none ]] || PREPFED=(${HREQ[host-base]:-})
   for h in ${PREQ[$1]}; do
-    [[ -z ${PREP_REF[$h]:-} ]] || PREPREFS+=("${PREP_REF[$h]}")
+    if [[ $TOOLS_REF != none && -n ${PREP_REF[$h]:-} ]]; then
+      PREPREFS+=("${PREP_REF[$h]}")
+    else
+      PREPFED+=("$h")
+    fi
   done
+}
+
+# The record of the Fedora packages a source's prepare runs (PREPFED), as
+# the build's tools image has them (tools_versions): <name> <packages>
+# lines; none for a name the build tools replace (-), which the key's
+# tools reference names. Written next to a prepared tree (<key>.tools),
+# compared when the tree is reused.
+# Inputs:
+#   PREPFED (prep_tools), FEDORA, FEDORA_LOADED
+prep_record() {
+  local n
+  [[ -n ${FEDORA_LOADED:-} ]] || die "internal: the tools image's versions are not loaded (tools_versions)"
+  for n in "${PREPFED[@]}"; do
+    [[ ${FEDORA[$n]:--} == - ]] || echo "$n ${FEDORA[$n]}"
+  done | sort -u
 }
 
 # The key of a prepared tree: everything that goes into it. Of a release
@@ -490,7 +516,7 @@ prep_refs() {
 #   $1    source name
 prepare_key() {
   local s=$1 w q
-  prep_refs "$s"
+  prep_tools "$s"
   {
     if [[ -n ${ARCHIVE[$s]:-} ]]; then
       echo "archive $(unpack_key "$s")"
@@ -500,8 +526,11 @@ prepare_key() {
     fi
     cat "$base/${PKGDIR[$s]}/prepare.sh" "$engine/buildsys/prepare.sh"
     echo "${PREQ[$s]}"
-    # What prepare generates with is part of it; fedora's tools are the
-    # tools image's, which keys never had.
+    # What prepare generates with is part of it: the build tools, the
+    # references' stand-ins, and of Fedora's the release and which
+    # packages, not their versions (prep_record: a newer one within a
+    # release warns, prepare_source).
+    echo "fedora $fedora_release ${PREPFED[*]}"
     [[ $TOOLS_REF == none ]] || echo "tools $TOOLS_REF"
     for q in "${PREPREFS[@]}"; do
       case $q in
@@ -537,7 +566,11 @@ prepare_source() {
   key=$(prepare_key "$s") || exit 1
   dir=$sources/$s/$key
   PREPARED=$dir
-  [[ -f $dir.done ]] && return
+  prep_tools "$s"
+  if [[ -f $dir.done ]]; then
+    prep_reuse_check "$s" "$dir"
+    return
+  fi
   log=$bdir/logs/prepare-$s.log
   hbase=$(host_path "$base")
   rm -rf "$dir" "$dir.tmp"
@@ -555,7 +588,6 @@ prepare_source() {
   recipe_mounts
   mounts=(net ro:"$engine/buildsys" "${RECIPE_MOUNTS[@]}" ro:"$src" rw:"$dir.tmp" ro:"$dir.upstream")
   local root scripts
-  prep_refs "$s"
   tools_root "prepare-$s" "${PREPREFS[@]}"
   root=$TOOLS_ROOT scripts=$TOOLS_SCRIPTS
   mounts+=("${TOOLS_MOUNTS[@]}")
@@ -582,8 +614,28 @@ prepare_source() {
     POS_ENV_SCRIPTS="$scripts" \
     bash "$(host_path "$engine/buildsys/prepare.sh")" 2>&1 | tee -a "$log"
   [[ -z $root ]] || rm -rf "$root"
+  prep_record >"$dir.tools"
   mv "$dir.tmp" "$dir"
   touch "$dir.done"
+}
+
+# Warn when a prepared tree is reused with other Fedora packages than it
+# was prepared with (its <key>.tools against prep_record): a newer one
+# within the release, which the key leaves out. A tree prepared before
+# records were kept has none.
+# Inputs:
+#   $1    source name
+#   $2    prepared tree
+#   PREPFED (prep_tools), FEDORA
+prep_reuse_check() {
+  local now
+  [[ -f $2.tools ]] || return 0
+  now=$(prep_record) || exit 1
+  [[ $now != "$(<"$2.tools")" ]] || return 0
+  echo "warning: $1: prepared with other Fedora packages than the tools image has; kept ($2.tools):" >&2
+  now=${now:+$now$'\n'}
+  comm -23 "$2.tools" <(printf '%s' "$now") | sed 's/^/  prepared with: /' >&2
+  comm -13 "$2.tools" <(printf '%s' "$now") | sed 's/^/  image has:     /' >&2
 }
 
 # The release archive of a source in the download directory, named as
@@ -736,7 +788,7 @@ load_built() {
 #   PREFIX  the build's prefix, PFX
 #   SOURCE_ID, SOURCE_VER, WITH_SOURCE_IDS, BUILD_KEY, CACHED_FROM (build_one)
 pkg_record() {
-  local p=$1 dest=$bdir/dest/$1 dir extra s pre rel content
+  local p=$1 dest=$bdir/dest/$1 dir extra s q k pre rel content
   pre=$(pkg_prefix "$p")
   rel=${pre#/}
   [[ -d $dest$pre ]] || die "$p: nothing installed into $dest$pre"
@@ -772,6 +824,12 @@ pkg_record() {
     echo "build-source ${SRC[$(build_of "$p")]} ${SOURCE_ID:-}"
     for s in "${WITH_SOURCE_IDS[@]}"; do
       echo "build-with-source $s"
+    done
+    # The Fedora packages that prepared them (prep_record).
+    for s in "${SRC[$(build_of "$p")]} ${SOURCE_ID:-}" "${WITH_SOURCE_IDS[@]}"; do
+      read -r q k <<<"$s"
+      [[ -n $k && -f $sources/$q/$k.tools ]] || continue
+      sed "s/^/build-prepare-tool $q /" "$sources/$q/$k.tools"
     done
     echo "build-env ${ENV[*]}"
     echo "build-tools $TOOLS_ID"
@@ -1085,7 +1143,8 @@ source_id() {
 }
 
 # The Fedora packages of the tools image that the recipes' host-requires
-# name, for build keys (build_key): each name with the packages that
+# and prepare-requires name, for build keys (build_key) and the record of
+# what prepared a tree (prep_record): each name with the packages that
 # provide it (name-version-release.arch), or - when none does (a
 # host-requires the build tools replace). A key names the versions of the
 # Fedora packages its build uses, not the image: each build makes an image
@@ -1093,14 +1152,14 @@ source_id() {
 # Inputs:
 #   bdir, PKGS, HREQ
 # Outputs:
-#   FEDORA (host-requires name -> its packages)
+#   FEDORA (host-requires name -> its packages), FEDORA_LOADED
 tools_versions() {
   local p n v
-  FEDORA=()
+  FEDORA=() FEDORA_LOADED=1
   # shellcheck disable=SC2016
   while read -r n v; do
     FEDORA[$n]=$v
-  done < <(for p in "${PKGS[@]}"; do echo "${HREQ[$p]}"; done | xargs -n1 | sort -u |
+  done < <(for p in "${PKGS[@]}"; do echo "${HREQ[$p]} ${PREQ[$p]}"; done | xargs -n1 | sort -u |
              host_podman run --rm -i --network=none "$(build_info tools-image)" bash -c '
                while read -r n; do
                  if v=$(rpm -q --whatprovides --qf "%{NEVRA}\n" "$n" 2>/dev/null); then
@@ -1426,7 +1485,7 @@ cmd_plan() {
 #   bdir, PKGS, KIND, BUILT
 source_archives() {
   local p s key out commit stem spec
-  local -a recipes=() specs=(outputs buildsys "${RECIPES[@]}" BUILD.md README.md)
+  local -a recipes=() specs=(outputs buildsys "${RECIPES[@]}" BUILD.md README.md) rec=()
   local -A seen=()
   for p in "${PKGS[@]}"; do
     [[ ${KIND[$p]} == package && -n ${BUILT[$p]:-} ]] || continue
@@ -1446,7 +1505,10 @@ source_archives() {
       out=$bdir/pos-src-$s-${key:0:16}.tar.zst
       [[ -f $out ]] && continue
       if [[ -d $sources/$s/$key ]]; then
-        tar --zstd -cf "$out.tmp" -C "$sources/$s" --transform "s,^$key,$s," "$key"
+        # The tree as <source>/, its record of Fedora's tools as <source>.tools.
+        rec=()
+        [[ ! -s $sources/$s/$key.tools ]] || rec=("$key.tools")
+        tar --zstd -cf "$out.tmp" -C "$sources/$s" --transform "s,^$key,$s," "$key" "${rec[@]}"
       elif [[ -n ${ARCHIVE[$s]:-} ]]; then
         die "$s: its prepared tree $sources/$s/$key is gone; prepare it again (./build prepare $s)"
       else
@@ -1607,6 +1669,9 @@ cmd_prepare() {
   title_init
   ((${#args[@]})) || mapfile -t args < <(pipeline_targets)
   targets_expand "${args[@]}"
+  # Prepare runs in the tools image and records its Fedora packages.
+  tools_ensure
+  tools_versions
   for p in "${TARGETS[@]}"; do
     p=$(build_of "$p")
     for s in ${SRC[$p]} ${WSRC[$p]}; do
