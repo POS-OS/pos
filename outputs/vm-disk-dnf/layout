@@ -2,9 +2,7 @@
 # buildsys/output-plugins.d/fs.sh); the rest of its layout is Fedora's
 # filesystem package's. As in vm-disk, /usr/lib/modules links out of /usr
 # to pos-kernel's modules directory, and rpm installs the kernel's
-# modules through the link (BUILD.md "Kernels"). /usr/share/kbd is POS's
-# kbd data, where systemd looks for keymaps (pos-fedora replaces Fedora's
-# kbd), as in vm-disk.
+# modules through the link (BUILD.md "Kernels").
 #
 #   dir <path> <mode>        directory
 #   link <path> <target>     symlink
@@ -12,5 +10,3 @@
 dir /usr/lib 0755
 dir /var/lib/pos/kernel/modules 0755
 link /usr/lib/modules ../../var/lib/pos/kernel/modules
-dir /usr/share 0755
-link /usr/share/kbd ../../pos/share/kbd

@@ -7,8 +7,8 @@ pkg() {
   # /usr/sbin. The *-path options move the ones POS ships: kmod from kmod,
   # loadkeys and setfont from kbd, the rest from util-linux (BUILD.md
   # "Prefix"). quotaon, quotacheck and kexec are not in POS and keep their
-  # dead defaults. The keymaps localectl lists are those of fixed /usr
-  # directories; the root layouts link /usr/share/kbd to kbd's data.
+  # dead defaults. The keymaps localectl lists are kbd's, /pos/share/kbd
+  # (prepare.sh adds it to the fixed /usr directories).
   # Programs a unit names without a path (ExecStart=systemd-tmpfiles) are
   # looked up in the built-in search path, /usr/local and /usr; POS's bin
   # directories are appended to it (extra-exec-search-path), which also

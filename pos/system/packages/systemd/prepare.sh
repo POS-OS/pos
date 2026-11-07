@@ -9,6 +9,10 @@
 # /usr/lib, as units have the prefix before /usr/lib: POS's own files come
 # from /pos/lib, and other packages' (Fedora's through pos-fedora, a hosted
 # kernel's) are still read from /usr/lib.
+#
+# The keymaps firstboot, localed and localectl look for are those of kbd's
+# fixed /usr directories; PREFIX/share/kbd/keymaps (kbd's, pos/system/packages/kbd)
+# is added before them, so no /usr link is needed.
 
 prep() {
   sed -i "/dependency('libseccomp'/,/get_option('seccomp')/ { /version : '>= 2.4.0',/d; }" \
@@ -19,6 +23,13 @@ prep() {
       src/basic/constants.h src/shared/userdb-dropin.h
   sed -i 's|"/usr/lib/kernel/install.d"|LIBDIR "/kernel/install.d", &|' \
       src/kernel-install/kernel-install.c
+  sed -i 's|^\( *\)"/usr/share/keymaps/",|\1PREFIX "/share/kbd/keymaps/", \\\n&|' \
+      src/shared/kbd-util.c
+  grep -q 'PREFIX "/share/kbd/keymaps/"' src/shared/kbd-util.c || {
+    echo "systemd: keymap directories not as expected" >&2
+    exit 1
+  }
+
   edits=$(cat src/basic/constants.h src/shared/userdb-dropin.h src/kernel-install/kernel-install.c |
             grep -c 'LIBDIR "/')
   [[ $edits == 4 ]] || {

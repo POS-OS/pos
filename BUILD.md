@@ -1853,8 +1853,9 @@ file system tools and the initramfs. It builds on core-libs and base.
 * kbd, the console's keyboard layouts and fonts: loadkeys and setfont,
   which systemd-vconsole-setup runs with `/etc/vconsole.conf`'s KEYMAP and
   FONT (`localectl set-keymap`, `systemd-firstboot --keymap`). Its data is
-  in `/pos/share/kbd`, uncompressed. systemd looks for keymaps only in /usr
-  directories: the root layouts link `/usr/share/kbd` there. dracut's i18n
+  in `/pos/share/kbd`, uncompressed. systemd looks for keymaps in /usr
+  directories only; its prepare recipe adds `/pos/share/kbd/keymaps`
+  before them, so no /usr link is needed. dracut's i18n
   module (`kbddir=/pos/share/kbd`, 01-dist.conf) puts the layout and font
   in the initramfs. vlock is left out (a PAM program), as is xkb
   conversion (no xkbcommon).
