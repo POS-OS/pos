@@ -19,6 +19,12 @@ pkg() {
   # TOOLBOX_PATH, the path of the host's toolbox it is given there: the
   # build sets it to the program it makes.
   #
+  # In a container, toolbox takes the time zone from where the host's
+  # /etc/localtime leads, all links followed, and knows only
+  # /usr/share/zoneinfo; on POS that is a link to /pos/share/zoneinfo, so
+  # the copy adds /run/host/pos/share/zoneinfo (toolbox enter failed:
+  # "/etc/localtime points to unknown location").
+  #
   # The profile.d file goes to /etc/profile.d (factory), which
   # pos-integration's /etc/profile reads. The test suite, which meson
   # installs, is left out.
@@ -27,6 +33,10 @@ pkg() {
     "$build_dir/src/meson.build"
   grep -q "dynamic_linker = '${prefix}/lib/ld-linux-x86-64.so.2'" "$build_dir/src/meson.build" ||
     { echo "toolbox: src/meson.build names no x86-64 loader to replace" >&2; exit 1; }
+  sed -i 's|^\(\t*\)"/run/host/usr/share/zoneinfo",$|&\n\1"/run/host'"${prefix}"'/share/zoneinfo",|' \
+    "$build_dir/src/cmd/initContainer.go"
+  grep -q "\"/run/host${prefix}/share/zoneinfo\"," "$build_dir/src/cmd/initContainer.go" ||
+    { echo "toolbox: src/cmd/initContainer.go has no zoneinfo roots to extend" >&2; exit 1; }
   pkg_go_env
   CGO_LDFLAGS=${LDFLAGS/-Wl,--dynamic-linker=${prefix}\/lib\/ld-linux-x86-64.so.2/}
   meson setup "$build_dir/build" "$build_dir" \
