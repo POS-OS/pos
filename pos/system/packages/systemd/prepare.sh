@@ -13,6 +13,12 @@
 # The keymaps firstboot, localed and localectl look for are those of kbd's
 # fixed /usr directories; PREFIX/share/kbd/keymaps (kbd's, pos/system/packages/kbd)
 # is added before them, so no /usr link is needed.
+#
+# The locales localectl lists and firstboot offers are those of
+# /usr/lib/locale; POS's glibc reads compiled locales only from its own,
+# LIBDIR/locale (pos/core-libs/packages/glibc), which replaces it: with
+# /usr/lib/locale, systemd would find none of POS's, or Fedora's langpacks
+# that POS's glibc does not read.
 
 prep() {
   sed -i "/dependency('libseccomp'/,/get_option('seccomp')/ { /version : '>= 2.4.0',/d; }" \
@@ -27,6 +33,12 @@ prep() {
       src/shared/kbd-util.c
   grep -q 'PREFIX "/share/kbd/keymaps/"' src/shared/kbd-util.c || {
     echo "systemd: keymap directories not as expected" >&2
+    exit 1
+  }
+
+  sed -i 's|^\( *\)"/usr/lib/locale/";|\1LIBDIR "/locale/";|' src/basic/locale-util.c
+  grep -q 'LIBDIR "/locale/";' src/basic/locale-util.c || {
+    echo "systemd: locale directory not as expected" >&2
     exit 1
   }
 
