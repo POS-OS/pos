@@ -3,6 +3,7 @@
 # while compiling only: glibc's headers include them, and glibc builds with
 # them. The toolchain builds on them as on glibc, from a pos reference.
 source linux
-# fixdep, the one program the build compiles and runs, is built with
-# Fedora's compiler.
-build-requires host-gcc
+# fixdep, the one program the build compiles and runs, is built with the
+# build's compiler: the toolchain reference's gcc, or Fedora's (gcc-host)
+# without one.
+build-requires gcc pos-link

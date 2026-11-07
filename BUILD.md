@@ -717,7 +717,12 @@ two things:
   setting, Fedora's container image by default, pulled then and pinned by
   digest (`info`: `tools-base`), with the `host-requires` and
   `prepare-requires` of every package and the `host-requires` of every
-  output installed by dnf.
+  output installed by dnf. Of the host and profile packages, only those a
+  build may resolve to: a package's requirements reach them, and no
+  toolchain reference package obsoletes them. With a toolchain reference,
+  gcc obsoletes gcc-host and nothing requires host-toolchain, so Fedora's
+  compiler is not installed (pos-sdk's go and rust likewise leave out
+  go-host's and rust-host's golang, rust and cargo).
   Nothing installs while a build runs, so every step of a run sees the
   same tools whatever order they run in. When a package declares more
   later in the build, the image is made again on the same base
@@ -866,8 +871,9 @@ follows from what it requires, never from what is found on disk:
 `pos-link` and `gcc-host` are profiles (`kind profile`): nothing is built
 or installed, they only carry the setup and its requirements. Recipes
 build-require `gcc` and `pos-link`, which requires `gcc`. glibc requires
-only the compiler and linux-headers (see "Core libs stage");
-linux-headers only `host-gcc`, for the one program its build runs.
+only the compiler and linux-headers (see "Core libs stage"), as
+linux-headers does, for the one program its build runs (fixdep,
+`HOSTCC=$CC`). Only gcc-host requires `host-gcc`.
 
 Requirements are what a build sees, but configure scripts also find what
 they were not asked to. gcc's run-time requirements (glibc, gcc-runtime,
