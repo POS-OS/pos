@@ -34,9 +34,43 @@ host_podman() {
   fi
 }
 
+# The host and profile packages a build may resolve to: those providing a
+# requirement of a package (build-requires, requires), or of another one
+# of them, that no toolchain reference package obsoletes (available). Not
+# the run's targets: the tools image is made for the whole build. With a
+# toolchain reference, gcc obsoletes gcc-host, so nothing reaches
+# host-toolchain (Fedora's gcc); go and rust obsolete go-host and
+# rust-host (Fedora's golang, rust, cargo).
+# Inputs:
+#   PKGS, KIND, BREQ, REQ, PROVIDERS, OBS, REF
+# Outputs:
+#   HOSTUSED (set of package names)
+tools_hosts() {
+  local p cap i=0
+  local -a queue=()
+  local -A seen=()
+  HOSTUSED=()
+  for p in "${PKGS[@]}"; do
+    [[ ${KIND[$p]} == host || ${KIND[$p]} == profile ]] || queue+=(${BREQ[$p]} ${REQ[$p]})
+  done
+  while ((i < ${#queue[@]})); do
+    cap=${queue[i++]}
+    [[ -z ${seen[$cap]:-} ]] || continue
+    seen[$cap]=1
+    for p in ${PROVIDERS[$cap]:-}; do
+      [[ ${KIND[$p]} == host || ${KIND[$p]} == profile ]] || continue
+      [[ -z ${HOSTUSED[$p]:-} ]] || continue
+      ! obsoleted_by_any "$p" "${!REF[@]}" || continue
+      HOSTUSED[$p]=1
+      queue+=(${REQ[$p]})
+    done
+  done
+}
+
 # The Fedora packages of the tools image: the host-requires and
 # prepare-requires of every package and the host-requires of every output
-# (outputs.sh), so any step of the run finds what it declares. host-base's
+# (outputs.sh), so any step of the run finds what it declares; of host and
+# profile packages, those a build may resolve to (tools_hosts). host-base's
 # only with fedora's build tools (reference.sh: tools_choose); with an
 # extras reference's, none of those the tools stand for in packages'
 # requirements: the replaces-host-rpm of the reference's packages the
@@ -50,7 +84,8 @@ host_podman() {
 tools_packages() {
   local p q h
   local -a drop=() ENV=() MISSING=()
-  local -A TOOLENV=()
+  local -A TOOLENV=() HOSTUSED=()
+  tools_hosts
   if [[ $TOOLS_REF != none ]]; then
     env_of || true
     for q in "${ENV[@]}"; do
@@ -60,6 +95,9 @@ tools_packages() {
   {
     for p in "${PKGS[@]}"; do
       [[ $p != host-base || $TOOLS_REF == none ]] || continue
+      case ${KIND[$p]} in
+        host|profile) [[ $p == host-base || -n ${HOSTUSED[$p]:-} ]] || continue ;;
+      esac
       echo ${HREQ[$p]}
       for h in ${PREQ[$p]}; do
         [[ $TOOLS_REF != none && -n ${PREP_REF[$h]:-} ]] || echo "$h"
