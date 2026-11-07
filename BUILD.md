@@ -317,8 +317,16 @@ committed source.
 Prepared trees are kept in `work/sources/<source>/<key>`. The key is a hash
 of the committed source tree, its `.upstream`, the prepare recipe, the
 helpers, the `prepare-requires` and the references that stand in for them
-(see "Build tools"), the committed gnulib for
-packages that use gnulib, and the committed `with-sources`. A tree is prepared once for each key and shared by
+(see "Build tools"), the build tools, the Fedora release and which of
+Fedora's packages prepare runs (the other `prepare-requires`, and
+`host-base` with Fedora's build tools), the committed gnulib for
+packages that use gnulib, and the committed `with-sources`. The versions
+of those Fedora packages are not in the key: they are recorded next to
+the tree (`<key>.tools`, from `rpm -q` in the build's tools image), in the
+meta of every package built from it (`build-prepare-tool <source> <name>
+<packages>`) and in its source archive (`<source>.tools`). A tree reused
+with other versions than its record, a Fedora update within the release,
+is kept with a warning; a new release prepares it again. A tree is prepared once for each key and shared by
 every package built from that source (util-linux, util-linux-bootstrap),
 every build that copies it into its own tree (`with-sources`), and later
 builds. `run` prepares a source when it

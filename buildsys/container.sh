@@ -76,7 +76,7 @@ tools_hosts() {
 # requirements: the replaces-host-rpm of the reference's packages the
 # build-tools profile brings (env_of without a package), as the reference
 # has them, nor the prepare-requires the toolchain and pos references
-# stand in for (PREP_REF: prepare takes those, prep_refs). Outputs keep
+# stand in for (PREP_REF: prepare takes those, prep_tools). Outputs keep
 # theirs: they run on Fedora's, not the build tools.
 # Inputs:
 #   PKGS, HREQ, PREQ, OUT_HREQ, TOOLS_REF, TOOLS_HREPL, PREP_REF
