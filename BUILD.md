@@ -1199,7 +1199,8 @@ glibc's `localedata/SUPPORTED` are compiled into one archive,
 `/pos/lib/locale/locale-archive`, so any language works as it is;
 the legacy character sets (ISO-8859-*, EUC-*, ...) are not built. glibc
 reads compiled locales only from its own prefix, not Fedora's
-`/usr/lib/locale`.
+`/usr/lib/locale`. systemd's prepare recipe points its list of locales
+(`localectl list-locales`, systemd-firstboot) at `/pos/lib/locale` too.
 
 linux-headers, the kernel UAPI headers, are in this stage: glibc's
 headers include them (`errno.h` includes `<linux/errno.h>`), and glibc
@@ -1411,9 +1412,9 @@ the display, is `/dev/console`, where systemd shows its status and the
 first boot's questions. Each has a login prompt: getty@tty1 on the display,
 and a serial getty that systemd's getty generator starts for the serial
 console. On the first boot systemd-firstboot asks for the timezone (UTC is
-filled in) and the root password, which is how root gets one; locale and
-keymap are not asked, as systemd-firstboot asks only where there is a
-choice. Systemd credentials answer the questions instead
+filled in) and the root password, which is how root gets one; the locale
+(of POS's glibc, `/pos/lib/locale`) and, on a virtual console such as the
+display, the keymap (of kbd) are asked too. Systemd credentials answer the questions instead
 (`passwd.hashed-password.root`, `firstboot.timezone`, see
 systemd-firstboot(1)); libvirt passes them as SMBIOS type 11 strings, as
 vm.sh does.
@@ -1442,10 +1443,10 @@ units, module loading in the initrd and after, unit file modes, the login
 prompt on tty1, the QEMU guest agent, network and dnf, the PAM services
 and sudo. Its status is the number of failed checks. `disk_check` runs it in `output_host()` (see "Build numbers").
 
-`devtools/vm-libvirt-disk.sh [-o <output>] [-t <timezone>] [-k <keymap>]
-[-u <user>] <build>` makes a libvirt test VM's disk from a published release: the
+`devtools/vm-libvirt-disk.sh [-o <output>] [-t <timezone>] [-l <locale>]
+[-k <keymap>] [-u <user>] <build>` makes a libvirt test VM's disk from a published release: the
 release's vm-disk (or `-o vm-disk-dnf`), set up by `devtools/vm-setup.sh`
-in one boot of `vm.sh -d -w -s`: first boot's time zone and console keymap
+in one boot of `vm.sh -d -w -s`: first boot's time zone, locale and console keymap
 (the host's by default) and root password, the container stage, the apps of the newest
 pos-sdk and pos-extras releases that have an app archive (`pos-app
 install`), and a user (`$USER` by default) in group wheel. It asks for the

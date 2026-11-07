@@ -3,6 +3,7 @@
 # devtools/vm-libvirt-disk.sh, which puts the settings in front of it:
 #
 #   TIMEZONE     the time zone, a name of /pos/share/zoneinfo
+#   LOCALE       the system's locale (LANG), one of glibc's; empty: none
 #   KEYMAP       the console's keyboard layout, a keymap of kbd; empty: none
 #   ROOT_HASH    root's password, hashed (crypt(3), as openssl passwd -6)
 #   USER_NAME    the user to add, with a home directory; empty: none
@@ -24,6 +25,12 @@ PATH=/pos/sbin:/pos/bin:/usr/sbin:/usr/bin
 # First boot's settings, which a later boot would otherwise ask for.
 systemd-firstboot --force --timezone="$TIMEZONE" --root-password-hashed="$ROOT_HASH"
 echo "time zone $(readlink /etc/localtime), root password set"
+
+# The locale (/etc/locale.conf), which systemd otherwise leaves at C.UTF-8.
+if [[ -n $LOCALE ]]; then
+  systemd-firstboot --force --locale="$LOCALE"
+  echo "locale $LOCALE"
+fi
 
 # The console's keyboard layout (/etc/vconsole.conf), applied now and at
 # every boot, in the initramfs too. Disks of releases before 1.0-11 have no

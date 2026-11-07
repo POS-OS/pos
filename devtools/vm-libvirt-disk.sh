@@ -4,17 +4,20 @@
 # makes the disk a libvirt VM boots, pos-rootfs.qcow2, a new overlay of 12G
 # on top of it:
 #
-#   vm-libvirt-disk.sh [-o <output>] [-t <timezone>] [-k <keymap>] [-u <user>] <build>
+#   vm-libvirt-disk.sh [-o <output>] [-t <timezone>] [-l <locale>] [-k <keymap>]
+#                      [-u <user>] <build>
 #     <build>      the release's BUILD number, 7 for 1.0-7.main.20261025-1813
 #     -o <output>  the disk's output: vm-disk (default) or vm-disk-dnf
 #     -t <zone>    the time zone (default: this machine's)
+#     -l <locale>  the locale, LANG (default: this machine's, localectl's
+#                  System Locale); -l '' sets none
 #     -k <keymap>  the console's keyboard layout (default: this machine's,
 #                  localectl's VC Keymap); -k '' sets none
 #     -u <user>    the user to add (default: $USER); -u '' adds none
 #
 # It asks for the passwords of root and the user. The setup is
 # devtools/vm-setup.sh, run once in the disk by devtools/vm.sh before libvirt
-# boots it: first boot's settings (time zone, keymap, root password), the container
+# boots it: first boot's settings (time zone, locale, keymap, root password), the container
 # stage, the apps of the newest pos-sdk and pos-extras releases that have an
 # app archive, and the user. The disk is set up in work/vm-libvirt, a copy
 # of the release's (reflinked where the file system can), removed once it
@@ -40,18 +43,20 @@ work=$base/work/vm-libvirt
 
 output=vm-disk
 timezone=$(readlink -f /etc/localtime | sed -n 's|.*/zoneinfo/||p')
+locale=$(localectl status 2>/dev/null | sed -n 's/^ *System Locale: .*LANG=\([^ ]*\).*/\1/p') || true
 keymap=$(localectl status 2>/dev/null | sed -n 's/^ *VC Keymap: //p' | grep -v '^(unset)$') || true
 user=${USER:-}
 while (($#)); do
   case $1 in
     -o) output=${2:?}; shift 2 ;;
     -t) timezone=${2:?}; shift 2 ;;
+    -l) locale=$2; shift 2 ;;
     -k) keymap=$2; shift 2 ;;
     -u) user=$2; shift 2 ;;
     *) break ;;
   esac
 done
-build=${1:?usage: vm-libvirt-disk.sh [-o <output>] [-t <timezone>] [-k <keymap>] [-u <user>] <build>}
+build=${1:?usage: vm-libvirt-disk.sh [-o <output>] [-t <timezone>] [-l <locale>] [-k <keymap>] [-u <user>] <build>}
 [[ -n $timezone ]] || { echo "no time zone: give -t <timezone>" >&2; exit 1; }
 
 # The release of that build number, from the project's release library.
@@ -116,8 +121,8 @@ for app in pos-sdk pos-extras; do
 done
 (
   umask 077
-  printf 'TIMEZONE=%q\nKEYMAP=%q\nROOT_HASH=%q\nUSER_NAME=%q\nUSER_HASH=%q\n' \
-    "$timezone" "$keymap" "$root_hash" "$user" "$user_hash"
+  printf 'TIMEZONE=%q\nLOCALE=%q\nKEYMAP=%q\nROOT_HASH=%q\nUSER_NAME=%q\nUSER_HASH=%q\n' \
+    "$timezone" "$locale" "$keymap" "$root_hash" "$user" "$user_hash"
   cat "$base/devtools/vm-setup.sh"
 ) >"$work/setup.sh"
 "$base/devtools/vm.sh" -d "$setup" -w -s "$work/apps" -c "$work/setup.sh"
